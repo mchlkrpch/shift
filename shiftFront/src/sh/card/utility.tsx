@@ -111,34 +111,40 @@ export declare type GroupTp = 'single'|'multiple_fwd'|'multiple_bwd'|'multiple'|
 
 export function getGroupTp(cnt: string) {
     let groupTp: GroupTp = undefined;
-    if (cnt.split('===').length === 1) {
-        groupTp = 'single';
-    }
+
     let rows = cnt
         .split('===')
-        .map((n: any)=>n.split('---'));
+        .map((n: any)=>n
+            .split(/(---)/)
+            .map((t:any)=>t.trim())
+            .filter((t:string)=>t!==''));
+    
+    if (rows.length === 1) return 'single';
+
     groupTp = 'multiple_fwd';
-    for (let i = 1; i < rows.length-1; ++i) {
-        if (rows[i].length !== 1) {
+    for (let i = 1; i < rows.length; ++i) {
+        if (rows[i].length !== 2||rows[i][1]!=='---') {
             groupTp = undefined;
         }
     }
     if (groupTp !== undefined) {
         return groupTp;
     }
+
     groupTp = 'multiple_bwd';
-    console.log(rows)
-    for (let i = 1; i < rows.length-1; ++i) {
-        if (rows[i][0].trim() !== '') {
+    for (let i = 1; i < rows.length; ++i) {
+        if (rows[i].length!==2||rows[i][0]!=='---') {
             groupTp = undefined;
         }
     }
     if (groupTp !== undefined) {
         return groupTp;
     }
+
     groupTp = 'multiple';
     return groupTp;
 }
+
 
 export declare type PreviewTp = 'embed'|'free'|undefined;
 export function getPreviewStyle(tp: PreviewTp) {
@@ -162,4 +168,30 @@ export function getPreviewStyle(tp: PreviewTp) {
         )
     }
     return style;
+}
+
+export const md2sh=(
+    c: string,
+)=>{
+    return `${c.split('\n').map((t:any)=>{
+        return t === ''?`<br>`:`<div class="sh_string"}>${t}</div>`;
+    }).join('')}`
+}
+
+import ReactMarkdown from 'react-markdown';
+import rehypeKatex from 'rehype-katex';
+import rehypeRaw from 'rehype-raw';
+
+export const Sh = (
+    {value}: any,
+)=>{
+    return (
+        <ReactMarkdown
+            remarkPlugins={[shRemark]}
+            rehypePlugins={[rehypeRaw,rehypeKatex]}
+            components={shComponents}
+        >
+            {value}
+        </ReactMarkdown>
+    )
 }

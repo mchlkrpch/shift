@@ -12,6 +12,27 @@ $\\mathcal{O}_X$ - пучок коммутативных колец\n
 $(X,\\mathcal{O}_X)$
 `
 
+// const cntStr=`first
+// ---
+// first
+// ===
+// second
+// ---
+// second
+// ===
+// third
+// ---
+// third
+// ===
+// fourth
+// ---
+// fourth
+// ===
+// fifth
+// ---
+// fifth
+// `
+
 function App() {
   return (
     <>

@@ -1,23 +1,30 @@
 /** @jsxImportSource @emotion/react */
 import { css } from "@emotion/react";
-
-import React, { useEffect, useState } from 'react';
+import React, {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useState
+} from 'react';
 import {
   HStack,
   Spacer,
 } from "@chakra-ui/react";
-import ReactMarkdown from 'react-markdown';
-import rehypeKatex from 'rehype-katex';
-import rehypeRaw from 'rehype-raw';
-import { Clip } from '../clip';
-import { getGroupTp, getPreviewStyle, shComponents, shRemark, type GroupTp, type PreviewTp } from "./utility";
+import {
+  Clip
+} from '../clip';
+import {
+  getGroupTp,
+  getPreviewStyle,
+  md2sh,
+  Sh,
+  type GroupTp,
+  type PreviewTp,
+} from "./utility";
+import { match } from "../../utility";
 
-/*
-==================================================
-styling
-main <div> style
-==================================================
-*/
+
+
 export const cardStyle = css`
 font-size: 12px;
 display: flex;
@@ -34,13 +41,11 @@ background-color: color-mix(in srgb, #555 5%, transparent);
   display: flex;
   flex-direction: column;
 }
-
 .sh_string{
   height: 20px;
   border-bottom: 1px solid color-mix(in srgb, #555 25%, transparent);
   border-style: dotted;
 }
-
 .option {
   padding: 0px 4px;
   border-radius: 3px;
@@ -59,51 +64,63 @@ background-color: color-mix(in srgb, #555 5%, transparent);
 }
 `;
 
-// describe preview type
+
+
 export declare type shCardProps = {
-  id: string, // id to edit content in backend
+  id: string,      // id to edit content in backend
   content: string, // content itself
-  tp: PreviewTp, // how to preview group type
+  tp: PreviewTp,   // how to preview group type
 }
 
-/*
-==================================================
-main component
-==================================================
-*/
-export const Card = ({
+
+
+export const Card = forwardRef(({
   // id,
   content,
   tp,
-}: shCardProps) => {
-  const [c,setCurContent] = useState(content);
+}: shCardProps, ref: any) => {
+  const [c,setC]=useState(content);
   const [isEdit,setIsEdit]=useState(false);
-  const textareaRef=React.createRef() as any;
   const [option,setOption]=useState(0) as any;
 
-  let groupTp: GroupTp = getGroupTp(c);
+  const inputRef=React.createRef() as any;
+  const previewStyle = getPreviewStyle(tp)
+  const groupTp: GroupTp = getGroupTp(c);
 
-  let fronts = c.split('===').map((n:any)=>n.split('---')[0].trim())
-  if (groupTp ==='multiple_bwd') {
-    fronts=c.split('===').map((_:any,i)=>`${i+1}`);
+  const onBlurCb = ()=>{
+    setC([...inputRef.current.children]
+        .map((ch: any)=>ch.innerText)
+        .filter((t: string)=>t!=='\n')
+        .join('\n'))
+    setIsEdit(v=>!v);
   }
 
-  let previewStyle = getPreviewStyle(tp)
+  const fwdParts = groupTp==='multiple_bwd'? c.split('===').map((_:any,i)=>`${i+1}`): c.split('===').map((n:any)=>n.split('---')[0].trim())
+
+  const innerC: string = match(groupTp, {
+    'single': c,
+    'multiple_fwd': fwdParts.join(' / ')
+      + '\n---\n'
+      + c.split('===')[0].split('---').slice(1),
+    'multiple_bwd': c.split('===')[0].split('---')[0]
+      + '\n---\n'
+      + c.split('===')[option]
+        .split('---')
+        .slice(1)
+        .join(''),
+    'multiple': c.split('===')[option],
+  })
 
   useEffect(()=>{
     if (isEdit){
-      textareaRef.current.innerHTML=(
-        `${c.split('\n').map((t:any)=>{
-          if (t === '') {
-            return (`<br>`);
-          } else {
-            return (`<div class="sh_string"}>${t}</div>`)
-          }
-        }).join('')}`
-      )
-      textareaRef.current.focus();
+      inputRef.current.innerHTML=md2sh(c);
+      inputRef.current.focus();
     }
-  },[isEdit])
+  },[isEdit,c])
+
+  useImperativeHandle(ref,()=>({
+    focus: async()=>await setIsEdit(true),
+  }));
 
   return (
     <div css={cardStyle} style={previewStyle}
@@ -113,111 +130,55 @@ export const Card = ({
     >
       {isEdit?(
         <div
+          ref={inputRef}
           role='textbox'
 					contentEditable
 					suppressContentEditableWarning={true}
-          ref={textareaRef}
           defaultValue={c}
-          onBlur={()=>{
-            console.log(textareaRef.current.children);
-            let txt = '';
-            let chldrn = textareaRef.current.children;
-            for (let i = 0; i < chldrn.length; i++) {
-              if (chldrn[i].innerText !== '\n') {
-                txt += chldrn[i].innerText;
-              }
-              if (i !== chldrn.length-1) {
-                txt += '\n';
-              }
-            }
-            setCurContent(txt)
-            setIsEdit(v=>!v);
-          }}
+          onBlur={onBlurCb}
         />
       ):(
         <>
-          {groupTp!=="multiple_fwd"&&(
-            <HStack mb={'10px'}>
+          <HStack gap={0}>
+            {groupTp!=="multiple_fwd"&&(
               <HStack
                 gap={'2px'}
-                maxW={'250px'}
+                minW={0}
                 overflowX={'auto'}
                 onClick={async (e:any)=>{
                   e.stopPropagation();
                   e.preventDefault();
                 }}
               >
-                {fronts.map((f:any,i:number)=>(
+              {fwdParts.map((f:any,i:number)=>{
+                return (
                   <div
-                    key={i} onClick={()=>setOption(i)}
+                    key={i}
+                    onClick={()=>setOption(i)}
                     className={i===option?'selectedOption option':'option'}
                   >
-                    <ReactMarkdown
-                      remarkPlugins={[shRemark]}
-                      rehypePlugins={[rehypeRaw,rehypeKatex]}
-                      components={shComponents}
-                    >
-                      {f}
-                    </ReactMarkdown>
+                    <Sh value={f}/>
                   </div>
-                ))}
+                )
+              })}
               </HStack>
-              <Spacer/>
-              <Clip
-                value={c}
-                props={{
-                  variant: 'ghost',
-                  size: undefined,
-                  h: '20px',
-                  maxW: '20px',
-                  minW:'20px',
-                }}
-              />
-            </HStack>
-          )}
+            )}
 
-          {groupTp==='multiple'&&(
-            <ReactMarkdown
-              remarkPlugins={[shRemark]}
-              rehypePlugins={[rehypeRaw,rehypeKatex]}
-              components={shComponents}
-            >
-              {c.split('===')[option]}
-            </ReactMarkdown>
-          )}
-
-          {groupTp==='multiple_fwd'&&(
-            <ReactMarkdown
-              remarkPlugins={[shRemark]}
-              rehypePlugins={[rehypeRaw,rehypeKatex]}
-              components={shComponents}
-            >
-              {
-                fronts.join(' / ')
-                + '\n---\n'
-                + c.split('===')[0].split('---').slice(1)
-              }
-            </ReactMarkdown>
-          )}
-
-          {groupTp==='multiple_bwd'&&(
-            <ReactMarkdown
-              remarkPlugins={[shRemark]}
-              rehypePlugins={[rehypeRaw,rehypeKatex]}
-              components={shComponents}
-            >
-              {
-                c.split('===')[0].split('---')[0]
-                + '\n---\n'
-                + c.split('===')[option]
-                  .split('---')
-                  .slice(1)
-                  .join('')
-              }
-            </ReactMarkdown>
-          )}
+            <Spacer/>
+            <Clip
+              value={c}
+              props={{
+                variant: 'ghost',
+                size: undefined,
+                h: '20px',
+                maxW: '20px',
+                minW:'20px',
+              }}
+            />
+          </HStack>
+          <Sh value={innerC}/>
         </>
       )}
     </div>
   )
-}
+});
