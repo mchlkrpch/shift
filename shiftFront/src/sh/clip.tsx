@@ -6,6 +6,7 @@ export function Clip({value, props}:any) {
       <Clipboard.Trigger asChild>
         <IconButton
           {...props}
+          size={undefined}
           onClick={async (e:any)=>{
             e.stopPropagation();
             e.preventDefault();

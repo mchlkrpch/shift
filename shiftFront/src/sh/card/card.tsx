@@ -1,12 +1,19 @@
 /** @jsxImportSource @emotion/react */
 import { css } from "@emotion/react";
 import React, {
+  createContext,
   forwardRef,
+  useContext,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useState
 } from 'react';
 import {
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbRoot,
+  BreadcrumbSeparator,
   HStack,
   Spacer,
 } from "@chakra-ui/react";
@@ -16,12 +23,15 @@ import {
 import {
   getGroupTp,
   getPreviewStyle,
-  md2sh,
+  onKeyDownCb,
   Sh,
   type GroupTp,
   type PreviewTp,
 } from "./utility";
 import { match } from "../../utility";
+import { GraphCtx, useGraphCtx } from "../../App";
+import { renderToString } from "react-dom/server";
+import { Cell } from "./cell";
 
 
 
@@ -34,33 +44,55 @@ background-color: color-mix(in srgb, #555 5%, transparent);
 .chakra-stack{
   scrollbar-width: none;
 }
-[role="textbox"] {
+[role="textbox"]{
   outline: none;
   border: none;
   tab-index: 0;
   display: flex;
   flex-direction: column;
+  font-family: Roboto mono;
 }
 .sh_string{
   height: 20px;
   border-bottom: 1px solid color-mix(in srgb, #555 25%, transparent);
   border-style: dotted;
 }
-.option {
+.option{
   padding: 0px 4px;
   border-radius: 3px;
   opacity: 0.3;
-
   min-width: fit-content;
   overflow: hidden;
   white-space: nowrap;
 }
-.option: hover {
+.option: hover{
   background-color: color-mix(in srgb, #555 55%, transparent);
 }
-.selectedOption {
+.selectedOption{
   opacity: 1.0;
   background-color: color-mix(in srgb, #555 25%, transparent);
+}
+.optionsStack{
+  gap: 2px;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.inlineCell{
+  display: inline-block;
+	width: fit-content;
+	height: fit-content;
+  background-color: color-mix(in srgb, var(--chakra-colors-blue-500) 15%, transparent);
+  padding: 0px 2px;
+  border-radius: 4px;
+  border: 1px solid color-mix(in srgb, var(--chakra-colors-blue-500) 5%, transparent);
+  color: var(--chakra-colors-blue-500);
+}
+.fit{
+  display:flex;
+  width:fit-content;
+  height:fit-content;
+  gap:4px;
 }
 `;
 
@@ -72,30 +104,108 @@ export declare type shCardProps = {
   tp: PreviewTp,   // how to preview group type
 }
 
+const Path:any=(
+  {path}:any,
+)=>{
+  const {
+    ns,
+  }=useGraphCtx()as any;
+  const {
+    setPath,setC,
+  }=useCardCtx()as any;
+  return(
+    <>
+      <BreadcrumbRoot>
+        <BreadcrumbList gap={'4px'} fontSize={'10px'}>
+          {path.map((t:any,i:number)=>(
+            <span key={t} className='fit'>
+              <BreadcrumbLink
+                key={t}
+                onClick={(e:any)=>{
+                  e.stopPropagation();
+                  setPath(path.slice(0,i+1));
+                  setC(ns[t])
+                }}
+              >
+                <Card id={t}content={ns[t]} tp={'embed'}/>
+              </BreadcrumbLink>
+              {i!==path.length-1&&(
+                <BreadcrumbSeparator key={'t'+t}>/</BreadcrumbSeparator>
+              )}
+            </span>
+          ))}
+        </BreadcrumbList>
+      </BreadcrumbRoot>
+    </>
+  )
+}
 
+interface CardCtxI{
+  path: any[],setPath:(p:any[])=>any[],
+  c:string,setC:(t:string)=>void,
+};
+
+export const CardCtx = createContext<CardCtxI|null>(null);
+export const useCardCtx = ()=>{
+  const ctx = useContext(CardCtx);
+  if (!ctx) {
+    throw new Error('use graph context');
+  }
+  return ctx;
+}
 
 export const Card = forwardRef(({
-  // id,
+  id,
   content,
   tp,
 }: shCardProps, ref: any) => {
+  if (content === undefined) {
+    return <></>;
+  }
+  const gCtx=useGraphCtx()as any;
+  const{
+    ns,setNs,
+  }=gCtx;
   const [c,setC]=useState(content);
   const [isEdit,setIsEdit]=useState(false);
   const [option,setOption]=useState(0) as any;
+  const [path,setPath]=useState([id]) as any;
 
   const inputRef=React.createRef() as any;
   const previewStyle = getPreviewStyle(tp)
   const groupTp: GroupTp = getGroupTp(c);
 
-  const onBlurCb = ()=>{
-    setC([...inputRef.current.children]
-        .map((ch: any)=>ch.innerText)
-        .filter((t: string)=>t!=='\n')
-        .join('\n'))
-    setIsEdit(v=>!v);
+  const onBlurCb=async()=>{
+    const newC:string=[...inputRef.current.children]
+      .map((ch: any)=>{
+        if(ch.children.length>=1) {
+          return [...ch.childNodes]
+            .map((n:any)=>(
+              n.nodeType === Node.TEXT_NODE?(
+                n.textContent
+              ):(n.className==='inlineCell')?(
+                `<id=${ch.children[0]?.id}>`
+              ):n.textContent
+            ))
+            .join('');
+        }
+        return ch.innerText;
+      })
+      .join('\n');
+    await setC(newC)
+    ns[path[path.length-1]]=newC;
+    await setNs(ns);
+    await setIsEdit(v=>!v);
   }
 
-  const fwdParts = groupTp==='multiple_bwd'? c.split('===').map((_:any,i)=>`${i+1}`): c.split('===').map((n:any)=>n.split('---')[0].trim())
+  const fwdParts = groupTp==='multiple_bwd'?c
+      .split(/===/)
+      .map((_:any,i)=>`${i+1}`)
+    : c
+      .split(/===/)
+      .map((n:any)=>n
+        .split('---')[0]
+        .trim())
 
   const innerC: string = match(groupTp, {
     'single': c,
@@ -111,74 +221,100 @@ export const Card = forwardRef(({
     'multiple': c.split('===')[option],
   })
 
+  const cardCtx = useMemo(() => ({
+    path: path,
+    setPath: setPath,
+    c:c,
+    setC: setC
+  }), [path, c, setPath, setC]);
+
   useEffect(()=>{
     if (isEdit){
-      inputRef.current.innerHTML=md2sh(c);
+      const mergedTxt = `${c.split('\n').map((t:any)=>{
+        return t === ''
+          ? `<br>`
+          : `<div class="sh_string"}>${t}</div>`;
+      }).join('')}`;
+      const html=mergedTxt
+        .split(/(<id=[^>]*>)/)
+        .map((n:any)=>{
+          if (n.slice(0,3)==='<id') {
+            return renderToString(
+              <GraphCtx.Provider value={gCtx}>
+                <CardCtx.Provider value={cardCtx}>
+                  <Cell id={n.slice(4,n.length-1)}/>
+                </CardCtx.Provider>
+              </GraphCtx.Provider>
+            )
+          }
+          return n;
+        })
+        .join('');
+      inputRef.current.innerHTML=html;
       inputRef.current.focus();
     }
-  },[isEdit,c])
+  },[isEdit,c,cardCtx])
 
   useImperativeHandle(ref,()=>({
     focus: async()=>await setIsEdit(true),
   }));
 
-  return (
-    <div css={cardStyle} style={previewStyle}
-      onClick={async ()=>{
-        await setIsEdit(true);
-      }}
-    >
-      {isEdit?(
-        <div
-          ref={inputRef}
-          role='textbox'
-					contentEditable
-					suppressContentEditableWarning={true}
-          defaultValue={c}
-          onBlur={onBlurCb}
-        />
-      ):(
-        <>
-          <HStack gap={0}>
-            {groupTp!=="multiple_fwd"&&(
-              <HStack
-                gap={'2px'}
-                minW={0}
-                overflowX={'auto'}
-                onClick={async (e:any)=>{
-                  e.stopPropagation();
-                  e.preventDefault();
-                }}
-              >
-              {fwdParts.map((f:any,i:number)=>{
-                return (
-                  <div
-                    key={i}
-                    onClick={()=>setOption(i)}
-                    className={i===option?'selectedOption option':'option'}
-                  >
-                    <Sh value={f}/>
-                  </div>
-                )
-              })}
-              </HStack>
-            )}
+  if (tp==='embed') {
+    return (<span onClick={()=>{}}>
+      {fwdParts[0]}
+    </span>)
+  }
 
-            <Spacer/>
-            <Clip
-              value={c}
-              props={{
-                variant: 'ghost',
-                size: undefined,
-                h: '20px',
-                maxW: '20px',
-                minW:'20px',
-              }}
-            />
-          </HStack>
-          <Sh value={innerC}/>
-        </>
+  const UpperTools:any=(
+    <HStack gap={'3px'}>
+      {(groupTp!=="multiple_fwd"&&groupTp!=='single')&&(
+        <HStack
+          className={'optionsStack'}
+          onClick={async(e:any)=>{
+            e.stopPropagation();
+            e.preventDefault();
+          }}>
+        {fwdParts.map((f:any,i:number)=>(
+          <div key={i} onClick={()=>setOption(i)}
+            className={i===option?'selectedOption option':'option'}>
+            <Sh value={f}/>
+          </div>
+        ))}
+        </HStack>
       )}
-    </div>
+      <Spacer/>
+      <Path path={path}/>
+      <Spacer/>
+      <Clip
+        value={c}
+        props={{variant:'ghost',h:'20px',maxW:'20px',minW:'20px'}}
+      />
+    </HStack>);
+
+  return (
+    <CardCtx.Provider value={cardCtx}>
+      <div css={cardStyle} style={previewStyle}
+        onClick={async ()=>{
+          await setIsEdit(true);
+        }}
+      >
+        {isEdit?(
+          <div
+            ref={inputRef}
+            role='textbox'
+            contentEditable
+            suppressContentEditableWarning={true}
+            defaultValue={c}
+            onBlur={onBlurCb}
+            onKeyDown={onKeyDownCb}
+          />
+        ):(
+          <>
+            {UpperTools}
+            <Sh value={innerC}/>
+          </>
+        )}
+      </div>
+    </CardCtx.Provider>
   )
 });
