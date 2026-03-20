@@ -15,6 +15,7 @@ import {
   BreadcrumbRoot,
   BreadcrumbSeparator,
   HStack,
+  IconButton,
   Spacer,
 } from "@chakra-ui/react";
 import {
@@ -32,6 +33,7 @@ import { match } from "../../utility";
 import { GraphCtx, useGraphCtx } from "../../App";
 import { renderToString } from "react-dom/server";
 import { Cell } from "./cell";
+import { LuChevronDown, LuChevronUp } from "react-icons/lu";
 
 
 
@@ -82,10 +84,10 @@ background-color: color-mix(in srgb, #555 5%, transparent);
   display: inline-block;
 	width: fit-content;
 	height: fit-content;
-  background-color: color-mix(in srgb, var(--chakra-colors-blue-500) 15%, transparent);
+  // background-color: color-mix(in srgb, var(--chakra-colors-blue-500) 15%, transparent);
   padding: 0px 2px;
   border-radius: 4px;
-  border: 1px solid color-mix(in srgb, var(--chakra-colors-blue-500) 5%, transparent);
+  // border: 1px solid color-mix(in srgb, var(--chakra-colors-blue-500) 5%, transparent);
   color: var(--chakra-colors-blue-500);
 }
 .fit{
@@ -93,6 +95,10 @@ background-color: color-mix(in srgb, #555 5%, transparent);
   width:fit-content;
   height:fit-content;
   gap:4px;
+}
+.ref:hover{
+  text-decoration: underline;
+  cursor: pointer;
 }
 `;
 
@@ -114,29 +120,27 @@ const Path:any=(
     setPath,setC,
   }=useCardCtx()as any;
   return(
-    <>
-      <BreadcrumbRoot>
-        <BreadcrumbList gap={'4px'} fontSize={'10px'}>
-          {path.map((t:any,i:number)=>(
-            <span key={t} className='fit'>
-              <BreadcrumbLink
-                key={t}
-                onClick={(e:any)=>{
-                  e.stopPropagation();
-                  setPath(path.slice(0,i+1));
-                  setC(ns[t])
-                }}
-              >
-                <Card id={t}content={ns[t]} tp={'embed'}/>
-              </BreadcrumbLink>
-              {i!==path.length-1&&(
-                <BreadcrumbSeparator key={'t'+t}>/</BreadcrumbSeparator>
-              )}
-            </span>
-          ))}
-        </BreadcrumbList>
-      </BreadcrumbRoot>
-    </>
+    <BreadcrumbRoot>
+      <BreadcrumbList gap={'4px'} fontSize={'10px'}>
+        {path.map((t:any,i:number)=>(
+          <span key={t} className='fit'>
+            <BreadcrumbLink
+              key={t}
+              onClick={(e:any)=>{
+                e.stopPropagation();
+                setPath(path.slice(0,i+1));
+                setC(ns[t])
+              }}
+            >
+              <Card id={t}content={ns[t]} tp={'embed'}/>
+            </BreadcrumbLink>
+            {i!==path.length-1&&(
+              <BreadcrumbSeparator key={'t'+t}>/</BreadcrumbSeparator>
+            )}
+          </span>
+        ))}
+      </BreadcrumbList>
+    </BreadcrumbRoot>
   )
 }
 
@@ -170,6 +174,7 @@ export const Card = forwardRef(({
   const [isEdit,setIsEdit]=useState(false);
   const [option,setOption]=useState(0) as any;
   const [path,setPath]=useState([id]) as any;
+  const [hide,setHide]=useState(true) as any;
 
   const inputRef=React.createRef() as any;
   const previewStyle = getPreviewStyle(tp)
@@ -220,6 +225,12 @@ export const Card = forwardRef(({
         .join(''),
     'multiple': c.split('===')[option],
   })
+  let hiddenInnerC:string|string[]=''
+  if (hide===false){
+    hiddenInnerC=innerC
+  }else {
+    hiddenInnerC=innerC.split('---')[0];
+  };
 
   const cardCtx = useMemo(() => ({
     path: path,
@@ -260,7 +271,7 @@ export const Card = forwardRef(({
   }));
 
   if (tp==='embed') {
-    return (<span onClick={()=>{}}>
+    return (<span className='ref'>
       {fwdParts[0]}
     </span>)
   }
@@ -285,9 +296,26 @@ export const Card = forwardRef(({
       <Spacer/>
       <Path path={path}/>
       <Spacer/>
+      <IconButton
+        variant={'ghost'} h={'30px'}minW={'30px'}
+        onClick={(e:any)=>{
+          setHide((h:any)=>!h);
+          e.stopPropagation();
+        }}
+      >
+        {hide===true?(
+          <LuChevronDown/>
+        ):(
+          <LuChevronUp />
+        )}
+      </IconButton>
       <Clip
         value={c}
-        props={{variant:'ghost',h:'20px',maxW:'20px',minW:'20px'}}
+        props={{
+          variant:'ghost',
+          h:'30px',maxW:'20px',minW:'30px',
+          p:'5px',
+        }}
       />
     </HStack>);
 
@@ -311,7 +339,7 @@ export const Card = forwardRef(({
         ):(
           <>
             {UpperTools}
-            <Sh value={innerC}/>
+            <Sh value={hiddenInnerC}/>
           </>
         )}
       </div>

@@ -41,6 +41,7 @@ export const useGraphCtx = ()=>{
 }
 
 const cntStr=`first
+
 ---
 second<id=2>third<id=2>fourth`;
 const inner2:string=`inner
