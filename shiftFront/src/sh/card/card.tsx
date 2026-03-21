@@ -17,6 +17,7 @@ import {
   HStack,
   IconButton,
   Spacer,
+  VStack,
 } from "@chakra-ui/react";
 import {
   Clip
@@ -25,7 +26,9 @@ import {
   getGroupTp,
   getPreviewStyle,
   onKeyDownCb,
+  OPTION_SPLIT_SYM,
   Sh,
+  SIDE_SPLIT_SYM,
   type GroupTp,
   type PreviewTp,
 } from "./utility";
@@ -33,12 +36,14 @@ import { match } from "../../utility";
 import { GraphCtx, useGraphCtx } from "../../App";
 import { renderToString } from "react-dom/server";
 import { Cell } from "./cell";
-import { LuChevronDown, LuChevronUp } from "react-icons/lu";
+import {
+  LuChevronDown,
+  LuChevronUp
+} from "react-icons/lu";
 
 
 
 export const cardStyle = css`
-font-size: 12px;
 display: flex;
 flex-direction: column;
 background-color: color-mix(in srgb, #555 5%, transparent);
@@ -104,42 +109,34 @@ background-color: color-mix(in srgb, #555 5%, transparent);
 
 
 
-export declare type shCardProps = {
-  id: string,      // id to edit content in backend
-  content: string, // content itself
-  tp: PreviewTp,   // how to preview group type
-}
-
-const Path:any=(
-  {path}:any,
-)=>{
+const Path:any=({path}:any)=>{
+  const { ns }=useGraphCtx()as any;
   const {
-    ns,
-  }=useGraphCtx()as any;
-  const {
-    setPath,setC,
+    setPath,
+    setC,
   }=useCardCtx()as any;
   return(
     <BreadcrumbRoot>
-      <BreadcrumbList gap={'4px'} fontSize={'10px'}>
-        {path.map((t:any,i:number)=>(
-          <span key={t} className='fit'>
-            <BreadcrumbLink
-              key={t}
-              onClick={(e:any)=>{
-                e.stopPropagation();
-                setPath(path.slice(0,i+1));
-                setC(ns[t])
-              }}
-            >
-              <Card id={t}content={ns[t]} tp={'embed'}/>
-            </BreadcrumbLink>
-            {i!==path.length-1&&(
-              <BreadcrumbSeparator key={'t'+t}>/</BreadcrumbSeparator>
-            )}
-          </span>
-        ))}
-      </BreadcrumbList>
+    <BreadcrumbList gap={'4px'} fontSize={'10px'}>
+    {path.map((t:any,i:number)=>(
+      <span key={t}className='fit'>
+        <BreadcrumbLink
+          key={t}
+          onClick={(e:any)=>{
+            e.stopPropagation();
+            setPath(path.slice(0,i+1));
+            setC(ns[t])
+          }}
+        >
+        <Card id={t}content={ns[t]}tp={'embed'}/>
+        </BreadcrumbLink>
+
+        {i!==path.length-1&&(
+        <BreadcrumbSeparator key={'t'+t}>/</BreadcrumbSeparator>
+        )}
+      </span>
+    ))}
+    </BreadcrumbList>
     </BreadcrumbRoot>
   )
 }
@@ -150,12 +147,18 @@ interface CardCtxI{
 };
 
 export const CardCtx = createContext<CardCtxI|null>(null);
-export const useCardCtx = ()=>{
+export const useCardCtx=()=>{
   const ctx = useContext(CardCtx);
   if (!ctx) {
     throw new Error('use graph context');
   }
   return ctx;
+}
+
+export declare type shCardProps = {
+  id: string,      // id to edit content in backend
+  content: string, // content itself
+  tp: PreviewTp,   // how to preview group type
 }
 
 export const Card = forwardRef(({
@@ -168,34 +171,45 @@ export const Card = forwardRef(({
   }
   const gCtx=useGraphCtx()as any;
   const{
-    ns,setNs,
+    ns,
+    setNs,
   }=gCtx;
+  // content to displays
   const [c,setC]=useState(content);
+  // if hovered - display upper tools
+  const [hovered,setHovered]=useState(false);
+  // if edit mode - editable div
   const [isEdit,setIsEdit]=useState(false);
+  // cur displayed option among all possiblilities 
   const [option,setOption]=useState(0) as any;
+  // path of inner term (within parent term)
   const [path,setPath]=useState([id]) as any;
+  // if not hide - display opposite side of card
   const [hide,setHide]=useState(true) as any;
+  // current zoom of card's content (sz in px)
+  const [fontSize,setFontSize]=useState(12) as any;
 
+  // ref of editable div
   const inputRef=React.createRef() as any;
-  const previewStyle = getPreviewStyle(tp)
+  // dynamic styling of component
+  const previewStyle = getPreviewStyle(tp);
   const groupTp: GroupTp = getGroupTp(c);
 
   const onBlurCb=async()=>{
     const newC:string=[...inputRef.current.children]
-      .map((ch: any)=>{
-        if(ch.children.length>=1) {
-          return [...ch.childNodes]
-            .map((n:any)=>(
-              n.nodeType === Node.TEXT_NODE?(
-                n.textContent
-              ):(n.className==='inlineCell')?(
-                `<id=${ch.children[0]?.id}>`
-              ):n.textContent
-            ))
-            .join('');
-        }
-        return ch.innerText;
-      })
+      .map((ch: any)=>(
+        (ch.children.length>=1)
+          ? [...ch.childNodes]
+              .map((n:any)=>(
+                n.nodeType === Node.TEXT_NODE?(
+                  n.textContent
+                ):(n.className==='inlineCell')?(
+                  `<id=${ch.children[0]?.id}>`
+                ):n.textContent
+              ))
+              .join('')
+          : ch.innerText
+      ))
       .join('\n');
     await setC(newC)
     ns[path[path.length-1]]=newC;
@@ -204,40 +218,42 @@ export const Card = forwardRef(({
   }
 
   const fwdParts = groupTp==='multiple_bwd'?c
-      .split(/===/)
+      .split(RegExp(`${OPTION_SPLIT_SYM}`))
       .map((_:any,i)=>`${i+1}`)
     : c
-      .split(/===/)
+      .split(RegExp(`${OPTION_SPLIT_SYM}`))
       .map((n:any)=>n
-        .split('---')[0]
+        .split(SIDE_SPLIT_SYM)[0]
         .trim())
 
   const innerC: string = match(groupTp, {
     'single': c,
     'multiple_fwd': fwdParts.join(' / ')
-      + '\n---\n'
-      + c.split('===')[0].split('---').slice(1),
-    'multiple_bwd': c.split('===')[0].split('---')[0]
-      + '\n---\n'
-      + c.split('===')[option]
-        .split('---')
+      + `\n${SIDE_SPLIT_SYM}\n`
+      + c
+        .split(OPTION_SPLIT_SYM)[0]
+        .split(SIDE_SPLIT_SYM)
+        .slice(1),
+    'multiple_bwd': c
+      .split(OPTION_SPLIT_SYM)[0]
+      .split(SIDE_SPLIT_SYM)[0]
+      + '\n@@@\n'
+      + c
+        .split(OPTION_SPLIT_SYM)[option]
+        .split(SIDE_SPLIT_SYM)
         .slice(1)
         .join(''),
-    'multiple': c.split('===')[option],
+    'multiple': c.split(OPTION_SPLIT_SYM)[option],
   })
-  let hiddenInnerC:string|string[]=''
-  if (hide===false){
-    hiddenInnerC=innerC
-  }else {
-    hiddenInnerC=innerC.split('---')[0];
-  };
+
+  let hiddenInnerC:string = (hide===false)
+    ? innerC.replace(RegExp(`${SIDE_SPLIT_SYM}`),'\n---\n')
+    : innerC.split('@@@')[0];
 
   const cardCtx = useMemo(() => ({
-    path: path,
-    setPath: setPath,
-    c:c,
-    setC: setC
-  }), [path, c, setPath, setC]);
+    path:path,setPath:setPath,
+    c:c,setC:setC,
+  }), [path,c,setPath,setC]);
 
   useEffect(()=>{
     if (isEdit){
@@ -248,18 +264,16 @@ export const Card = forwardRef(({
       }).join('')}`;
       const html=mergedTxt
         .split(/(<id=[^>]*>)/)
-        .map((n:any)=>{
-          if (n.slice(0,3)==='<id') {
-            return renderToString(
+        .map((n:any)=>(
+          (n.slice(0,3)==='<id')
+            ? renderToString(
               <GraphCtx.Provider value={gCtx}>
-                <CardCtx.Provider value={cardCtx}>
-                  <Cell id={n.slice(4,n.length-1)}/>
-                </CardCtx.Provider>
-              </GraphCtx.Provider>
-            )
-          }
-          return n;
-        })
+              <CardCtx.Provider value={cardCtx}>
+              <Cell id={n.slice(4,n.length-1)}/>
+              </CardCtx.Provider>
+              </GraphCtx.Provider>)
+            : n
+        ))
         .join('');
       inputRef.current.innerHTML=html;
       inputRef.current.focus();
@@ -277,51 +291,86 @@ export const Card = forwardRef(({
   }
 
   const UpperTools:any=(
-    <HStack gap={'3px'}>
-      {(groupTp!=="multiple_fwd"&&groupTp!=='single')&&(
-        <HStack
-          className={'optionsStack'}
-          onClick={async(e:any)=>{
-            e.stopPropagation();
-            e.preventDefault();
-          }}>
-        {fwdParts.map((f:any,i:number)=>(
-          <div key={i} onClick={()=>setOption(i)}
-            className={i===option?'selectedOption option':'option'}>
-            <Sh value={f}/>
-          </div>
-        ))}
-        </HStack>
+    <HStack gap={'3px'}h={'30px'}>
+      {hovered&&(
+        <>
+          {(groupTp!=="multiple_fwd"&&groupTp!=='single')&&(
+            <HStack
+              className={'optionsStack'}
+              onClick={async(e:any)=>{
+                e.stopPropagation();
+                e.preventDefault();
+              }}>
+            {fwdParts.map((f:any,i:number)=>(
+              <div key={i} onClick={()=>setOption(i)}
+                className={i===option?'selectedOption option':'option'}>
+                <Sh value={f}/>
+              </div>
+            ))}
+            </HStack>
+          )}
+          <Spacer/>
+          <Path path={path}/>
+          <VStack h={'30px'}gap={0}>
+            <IconButton
+              fontSize={'16px'}
+              variant={'ghost'} h={'15px'}minW={'22px'}
+              onClick={(e:any)=>{
+                setFontSize((sz:any)=>sz+1);
+                e.stopPropagation();
+              }}>
+              <LuChevronUp
+                style={{height:'17px',width:'17px'}}
+              />
+            </IconButton>
+            <IconButton
+              variant={'ghost'} h={'15px'}minW={'22px'}
+              fontSize={'16px'}
+              onClick={(e:any)=>{
+                setFontSize((sz:any)=>Math.max(sz-1,10));
+                e.stopPropagation();
+              }}>
+              <LuChevronDown
+                style={{height:'17px',width:'17px'}}
+              />
+            </IconButton>
+          </VStack>
+          <IconButton
+            variant={'ghost'} h={'30px'}minW={'30px'}
+            onClick={(e:any)=>{
+              setHide((h:any)=>!h);
+              e.stopPropagation();
+            }}
+          >
+            {hide===true?(
+              <LuChevronDown/>
+            ):(
+              <LuChevronUp />
+            )}
+          </IconButton>
+          <Clip
+            value={c}
+            props={{
+              variant:'ghost',
+              h:'30px',maxW:'20px',minW:'30px',
+              p:'5px',
+            }}
+          />
+        </>
       )}
-      <Spacer/>
-      <Path path={path}/>
-      <Spacer/>
-      <IconButton
-        variant={'ghost'} h={'30px'}minW={'30px'}
-        onClick={(e:any)=>{
-          setHide((h:any)=>!h);
-          e.stopPropagation();
-        }}
-      >
-        {hide===true?(
-          <LuChevronDown/>
-        ):(
-          <LuChevronUp />
-        )}
-      </IconButton>
-      <Clip
-        value={c}
-        props={{
-          variant:'ghost',
-          h:'30px',maxW:'20px',minW:'30px',
-          p:'5px',
-        }}
-      />
     </HStack>);
+
+  previewStyle.fontSize=`${fontSize}px`
 
   return (
     <CardCtx.Provider value={cardCtx}>
       <div css={cardStyle} style={previewStyle}
+        onMouseEnter={()=>{
+          setHovered(true);
+        }}
+        onMouseLeave={()=>{
+          setHovered(false);
+        }}
         onClick={async ()=>{
           await setIsEdit(true);
         }}

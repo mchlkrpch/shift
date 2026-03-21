@@ -41,14 +41,18 @@ export const useGraphCtx = ()=>{
 }
 
 const cntStr=`first
-
----
-second<id=2>third<id=2>fourth`;
+@@@
+second<id=2>third<id=2>fourth
+===
+second
+@@@
+segssges sgds
+`;
 const inner2:string=`inner
----
+@@@
 inner complex definition of something <id=3>`;
 const inner3:string=`inner second def
----
+@@@
 more simple definition`;
 
 const ns: object={
@@ -92,7 +96,7 @@ function App() {
           <Card
             id={'1'}
             content={cntStr}
-            tp={'free'}
+            tp={'ghost'}
           />
         </GraphCtx.Provider>
       </Box>

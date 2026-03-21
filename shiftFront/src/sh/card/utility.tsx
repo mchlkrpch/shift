@@ -22,14 +22,17 @@ import {
 } from 'react-dom/client';
 import { match } from '../../utility';
 
+export const SIDE_SPLIT_SYM: string = '@@@'
+export const OPTION_SPLIT_SYM: string = '==='
+
 export declare type GroupTp = 'single'|'multiple_fwd'|'multiple_bwd'|'multiple'|undefined;
 export function getGroupTp(cnt: string) {
   if (!cnt) return undefined;
   let groupTp: GroupTp = undefined;
   let rows = cnt
-    .split('===')
+    .split(OPTION_SPLIT_SYM)
     .map((n: any)=>n
-      .split(/(---)/)
+      .split(RegExp(`(${SIDE_SPLIT_SYM})`, 'g'))
       .map((t:any)=>t.trim())
       .filter((t:string)=>t!==''));
   
@@ -45,7 +48,7 @@ export function getGroupTp(cnt: string) {
   }
   groupTp = 'multiple_bwd';
   for (let i = 1; i < rows.length; ++i) {
-    if (rows[i].length!==2||rows[i][0]!=='---') {
+    if (rows[i].length!==2||rows[i][0]!=='@@@') {
       groupTp = undefined;
     }
   }
@@ -154,7 +157,7 @@ export const shRemark: Plugin<[], Root> = () => {
   };
 };
 
-export declare type PreviewTp = 'embed'|'free'|undefined;
+export declare type PreviewTp = 'embed'|'free'|'ghost'|undefined;
 export function getPreviewStyle(tp: PreviewTp) {
   return match(tp,{
     'embed':{
@@ -166,7 +169,12 @@ export function getPreviewStyle(tp: PreviewTp) {
       padding: '3px 4px',
       borderRadius: '7px',
       border: '1px solid color-mix(in srgb, #eee 15%, transparent)',
-    }
+    },
+    'ghost':{
+      width:'100%',
+      padding: '3px 4px',
+      borderRadius: '7px',
+    },
   })
 }
 

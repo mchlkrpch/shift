@@ -5,9 +5,7 @@ import { Card, useCardCtx } from "./card";
 export const Cell: any = forwardRef((
     {id}:any,ref:any,
 )=>{
-    const {
-        ns,
-    }=useGraphCtx() as any;
+    const { ns }=useGraphCtx() as any;
     const {
         path,setPath,
         setC,
