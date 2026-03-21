@@ -66,7 +66,6 @@ export function getGroupTp(cnt: string) {
 
 const CodeBlock = ({ node, inline, className, children, ...props }: any) => {
   const match = /language-(\w+)/.exec(className || '');
-  console.log('?')
   const lang = match ? match[1] : 'text';
   const codeString = String(children).replace(/\n$/, '');
   if (!inline && match) {
@@ -74,7 +73,8 @@ const CodeBlock = ({ node, inline, className, children, ...props }: any) => {
       <Box
         position="relative" my={4}
         borderRadius="md" overflow="hidden"
-        backgroundColor={'color-mix(in srgb, #666 25%, transparent)'}
+        border={'1px solid color-mix(in srgb, #666 25%, transparent)'}
+        mr={'6px'}
       >
         <Box
           color={"gray.400"}
