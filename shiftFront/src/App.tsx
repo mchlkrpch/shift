@@ -43,6 +43,12 @@ export const useGraphCtx = ()=>{
 const cntStr=`first
 @@@
 second<id=2>third<id=2>fourth
+\`\`\`python
+import typing;
+def add_numbers(a, b)->typng.Any:
+	"""Function to return the sum of two numbers."""
+	return a + b
+\`\`\`
 ===
 second
 @@@

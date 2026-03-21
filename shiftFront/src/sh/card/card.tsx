@@ -58,11 +58,18 @@ background-color: color-mix(in srgb, #555 5%, transparent);
   display: flex;
   flex-direction: column;
   font-family: Roboto mono;
+  overflow-x: auto;
+  white-space: nowrap;
+  contain: content;
 }
 .sh_string{
   height: 20px;
   border-bottom: 1px solid color-mix(in srgb, #555 25%, transparent);
   border-style: dotted;
+  overflow: hidden;
+  width: fit-content;
+  height: fit-content;
+  white-space: nowrap;
 }
 .option{
   padding: 0px 4px;

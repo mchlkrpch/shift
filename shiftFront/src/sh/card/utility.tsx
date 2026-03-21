@@ -21,6 +21,11 @@ import {
   createRoot
 } from 'react-dom/client';
 import { match } from '../../utility';
+import remarkGfm from 'remark-gfm';
+import rehypeHighlight from 'rehype-highlight';
+import 'highlight.js/styles/github-dark.css';
+import { Box,Button } from '@chakra-ui/react';
+import { Clip } from '../clip';
 
 export const SIDE_SPLIT_SYM: string = '@@@'
 export const OPTION_SPLIT_SYM: string = '==='
@@ -59,6 +64,56 @@ export function getGroupTp(cnt: string) {
   return groupTp;
 }
 
+const CodeBlock = ({ node, inline, className, children, ...props }: any) => {
+  const match = /language-(\w+)/.exec(className || '');
+  console.log('?')
+  const lang = match ? match[1] : 'text';
+  const codeString = String(children).replace(/\n$/, '');
+  if (!inline && match) {
+    return (
+      <Box
+        position="relative" my={4}
+        borderRadius="md" overflow="hidden"
+        backgroundColor={'color-mix(in srgb, #666 25%, transparent)'}
+      >
+        <Box
+          color={"gray.400"}
+          p={'2px 4px'}
+          fontSize="xs"
+          display="flex"
+          justifyContent="space-between"
+        >
+          <span>{lang}</span>
+          <Clip
+            value={codeString}
+            props={{
+              opacity: 0.5,
+              variant: 'ghost',
+              h:'20px',minW:'20px',
+              p:'5px',
+            }}
+          />
+        </Box>
+        <Box 
+          as="pre" overflowX="auto"
+          padding={'10px'}
+        >
+          <code {...props}
+            padding={'5px'}
+          >
+            {children}
+          </code>
+        </Box>
+      </Box>
+    );
+  }
+  return (
+    <Box as="code" bg="gray.100" px={1} py={0.5} borderRadius="sm" fontSize="0.9em" {...props}>
+      {children}
+    </Box>
+  );
+};
+
 const headingStyles: React.CSSProperties = {
   marginBottom: '0.4em',
   fontWeight: 600,
@@ -76,6 +131,7 @@ export const shComponents:Components={
 	ol: ({ node, ...props }) => <ol style={{ paddingLeft: '0px' }} {...props} />,
   // Элементы списка. Можно добавить кастомные маркеры или логику.
   li: ({ node, ...props }) => <li style={{ marginBottom: '0.4em' }} {...props} />,
+  code: CodeBlock,
 };
 
 const LINK_REGEX_EXPR: RegExp = /<id=([^\$]*?)>/g;
@@ -207,6 +263,8 @@ export const md2sh=(
   return res;
 }
 
+
+
 export const Sh = (
   {value}: any,
 )=>{
@@ -217,8 +275,8 @@ export const Sh = (
   }
   return (
     <ReactMarkdown
-      remarkPlugins={[shRemark]}
-      rehypePlugins={[rehypeRaw,rehypeKatex]}
+      remarkPlugins={[shRemark,remarkGfm]}
+      rehypePlugins={[rehypeRaw,rehypeKatex,rehypeHighlight]}
       components={shComponents}
     >
       {value}
