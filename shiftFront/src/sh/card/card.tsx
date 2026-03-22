@@ -10,6 +10,8 @@ import React, {
   useState
 } from 'react';
 import {
+  Accordion,
+  Box,
   BreadcrumbLink,
   BreadcrumbList,
   BreadcrumbRoot,
@@ -46,11 +48,13 @@ import {
 export const cardStyle = css`
 display: flex;
 flex-direction: column;
-background-color: color-mix(in srgb, #555 5%, transparent);
-
+padding: 10px;
+:hover{
+}
 .chakra-stack{
   scrollbar-width: none;
 }
+
 [role="textbox"]{
   outline: none;
   border: none;
@@ -80,11 +84,11 @@ background-color: color-mix(in srgb, #555 5%, transparent);
   white-space: nowrap;
 }
 .option: hover{
-  background-color: color-mix(in srgb, #555 55%, transparent);
+  text-decoration: underline;
 }
 .selectedOption{
   opacity: 1.0;
-  background-color: color-mix(in srgb, #555 25%, transparent);
+  text-decoration: underline;
 }
 .optionsStack{
   gap: 2px;
@@ -111,6 +115,13 @@ background-color: color-mix(in srgb, #555 5%, transparent);
 .ref:hover{
   text-decoration: underline;
   cursor: pointer;
+}
+
+.pale{
+  opacity: 0.4;
+}
+.pale:hover{
+  opacity: 1.0;
 }
 `;
 
@@ -167,6 +178,7 @@ export declare type shCardProps = {
   content: string, // content itself
   tp: PreviewTp,   // how to preview group type
 }
+
 
 export const Card = forwardRef(({
   id,
@@ -254,8 +266,9 @@ export const Card = forwardRef(({
   })
 
   let hiddenInnerC:string = (hide===false)
-    ? innerC.replace(RegExp(`${SIDE_SPLIT_SYM}`),'\n---\n')
-    : innerC.split('@@@')[0];
+    // ? innerC.replace(RegExp(`${SIDE_SPLIT_SYM}`),'\n---\n')
+    ? innerC.split('@@@').slice(1).join('')
+    : '';
 
   const cardCtx = useMemo(() => ({
     path:path,setPath:setPath,
@@ -298,74 +311,99 @@ export const Card = forwardRef(({
   }
 
   const UpperTools:any=(
-    <HStack gap={'3px'}h={'30px'}>
-      {hovered&&(
-        <>
-          {(groupTp!=="multiple_fwd"&&groupTp!=='single')&&(
-            <HStack
-              className={'optionsStack'}
-              onClick={async(e:any)=>{
-                e.stopPropagation();
-                e.preventDefault();
-              }}>
-            {fwdParts.map((f:any,i:number)=>(
-              <div key={i} onClick={()=>setOption(i)}
-                className={i===option?'selectedOption option':'option'}>
-                <Sh value={f}/>
-              </div>
-            ))}
-            </HStack>
-          )}
-          <Spacer/>
-          <Path path={path}/>
-          <VStack h={'30px'}gap={0}>
-            <IconButton
-              fontSize={'16px'}
-              variant={'ghost'} h={'15px'}minW={'22px'}
-              onClick={(e:any)=>{
-                setFontSize((sz:any)=>sz+1);
-                e.stopPropagation();
-              }}>
-              <LuChevronUp
-                style={{height:'17px',width:'17px'}}
-              />
-            </IconButton>
-            <IconButton
-              variant={'ghost'} h={'15px'}minW={'22px'}
-              fontSize={'16px'}
-              onClick={(e:any)=>{
-                setFontSize((sz:any)=>Math.max(sz-1,10));
-                e.stopPropagation();
-              }}>
-              <LuChevronDown
-                style={{height:'17px',width:'17px'}}
-              />
-            </IconButton>
-          </VStack>
-          <IconButton
-            variant={'ghost'} h={'30px'}minW={'30px'}
-            onClick={(e:any)=>{
-              setHide((h:any)=>!h);
-              e.stopPropagation();
-            }}
-          >
-            {hide===true?(
-              <LuChevronDown/>
-            ):(
-              <LuChevronUp />
+    <VStack w={'100%'}>
+      <HStack gap={'3px'}h={'30px'} w={'100%'}>
+        {hovered&&(
+          <>
+            {path.length > 1&&(
+              <Path path={path}/>
             )}
-          </IconButton>
-          <Clip
-            value={c}
-            props={{
-              variant:'ghost',
-              h:'30px',maxW:'20px',minW:'30px',
-              p:'5px',
-            }}
-          />
-        </>
+            <Spacer/>
+            <VStack h={'30px'}gap={0} className="pale">
+              <IconButton
+                fontSize={'16px'}
+                variant={'ghost'} h={'15px'}minW={'22px'}
+                onClick={(e:any)=>{
+                  setFontSize((sz:any)=>sz+1);
+                  e.stopPropagation();
+                }}>
+                <LuChevronUp
+                  style={{height:'17px',width:'17px'}}
+                  />
+              </IconButton>
+              <IconButton
+                variant={'ghost'} h={'15px'}minW={'22px'}
+                fontSize={'16px'}
+                onClick={(e:any)=>{
+                  setFontSize((sz:any)=>Math.max(sz-1,10));
+                  e.stopPropagation();
+                }}>
+                <LuChevronDown
+                  style={{height:'17px',width:'17px'}}
+                  />
+              </IconButton>
+            </VStack>
+            <IconButton
+              className="pale"
+              variant={'ghost'} h={'30px'}minW={'30px'}
+              onClick={(e:any)=>{
+                setHide((h:any)=>!h);
+                e.stopPropagation();
+              }}
+              >
+              {hide===true?(
+                <LuChevronDown/>
+              ):(
+                <LuChevronUp />
+              )}
+            </IconButton>
+            <Box className="pale">
+              <Clip
+                value={c}
+                props={{
+                  variant:'ghost',
+                  h:'30px',maxW:'20px',minW:'30px',
+                  p:'5px',
+                }}
+                />
+            </Box>
+          </>
+        )}
+      </HStack>
+      {(groupTp!=="multiple_fwd"&&groupTp!=='single')&&(
+        <HStack
+          w={'100%'}
+          className={'optionsStack'}
+          onClick={async(e:any)=>{
+            e.stopPropagation();
+            e.preventDefault();
+          }}>
+        <Accordion.Root collapsible defaultValue={["b"]}>
+          <Accordion.Item value={fwdParts[option]}>
+            <Accordion.ItemTrigger w={'100%'}>
+              <Box w={'100%'}>
+                <Sh value={fwdParts[option]}/>
+              </Box>
+              <Accordion.ItemIndicator />
+            </Accordion.ItemTrigger>
+            <Accordion.ItemContent>
+              {fwdParts
+                .map((f:any,i:number)=>(
+                  (i === option)
+                    ? (<></>)
+                    : (<Box onClick={()=>setOption(i)}>
+                      <Accordion.ItemBody key={i}>
+                        <Sh value={f}/>
+                      </Accordion.ItemBody>
+                    </Box>)
+              ))}
+            </Accordion.ItemContent>
+          </Accordion.Item>
+        </Accordion.Root>
+        </HStack>
       )}
-    </HStack>);
+    </VStack>
+    );
 
   previewStyle.fontSize=`${fontSize}px`
 

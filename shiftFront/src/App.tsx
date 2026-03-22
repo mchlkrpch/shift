@@ -87,25 +87,36 @@ const ns: object={
 // ---
 // fifth
 // `
+import { Provider } from 'react-redux';
+import store from "./storage";
+import SpaceRouter from "./pages/auth";
+import { BrowserRouter } from "react-router-dom";
+import { NavigateSetter } from "./pages/utils";
 
 function App() {
   const [curNs,setNs]=useState(ns) as any;
   return (
     <>
-      <Box
-        w={'400px'}
-        p={'10px'}
-      >
-        <GraphCtx.Provider value={{
-          ns:curNs,setNs:setNs,
-        }}>
-          <Card
-            id={'1'}
-            content={cntStr}
-            tp={'ghost'}
-          />
-        </GraphCtx.Provider>
-      </Box>
+		<Provider store={store}>
+		{/* <Box
+			w={'400px'}
+			p={'10px'}
+		>
+			<GraphCtx.Provider value={{
+			ns:curNs,setNs:setNs,
+			}}>
+			<Card
+				id={'1'}
+				content={cntStr}
+				tp={'ghost'}
+			/>
+			</GraphCtx.Provider>
+		</Box> */}
+		<BrowserRouter>
+			<NavigateSetter />
+			<SpaceRouter />
+		</BrowserRouter>
+		</Provider>
     </>
   )
 }

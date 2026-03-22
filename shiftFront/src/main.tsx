@@ -116,7 +116,7 @@ createRoot(document.getElementById('root')!).render(
     {/* <Provider > */}
       <ChakraProvider value={defaultSystem}>
         <ColorModeProvider>
-          <ColorModeButton />
+          {/* <ColorModeButton /> */}
           <App />
         </ColorModeProvider>
       </ChakraProvider>

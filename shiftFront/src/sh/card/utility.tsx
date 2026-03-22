@@ -24,7 +24,7 @@ import { match } from '../../utility';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.css';
-import { Box,Button } from '@chakra-ui/react';
+import { Box } from '@chakra-ui/react';
 import { Clip } from '../clip';
 
 export const SIDE_SPLIT_SYM: string = '@@@'
@@ -74,7 +74,8 @@ const CodeBlock = ({ node, inline, className, children, ...props }: any) => {
         position="relative" my={4}
         borderRadius="md" overflow="hidden"
         border={'1px solid color-mix(in srgb, #666 25%, transparent)'}
-        mr={'6px'}
+        // backgroundColor={'color-mix(in srgb, #666 15%, transparent)'}
+        // mr={'6px'}
       >
         <Box
           color={"gray.400"}
