@@ -1,4 +1,5 @@
 import { Clipboard, IconButton } from "@chakra-ui/react";
+import { LuCopy } from "react-icons/lu";
 
 export function Clip({value, props}:any) {
   return (
@@ -12,8 +13,13 @@ export function Clip({value, props}:any) {
             e.preventDefault();
             await navigator.clipboard.writeText(value);
           }}
+          // opacity={.3}
         >
-          <Clipboard.Indicator/>
+          <Clipboard.Indicator>
+            <LuCopy
+              style={{width: props.iconSz, height: props.iconSz}}
+            />
+          </Clipboard.Indicator>
         </IconButton>
       </Clipboard.Trigger>
     </Clipboard.Root>

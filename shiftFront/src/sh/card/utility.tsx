@@ -71,11 +71,11 @@ const CodeBlock = ({ node, inline, className, children, ...props }: any) => {
   if (!inline && match) {
     return (
       <Box
-        position="relative" my={4}
-        borderRadius="md" overflow="hidden"
-        border={'1px solid color-mix(in srgb, #666 25%, transparent)'}
-        // backgroundColor={'color-mix(in srgb, #666 15%, transparent)'}
-        // mr={'6px'}
+        position="relative"
+        borderRadius="3px"
+        overflow="hidden"
+        backgroundColor={'color-mix(in srgb, black 20%, transparent)'}
+        p={0}
       >
         <Box
           color={"gray.400"}
@@ -92,15 +92,16 @@ const CodeBlock = ({ node, inline, className, children, ...props }: any) => {
               variant: 'ghost',
               h:'20px',minW:'20px',
               p:'5px',
+              iconSz: '15px',
             }}
           />
         </Box>
         <Box 
-          as="pre" overflowX="auto"
-          padding={'10px'}
+          as="pre"
+          overflowX="auto"
+          p={'4px'}
         >
           <code {...props}
-            padding={'5px'}
           >
             {children}
           </code>
@@ -130,6 +131,7 @@ export const shComponents:Components={
   // Списки
   ul: ({ node, ...props }) => <ul style={{ paddingLeft: '20px', listStyleType: 'disc' }} {...props} />,
 	ol: ({ node, ...props }) => <ol style={{ paddingLeft: '0px' }} {...props} />,
+  p: ({ node, ...props }) => <p style={{ marginLeft: '4px', padding: '2px 0px' }} {...props} />,
   // Элементы списка. Можно добавить кастомные маркеры или логику.
   li: ({ node, ...props }) => <li style={{ marginBottom: '0.4em' }} {...props} />,
   code: CodeBlock,
@@ -219,17 +221,17 @@ export function getPreviewStyle(tp: PreviewTp) {
   return match(tp,{
     'embed':{
       width:'100%',
-      padding:'3px 4px',
+      padding:'0px',
     },
     'free':{
       width:'100%',
-      padding: '3px 4px',
-      borderRadius: '7px',
+      padding: '0px',
+      borderRadius: '0px',
       border: '1px solid color-mix(in srgb, #eee 15%, transparent)',
     },
     'ghost':{
       width:'100%',
-      padding: '3px 4px',
+      padding: '0px',
       borderRadius: '7px',
     },
   })

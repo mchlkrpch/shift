@@ -48,9 +48,11 @@ import {
 export const cardStyle = css`
 display: flex;
 flex-direction: column;
-padding: 10px;
-:hover{
-}
+padding: 0;
+border: 1px solid color-mix(in srgb, #ccc 5%, transparent);
+background-color: color-mix(in srgb, #ccc 5%, transparent);
+overflow: hidden;
+
 .chakra-stack{
   scrollbar-width: none;
 }
@@ -65,6 +67,10 @@ padding: 10px;
   overflow-x: auto;
   white-space: nowrap;
   contain: content;
+}
+[data-scope="accordion"]{
+  border-bottom: none;
+  padding: 0;
 }
 .sh_string{
   height: 20px;
@@ -265,8 +271,7 @@ export const Card = forwardRef(({
     'multiple': c.split(OPTION_SPLIT_SYM)[option],
   })
 
-  let hiddenInnerC:string = (hide===false)
-    // ? innerC.replace(RegExp(`${SIDE_SPLIT_SYM}`),'\n---\n')
+  let hiddenInnerC:string = (!true===false)
     ? innerC.split('@@@').slice(1).join('')
     : '';
 
@@ -311,65 +316,7 @@ export const Card = forwardRef(({
   }
 
   const UpperTools:any=(
-    <VStack w={'100%'}>
-      <HStack gap={'3px'}h={'30px'} w={'100%'}>
-        {hovered&&(
-          <>
-            {path.length > 1&&(
-              <Path path={path}/>
-            )}
-            <Spacer/>
-            <VStack h={'30px'}gap={0} className="pale">
-              <IconButton
-                fontSize={'16px'}
-                variant={'ghost'} h={'15px'}minW={'22px'}
-                onClick={(e:any)=>{
-                  setFontSize((sz:any)=>sz+1);
-                  e.stopPropagation();
-                }}>
-                <LuChevronUp
-                  style={{height:'17px',width:'17px'}}
-                  />
-              </IconButton>
-              <IconButton
-                variant={'ghost'} h={'15px'}minW={'22px'}
-                fontSize={'16px'}
-                onClick={(e:any)=>{
-                  setFontSize((sz:any)=>Math.max(sz-1,10));
-                  e.stopPropagation();
-                }}>
-                <LuChevronDown
-                  style={{height:'17px',width:'17px'}}
-                  />
-              </IconButton>
-            </VStack>
-            <IconButton
-              className="pale"
-              variant={'ghost'} h={'30px'}minW={'30px'}
-              onClick={(e:any)=>{
-                setHide((h:any)=>!h);
-                e.stopPropagation();
-              }}
-              >
-              {hide===true?(
-                <LuChevronDown/>
-              ):(
-                <LuChevronUp />
-              )}
-            </IconButton>
-            <Box className="pale">
-              <Clip
-                value={c}
-                props={{
-                  variant:'ghost',
-                  h:'30px',maxW:'20px',minW:'30px',
-                  p:'5px',
-                }}
-                />
-            </Box>
-          </>
-        )}
-      </HStack>
+    <VStack w={'100%'} gap={0}>
       {(groupTp!=="multiple_fwd"&&groupTp!=='single')&&(
         <HStack
           w={'100%'}
@@ -409,34 +356,90 @@ export const Card = forwardRef(({
 
   return (
     <CardCtx.Provider value={cardCtx}>
-      <div css={cardStyle} style={previewStyle}
+      <HStack
         onMouseEnter={()=>{
           setHovered(true);
         }}
         onMouseLeave={()=>{
           setHovered(false);
         }}
-        onClick={async ()=>{
-          await setIsEdit(true);
-        }}
+        alignItems={'start'}
       >
-        {isEdit?(
-          <div
-            ref={inputRef}
-            role='textbox'
-            contentEditable
-            suppressContentEditableWarning={true}
-            defaultValue={c}
-            onBlur={onBlurCb}
-            onKeyDown={onKeyDownCb}
-          />
-        ):(
-          <>
-            {UpperTools}
-            <Sh value={hiddenInnerC}/>
-          </>
-        )}
-      </div>
+        <div
+          css={cardStyle}
+          style={previewStyle}
+          onClick={async ()=>{
+            await setIsEdit(true);
+          }}
+        >
+          {isEdit?(
+            <div
+              ref={inputRef}
+              role='textbox'
+              contentEditable
+              suppressContentEditableWarning={true}
+              defaultValue={c}
+              onBlur={onBlurCb}
+              onKeyDown={onKeyDownCb}
+            />
+          ):(
+            <>
+              {UpperTools}
+              <Sh value={hiddenInnerC}/>
+            </>
+          )}
+        </div>
+        <VStack
+          // h={'100%'}
+          justifyContent={'start'}
+          alignItems={'flex-start'}
+          justifyItems={'start'}
+          alignContent={'start'}
+          display={'flex'}
+          flexDirection={'column'}
+          gap={'3px'}
+          h={'100%'} w={'fit-content'}
+          style={{
+            opacity: hovered===true? 1:0,
+          }}
+          >
+          {!isEdit&&(
+            <>
+              <Box className="pale">
+                <Clip
+                  value={c}
+                  props={{
+                    variant:'ghost',
+                    h:'20px',maxW:'20px',minW:'20px',
+                    p:'5px',
+                    iconSz: '15px',
+                  }}
+                  />
+              </Box>
+              <IconButton
+                fontSize={'16px'}
+                variant={'ghost'} h={'15px'}minW={'22px'}
+                onClick={(e:any)=>{
+                  setFontSize((sz:any)=>sz+1);
+                  e.stopPropagation();
+                }}>
+                  +
+              </IconButton>
+              <IconButton
+                variant={'ghost'} h={'15px'}minW={'22px'}
+                fontSize={'16px'}
+                onClick={(e:any)=>{
+                  setFontSize((sz:any)=>Math.max(sz-1,10));
+                  e.stopPropagation();
+                }}>
+                  -
+              </IconButton>
+              <VStack h={'30px'} gap={0} className="pale">
+              </VStack>
+            </>
+          )}
+          </VStack>
+      </HStack>
     </CardCtx.Provider>
   )
 });
