@@ -8,6 +8,8 @@ import { Navigate, Route, Routes, useNavigate, useSearchParams } from "react-rou
 import { FcGoogle } from "react-icons/fc";
 import store from "../storage";
 import { Profile } from "./profile";
+import { Header } from "../components/header";
+import { Feed } from "./feed";
 
 export async function loginGoogle(){
 	try {
@@ -345,8 +347,9 @@ class SpaceRouter extends React.Component<any,any> {
                     <Route
 						path='/'
 						element={
-							// <GraphPage/>
-                            <>g</>
+                            <>
+								<Feed/>
+							</>
 						}
 					/>
 				</Routes>

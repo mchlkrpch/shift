@@ -1,11 +1,11 @@
-// @ts-expect-error: to ignore empy import react 
-
 /** @jsxImportSource @emotion/react */
 import { css } from '@emotion/react';
 
 import { Box, Spacer } from '@chakra-ui/react';
 // import React from 'react';
 import { GrHomeRounded } from "react-icons/gr";
+import { LuUserRound } from 'react-icons/lu';
+import { History } from '../pages/utils';
 
 const headerStyle = css`
 display: flex;
@@ -36,10 +36,30 @@ export const Header=()=>{
             <Box w={'450px'}
                 className='panel'
                 justifySelf={'center'}>
-                <Box className={'hItem'} rounded={'full'}>
-                    <GrHomeRounded size={'22px'}/>
+                <Box
+                    className={'hItem'}
+                    rounded={'full'}
+                    onClick={()=>{
+                        History.push('/')
+                    }}
+                >
+                    <GrHomeRounded
+                        size={'22px'}
+                    />
                 </Box>
                 <Spacer/>
+                <Box
+                    className={'hItem'}
+                    rounded={'full'}
+                    onClick={()=>{
+                        History.push('/profile')
+                    }}
+                >
+                    <LuUserRound
+                        size={'22px'}
+                    />
+                    Profile
+                </Box>
             </Box>
         </div>
 

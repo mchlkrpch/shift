@@ -271,7 +271,7 @@ export const Card = forwardRef(({
     'multiple': c.split(OPTION_SPLIT_SYM)[option],
   })
 
-  let hiddenInnerC:string = (!true===false)
+  let hiddenInnerC:string = (hide===false)
     ? innerC.split('@@@').slice(1).join('')
     : '';
 
@@ -317,7 +317,7 @@ export const Card = forwardRef(({
 
   const UpperTools:any=(
     <VStack w={'100%'} gap={0}>
-      {(groupTp!=="multiple_fwd"&&groupTp!=='single')&&(
+      {(groupTp!=="multiple_fwd")&&(
         <HStack
           w={'100%'}
           className={'optionsStack'}
@@ -328,10 +328,22 @@ export const Card = forwardRef(({
         <Accordion.Root collapsible defaultValue={["b"]}>
           <Accordion.Item value={fwdParts[option]}>
             <Accordion.ItemTrigger w={'100%'}>
-              <Box w={'100%'}>
+              <Box
+                w={'100%'}
+                onClick={(e:any)=>{
+                  setHide((h:any)=>!h)
+                  e.stopPropagation()
+                  e.preventDefault()
+                }}
+              >
+                {path.length>1&&(
+                  <Box pl={'4px'} m={0}>
+                    <Path path={path}></Path>
+                  </Box>
+                )}
                 <Sh value={fwdParts[option]}/>
               </Box>
-              <Accordion.ItemIndicator />
+              <Accordion.ItemIndicator/>
             </Accordion.ItemTrigger>
             <Accordion.ItemContent>
               {fwdParts

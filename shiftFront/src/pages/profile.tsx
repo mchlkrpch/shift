@@ -194,6 +194,8 @@ export function Profile(props:any){
                             </GraphCtx.Provider>
                         </Box>
 
+                        {/* stats */}
+
                         <HStack w={'100%'}
                             alignItems={'stretch'}
                             justifyContent={'stretch'}
