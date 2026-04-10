@@ -14,22 +14,16 @@ import store from '../storage';
 
 /** @jsxImportSource @emotion/react */
 import { css } from '@emotion/react';
-// import { useParams } from 'react-router-dom';
-import { getUser, updateUserData } from '../appwrite/client';
+import {
+    uReq,
+    // getUser, updateUserData
+} from '../appwrite/service';
 import { logOut } from './auth';
 import { Card } from '../sh/card/card';
 import { GraphCtx } from '../App';
+import { Header } from '../components/header';
 
 export const unknownPhotoUrl: string = "https://i.postimg.cc/MKZzBCG2/spaced-gray.png";
-// export function ProfileWrapper() {
-// 	const { profileid } = useParams();
-// 	return (
-// 		<Profile
-// 			key={profileid}
-// 			id={profileid}
-// 		/>
-// 	)
-// }
 
 export function SpAvatar(props:any) {
 	let url = unknownPhotoUrl
@@ -66,6 +60,7 @@ def add_numbers(a, b)->typng.Any:
 	"""Function to return the sum of two numbers."""
 	return a + b
 \`\`\`
+this code provide strong power of wibe coding
 ===
 second
 @@@
@@ -87,6 +82,7 @@ const ns: object={
 
 const profileStyle=css`
 display: flex;
+flex-direction: column;
 align-items: center;
 width: 100%;
 max-width: 450px;
@@ -128,7 +124,7 @@ export function Profile(props:any){
     const [curNs,setNs]=useState(ns) as any;
 
 	const f = async()=>{
-		const newOtherUserData = await getUser(props.id) as any;
+		const newOtherUserData = await uReq.read(props.id) as any;
 		setLoading(false);
 		setLocalUserData(newOtherUserData)
 	}
@@ -141,98 +137,103 @@ export function Profile(props:any){
 		)
 	} else {
 		return (
-			<div
-                // @ts-expect-error
-                css={profileStyle}
-                >
-				<VStack
-					mt={'25px'}
-					w={'100%'}
-					gap={"20px"}
-					overflowY={'auto'}
-					scrollbarWidth={'none'}
-				>
-                    <Box
-                        minH={'70px'}
-                        maxW={'70px'}
-                        h={'70px'}
-                        w={'70px'}
-                        mb={'-15px'}
-                        >
-                        <SpAvatar
-                            src={localUserData.photo_url}
-                            username={localUserData.username}
-                            backgroundColor={'white'}
+            <>
+                <Header/>
+                <div
+                    // @ts-expect-error
+                    css={profileStyle}
+                    >
+                    <VStack
+                        mt={'25px'}
+                        w={'100%'}
+                        maxW={'450px'}
+                        mx={'auto'}
+                        gap={"20px"}
+                        overflowY={'auto'}
+                        scrollbarWidth={'none'}
+                    >
+                        <Box
+                            minH={'70px'}
+                            maxW={'70px'}
                             h={'70px'}
                             w={'70px'}
-                        />
-                    </Box>
-
-                    <Text opacity={0.4} fontSize={'12px'}>Profile settings</Text>
-                    <Box
-                        className={'block'}
-                        mt={'-15px'}
-                    >
-                        <Input ref={usernameRef} placeholder='username'
-                            defaultValue={localUserData.username}
-                        />
-                        <Input ref={avatarRef} placeholder='avatar link'
-                            defaultValue={localUserData.photo_url}
-                        />
-                    </Box>
-
-                    <Text opacity={0.4} fontSize={'12px'}>bio</Text>
-                    <Box mt={'-15px'} w={'100%'} className={'block'}>
-                        <GraphCtx.Provider value={{
-                            ns:curNs,setNs:setNs,
-                        }}>
-                            <Card
-                                id={'1'}
-                                content={cntStr}
-                                tp={'ghost'}
+                            mb={'-15px'}
+                            >
+                            <SpAvatar
+                                src={localUserData.photo_url}
+                                username={localUserData.username}
+                                backgroundColor={'white'}
+                                h={'70px'}
+                                w={'70px'}
                             />
-                        </GraphCtx.Provider>
-                    </Box>
+                        </Box>
 
-                    <HStack w={'100%'}
-                        alignItems={'stretch'}
-                        justifyContent={'stretch'}
-                    >
-                        <Button
-                            flex={1}
-                            variant={'outline'}
-                            onClick={async ()=>{
-                                const newUserData = JSON.parse(JSON.stringify(localUserData))
-                                newUserData.username = usernameRef.current?.value||'';
-                                newUserData.photo_url = avatarRef.current?.value||'';
-                                newUserData.bio = bioRef.current?.value||'';
-                                await updateUserData(
-                                    user,
-                                    newUserData,
-                                    true
-                                )
-                                setLocalUserData(newUserData);
-                            }}
+                        <Text opacity={0.4} fontSize={'12px'}>Profile settings</Text>
+                        <Box
+                            className={'block'}
+                            mt={'-15px'}
                         >
-                            save
-                        </Button>
-                        <Button
-                            flex={1}
-                            variant={'outline'}
-                            colorPalette={'red'}
-                            onClick={()=>{
-                                const SpaceRouter=store.getState().components['SpaceRouter']
-                                SpaceRouter.setState({
-                                    user:null,
-                                })
-                                logOut()
-                            }}
+                            <Input ref={usernameRef} placeholder='username'
+                                defaultValue={localUserData.username}
+                            />
+                            <Input ref={avatarRef} placeholder='avatar link'
+                                defaultValue={localUserData.photo_url}
+                            />
+                        </Box>
+
+                        <Text opacity={0.4} fontSize={'12px'}>bio</Text>
+                        <Box mt={'-15px'} w={'100%'} className={'block'}>
+                            <GraphCtx.Provider value={{
+                                ns:curNs,setNs:setNs,
+                            }}>
+                                <Card
+                                    id={'1'}
+                                    content={cntStr}
+                                    tp={'ghost'}
+                                />
+                            </GraphCtx.Provider>
+                        </Box>
+
+                        <HStack w={'100%'}
+                            alignItems={'stretch'}
+                            justifyContent={'stretch'}
                         >
-                            log out
-                        </Button>
-                    </HStack>
-                </VStack>
-			</div>
+                            <Button
+                                flex={1}
+                                variant={'outline'}
+                                onClick={async ()=>{
+                                    const newUserData = JSON.parse(JSON.stringify(localUserData))
+                                    newUserData.username = usernameRef.current?.value||'';
+                                    newUserData.photo_url = avatarRef.current?.value||'';
+                                    newUserData.bio = bioRef.current?.value||'';
+                                    await uReq.update(
+                                        user,
+                                        newUserData,
+                                        // true
+                                    )
+                                    setLocalUserData(newUserData);
+                                }}
+                            >
+                                save
+                            </Button>
+                            <Button
+                                flex={1}
+                                variant={'outline'}
+                                colorPalette={'red'}
+                                onClick={()=>{
+                                    const SpaceRouter=store.getState().components['SpaceRouter']
+                                    SpaceRouter.setState({
+                                        user:null,
+                                    })
+                                    logOut()
+                                }}
+                            >
+                                log out
+                            </Button>
+                        </HStack>
+                    </VStack>
+                </div>
+            </>
 		)
 	}
 }

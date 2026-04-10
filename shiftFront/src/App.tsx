@@ -43,6 +43,9 @@ export const useGraphCtx = ()=>{
 const cntStr=`first
 @@@
 second<id=2>third<id=2>fourth
+
+d
+
 \`\`\`python
 import typing;
 def add_numbers(a, b)->typng.Any:

@@ -1,7 +1,9 @@
 import React, { useEffect, useRef, useState } from "react";
-import { spaced_client, fetch_user, spaced_account } from "../appwrite/client";
+import {
+	spaced_client,
+	fetch_user, spaced_account } from "../appwrite/service";
 import { History } from "./utils";
-import { Button, Container, Field, HStack, Icon, Input, Spinner, Text, VStack } from "@chakra-ui/react";
+import { Button, Container, HStack, Icon, Spinner, Text, VStack } from "@chakra-ui/react";
 import { Navigate, Route, Routes, useNavigate, useSearchParams } from "react-router-dom";
 import { FcGoogle } from "react-icons/fc";
 import store from "../storage";
@@ -16,7 +18,6 @@ export async function loginGoogle(){
 			`${baseUrl}/auth/callback`,
 			`${baseUrl}/auth`,
 		)
-    // console.log("???")
 	} catch (e) {
 		console.error(e);
 		return;
