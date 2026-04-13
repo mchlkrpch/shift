@@ -3,10 +3,12 @@ import { css } from "@emotion/react";
 import React, {
   createContext,
   forwardRef,
+  useCallback,
   useContext,
   useEffect,
   useImperativeHandle,
   useMemo,
+  useRef,
   useState
 } from 'react';
 import {
@@ -16,15 +18,19 @@ import {
   BreadcrumbList,
   BreadcrumbRoot,
   BreadcrumbSeparator,
+  CardHeader,
+  CardRoot,
   HStack,
   IconButton,
   Spacer,
+  Text,
   VStack,
 } from "@chakra-ui/react";
 import {
   Clip
 } from '../clip';
 import {
+  calcG,
   getGroupTp,
   getPreviewStyle,
   onKeyDownCb,
@@ -39,18 +45,20 @@ import { GraphCtx, useGraphCtx } from "../../App";
 import { renderToString } from "react-dom/server";
 import { Cell } from "./cell";
 import {
-  LuChevronDown,
-  LuChevronUp
-} from "react-icons/lu";
-
-
+  ReactFlow,
+  SelectionMode,
+  Handle,
+  Position,
+  getSmoothStepPath,
+  useReactFlow,
+  ReactFlowProvider
+} from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
 
 export const cardStyle = css`
 display: flex;
 flex-direction: column;
 padding: 0;
-border: 1px solid color-mix(in srgb, #ccc 5%, transparent);
-background-color: color-mix(in srgb, #ccc 5%, transparent);
 overflow: hidden;
 
 .chakra-stack{
@@ -124,6 +132,7 @@ overflow: hidden;
 }
 
 .pale{
+  display: flex;
   opacity: 0.4;
 }
 .pale:hover{
@@ -179,6 +188,11 @@ export const useCardCtx=()=>{
   return ctx;
 }
 
+import { IoMdHeart, IoMdHeartEmpty } from "react-icons/io";
+import { FaRegCommentAlt } from "react-icons/fa";
+import { DarkMode, LightMode, useColorMode } from "../../main";
+
+
 export declare type shCardProps = {
   id: string,      // id to edit content in backend
   content: string, // content itself
@@ -213,6 +227,8 @@ export const Card = forwardRef(({
   const [hide,setHide]=useState(true) as any;
   // current zoom of card's content (sz in px)
   const [fontSize,setFontSize]=useState(12) as any;
+  // const [visualize,setVisualize]=useState(false) as any;
+  const [like,setLike]=useState(12) as any;
 
   // ref of editable div
   const inputRef=React.createRef() as any;
@@ -327,7 +343,7 @@ export const Card = forwardRef(({
           }}>
         <Accordion.Root collapsible defaultValue={["b"]}>
           <Accordion.Item value={fwdParts[option]}>
-            <Accordion.ItemTrigger w={'100%'}>
+            <Accordion.ItemTrigger w={'100%'} gap={0}>
               <Box
                 w={'100%'}
                 onClick={(e:any)=>{
@@ -343,15 +359,19 @@ export const Card = forwardRef(({
                 )}
                 <Sh value={fwdParts[option]}/>
               </Box>
-              <Accordion.ItemIndicator/>
+              {fwdParts.length>1&&(
+                <Box mr={'5px'}>
+                  <Accordion.ItemIndicator/>
+                </Box>
+              )}
             </Accordion.ItemTrigger>
-            <Accordion.ItemContent>
+            <Accordion.ItemContent gap={0} p={0}>
               {fwdParts
                 .map((f:any,i:number)=>(
                   (i === option)
                     ? (<></>)
-                    : (<Box onClick={()=>setOption(i)}>
-                      <Accordion.ItemBody key={i}>
+                    : (<Box p={0} onClick={()=>setOption(i)}>
+                      <Accordion.ItemBody key={i} p={0}>
                         <Sh value={f}/>
                       </Accordion.ItemBody>
                     </Box>)
@@ -365,93 +385,131 @@ export const Card = forwardRef(({
     );
 
   previewStyle.fontSize=`${fontSize}px`
+  const textContent = <VStack
+    border={'1px solid color-mix(in srgb, white 3%, transparent)'}
+    gap={'10px'}
+    borderRadius={0}
+    p={0}
+    onMouseEnter={()=>{
+      setHovered(true);
+    }}
+    onMouseLeave={()=>{
+      setHovered(false);
+    }}
+    alignItems={'start'}
+  >
+    <div
+      css={cardStyle}
+      style={previewStyle}
+      onClick={async ()=>{
+        await setIsEdit(true);
+      }}
+    >
+      {isEdit?(
+        <div
+          ref={inputRef}
+          role='textbox'
+          contentEditable
+          suppressContentEditableWarning={true}
+          defaultValue={c}
+          onBlur={onBlurCb}
+          onKeyDown={onKeyDownCb}
+        />
+      ):(
+        <>
+          {UpperTools}
+          <Sh value={hiddenInnerC}/>
+        </>
+      )}
+    </div>
+    <Box
+      w={'100%'}
+      display={'flex'}
+      justifyContent={'center'}
+      alignItems={'center'}
+    >
+      <HStack
+        flexDirection={'row'}
+        justifyContent={'center'}
+        alignItems={'center'}
+        display={'flex'}
+        gap={'10px'}
+        w={'100%'}
+        p={'0px 5px'}
+        style={{
+          opacity: hovered===true? 1:0,
+        }}
+        >
+        {(!isEdit)&&(
+          <>
+            <IconButton
+              fontSize={'12px'}
+              fontWeight={600}
+              variant={'plain'}
+              pr={'2px'}
+              h={'23px'}minW={'23px'} gap={'4px'}
+              onClick={(e:any)=>{
+                setLike((l:any)=>!l)
+                e.stopPropagation();
+              }}>
+              {like?(
+                <IoMdHeartEmpty style={{width:'13px',height:'13px'}}/>
+              ):(
+                <IoMdHeart style={{width:'13px',height:'13px'}}/>
+              )}
+              12k
+            </IconButton>
+
+            <IconButton
+              fontSize={'12px'}
+              fontWeight={600}
+              variant={'plain'} h={'13px'}minW={'13px'} gap={'4px'}
+              pr={'2px'}
+              >
+              <FaRegCommentAlt style={{width:'13px',height:'13px'}}/>
+              38
+            </IconButton>
+
+
+            <Box className="pale">
+              <Clip
+                value={c}
+                props={{
+                  variant:'ghost',
+                  h:'22px',maxW:'22px',minW:'22px',
+                  p:'5px',
+                  iconSz: '15px',
+                }}
+                />
+            </Box>
+            <Spacer/>
+            <IconButton
+              fontSize={'16px'}
+              variant={'ghost'} h={'22px'}minW={'22px'}
+              onClick={(e:any)=>{
+                setFontSize((sz:any)=>sz+1);
+                e.stopPropagation();
+              }}>
+                +
+            </IconButton>
+            <IconButton
+              variant={'ghost'} h={'22px'}minW={'22px'}
+              fontSize={'16px'}
+              onClick={(e:any)=>{
+                setFontSize((sz:any)=>Math.max(sz-1,10));
+                e.stopPropagation();
+              }}>
+                -
+            </IconButton>
+          </>
+        )}
+        </HStack>
+    </Box>
+  </VStack>
 
   return (
     <CardCtx.Provider value={cardCtx}>
-      <HStack
-        onMouseEnter={()=>{
-          setHovered(true);
-        }}
-        onMouseLeave={()=>{
-          setHovered(false);
-        }}
-        alignItems={'start'}
-      >
-        <div
-          css={cardStyle}
-          style={previewStyle}
-          onClick={async ()=>{
-            await setIsEdit(true);
-          }}
-        >
-          {isEdit?(
-            <div
-              ref={inputRef}
-              role='textbox'
-              contentEditable
-              suppressContentEditableWarning={true}
-              defaultValue={c}
-              onBlur={onBlurCb}
-              onKeyDown={onKeyDownCb}
-            />
-          ):(
-            <>
-              {UpperTools}
-              <Sh value={hiddenInnerC}/>
-            </>
-          )}
-        </div>
-        <VStack
-          // h={'100%'}
-          justifyContent={'start'}
-          alignItems={'flex-start'}
-          justifyItems={'start'}
-          alignContent={'start'}
-          display={'flex'}
-          flexDirection={'column'}
-          gap={'3px'}
-          h={'100%'} w={'fit-content'}
-          style={{
-            opacity: hovered===true? 1:0,
-          }}
-          >
-          {!isEdit&&(
-            <>
-              <Box className="pale">
-                <Clip
-                  value={c}
-                  props={{
-                    variant:'ghost',
-                    h:'20px',maxW:'20px',minW:'20px',
-                    p:'5px',
-                    iconSz: '15px',
-                  }}
-                  />
-              </Box>
-              <IconButton
-                fontSize={'16px'}
-                variant={'ghost'} h={'15px'}minW={'22px'}
-                onClick={(e:any)=>{
-                  setFontSize((sz:any)=>sz+1);
-                  e.stopPropagation();
-                }}>
-                  +
-              </IconButton>
-              <IconButton
-                variant={'ghost'} h={'15px'}minW={'22px'}
-                fontSize={'16px'}
-                onClick={(e:any)=>{
-                  setFontSize((sz:any)=>Math.max(sz-1,10));
-                  e.stopPropagation();
-                }}>
-                  -
-              </IconButton>
-              <VStack h={'30px'} gap={0} className="pale">
-              </VStack>
-            </>
-          )}
-          </VStack>
-      </HStack>
+      {textContent}
     </CardCtx.Provider>
   )
 });

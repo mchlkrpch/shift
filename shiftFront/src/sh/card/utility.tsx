@@ -232,7 +232,7 @@ export function getPreviewStyle(tp: PreviewTp) {
     'ghost':{
       width:'100%',
       padding: '0px',
-      borderRadius: '7px',
+      // borderRadius: '7px 7px 0px 0px',
     },
   })
 }
@@ -316,4 +316,281 @@ export const onKeyDownCb:any=async(
 			return;
 		}
 	}
+}
+
+export function topSort(ns: Record<string,string>) {
+  const used = new Set<string>();
+  const visiting = new Set<string>();
+  const res: { id: string; content: string }[] = [];
+  const getDependencies = (str: string): string[] => {
+    const deps = new Set<string>();
+    const regex = /<id=([^>]+)>/g;
+    let match;
+    while ((match = regex.exec(str)) !== null) {
+      deps.add(match[1]);
+    }
+    return Array.from(deps);
+  };
+  const dfs = (id: string) => {
+    if (visiting.has(id)) {
+      throw new Error(`id: ${id}`);
+    }
+    if (used.has(id)) {
+      return;
+    }
+    visiting.add(id);
+    const content = ns[id];
+    if (content !== undefined) {
+      const dependencies = getDependencies(content);
+      for (const depId of dependencies) {
+        if (ns[depId] !== undefined) {
+          dfs(depId);
+        }
+      }
+    }
+    visiting.delete(id);
+    used.add(id);
+    res.push({
+      id: id,
+      content: content
+    });
+  };
+  for (const id of Object.keys(ns)) {
+    dfs(id);
+  }
+  return res;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+type DataTp = {
+	forward: string[],
+	backward: string[],
+	id: string,
+  tp?: string,
+}
+
+export const parseRawCards = (ns: Record<string, string>): DataTp[] => {
+	return Object.entries(ns).map(([id, text]) => {
+		const options = text.split('===');		
+		const forward = options.map(opt => {
+			const parts = opt.split('@@@');
+			return parts[0] ? parts[0].trim() : '';
+		});
+		const backward = options.map(opt => {
+			const parts = opt.split('@@@');
+			return parts[1] ? parts[1].trim() : '';
+		});
+		return {
+			id,
+			forward,
+			backward,
+      tp: 'default_type'
+		};
+	});
+};
+
+export const calcEs = (datas: DataTp[]) => {
+	const edgesSet = new Set() as Set<string>;
+	const allNodeIds = new Set(datas.map(d => d.id));
+	const nodeContent: { [key: string]: string } = {};
+	const edges = [] as any;
+
+	datas.forEach(card => {
+		const concatenatedString = [...card.forward, ...card.backward].join(' ');
+		nodeContent[card.id] = concatenatedString;
+		const regex = /<id=(.*?)>/g;
+		let match;
+		while ((match = regex.exec(concatenatedString)) !== null) {
+			const sourceId = match[1];
+			if (sourceId) {
+				if (!edgesSet.has(`e-${sourceId}-${card.id}`)) {
+					edgesSet.add(`e-${sourceId}-${card.id}`);
+					allNodeIds.add(sourceId);
+					edges.push({
+						id: `e-${sourceId}-${card.id}`,
+						source: sourceId,
+						target: card.id,
+						type: 'SpEdge',
+					});
+				}
+			}
+		}
+	});
+	return edges;
+}
+
+export const buildG = (rawNs: Record<string, string>) => {
+	const datas = parseRawCards(rawNs); 
+	const edges: {id:string;source:string;target:string,type:string}[] = [];
+	const nodeContent: { [key: string]: string } = {};
+	const allNodeIds = new Set(datas.map(d => d.id));
+	const edgesSet = new Set() as Set<string>;
+	datas.forEach(card => {
+		const concatenatedString = [...card.forward, ...card.backward].join(' ');
+		nodeContent[card.id] = concatenatedString;
+		const regex = /<id=(.*?)>/g;
+		let match;
+		while ((match = regex.exec(concatenatedString)) !== null) {
+			const sourceId = match[1];
+			if (sourceId) {
+				if (!edgesSet.has(`e-${sourceId}-${card.id}`)) {
+					edgesSet.add(`e-${sourceId}-${card.id}`)
+					allNodeIds.add(sourceId);
+					edges.push({
+							id: `e-${sourceId}-${card.id}`,
+							source: sourceId,
+							target: card.id,
+							type:'SpEdge',
+					});
+				}
+			}
+		}
+	});
+  const positions: { [key: string]: { x: number; y: number } } = {};
+	const inDegree: { [key: string]: number } = {};
+	const adj: { [key: string]: string[] } = {};
+    allNodeIds.forEach(id => {
+		inDegree[id] = 0;
+		adj[id] = [];
+	});
+	
+    edges.forEach(edge => {
+		if (inDegree[edge.target] !== undefined) {
+			inDegree[edge.target]++;
+		}
+		if (adj[edge.source]) {
+			adj[edge.source].push(edge.target);
+		}
+	});
+	
+    const queue: string[] = [];
+	allNodeIds.forEach(id => {
+		if (inDegree[id] === 0) {
+			queue.push(id);
+		}
+	});
+	
+    const levelMap: { [key: number]: string[] } = {};
+	let level = 0;
+	while (queue.length > 0) {
+		const levelSize = queue.length;
+		if (!levelMap[level]) {
+			levelMap[level] = [];
+		}
+		for (let i = 0; i < levelSize; i++) {
+			const u = queue.shift()!;
+			levelMap[level].push(u);
+			if (adj[u]) {
+				adj[u].forEach(v => {
+					if (inDegree[v] !== undefined) {
+						inDegree[v]--;
+						if (inDegree[v] === 0) {
+							queue.push(v);
+						}
+					}
+				});
+			}
+		}
+		level++;
+	}
+	
+    const ySpacing = 150;
+	const xSpacing = 30;
+	Object.keys(levelMap).forEach(lvlStr => {
+		const currentLevel = parseInt(lvlStr, 10);
+		const nodesAtLevel = levelMap[currentLevel];
+		const levelWidth = nodesAtLevel.length * xSpacing;
+		const startX = -levelWidth / 2;
+		nodesAtLevel.forEach((nodeId, index) => {
+			positions[nodeId] = {
+				x: startX + index * xSpacing,
+				y: currentLevel * ySpacing,
+			};
+		});
+	});
+	
+    allNodeIds.forEach(id => {
+		if (!positions[id]) {
+			positions[id] = { x: Math.random() * 400, y: Math.random() * 400 };
+		}
+	});
+    
+	return [positions, edges];
+}
+
+// dagre импорты и настройки (без изменений)
+import dagre from '@dagrejs/dagre';
+const dagreGraph = new dagre.graphlib.Graph().setDefaultEdgeLabel(() => ({}));
+export const NodeWidth = 258;
+export const NodeHeight = 40;
+
+const getLayoutedElements = (nodes:any, edges:any, direction:string='TB') => {
+	const isHorizontal = direction === 'LR';
+	dagreGraph.setGraph({ rankdir: direction });
+	nodes.forEach((node:any) => {
+		dagreGraph.setNode(node.id, { width: NodeWidth-40, height: NodeHeight });
+	});
+	edges.forEach((edge:any) => {
+		dagreGraph.setEdge(edge.source, edge.target);
+	});
+	dagre.layout(dagreGraph);
+	const newNodes = nodes.map((node:any) => {
+		const nodeWithPosition = dagreGraph.node(node.id);
+		const newNode = {
+			...node,
+			targetPosition: isHorizontal ? 'left' : 'top',
+			sourcePosition: isHorizontal ? 'right' : 'bottom',
+			position: {
+				x: nodeWithPosition.x - NodeWidth / 2,
+				y: nodeWithPosition.y - 80,
+			},
+		};
+		return newNode;
+	});
+ 
+	return {nodes: newNodes, edges};
+};
+
+// 4. Обновленный calcG (принимает сырой объект ns)
+export const calcG = (rawNs: Record<string, string>) => {
+    // Сначала парсим данные
+    const parsedDatas = parseRawCards(rawNs);
+    
+	const newEdges = calcEs(parsedDatas);
+	const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(
+		parsedDatas, // передаем уже распарсенные DataTp[]
+		newEdges,
+		'TB',
+	);
+    
+	const newNs = layoutedNodes.map((n:any) => ({
+		id: n.id,
+		type: 'SpDef',
+		position: n.position,
+		data: {
+			forward: n.forward,
+			backward: n.backward,
+			id: n.id,
+			tp: n.tp,
+		}
+	}));
+    
+	return [newNs, layoutedEdges];
 }

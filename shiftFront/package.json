@@ -12,8 +12,10 @@
   "dependencies": {
     "@chakra-ui/icons": "^2.2.4",
     "@chakra-ui/react": "^3.34.0",
+    "@dagrejs/dagre": "^3.0.0",
     "@emotion/core": "^11.0.0",
     "@emotion/react": "^11.14.0",
+    "@xyflow/react": "^12.10.2",
     "appwrite": "^23.0.0",
     "highlight.js": "^11.11.1",
     "katex": "^0.16.38",
@@ -25,6 +27,7 @@
     "react-markdown": "^10.1.0",
     "react-redux": "^9.2.0",
     "react-router-dom": "^7.13.1",
+    "reactflow": "^11.11.4",
     "redux": "^5.0.1",
     "rehype-highlight": "^7.0.2",
     "rehype-katex": "^7.0.1",

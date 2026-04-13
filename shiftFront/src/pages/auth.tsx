@@ -10,6 +10,7 @@ import store from "../storage";
 import { Profile } from "./profile";
 import { Header } from "../components/header";
 import { Feed } from "./feed";
+import { Graph } from "../sh/graph/graph";
 
 export async function loginGoogle(){
 	try {
@@ -331,19 +332,19 @@ class SpaceRouter extends React.Component<any,any> {
 						}
 					/> */}
 					<Route path="/profile" element={
-						<Profile />
+						<Profile preview={false}/>
 						}
 					/>
 					{/* <Route path="/profile/:profileid" element={
 						<ProfileWrapper />
 						}
 					/> */}
-					{/* <Route
+					<Route
 						path=':route'
 						element={
-							<GraphPage/>
+							<Graph/>
 						}
-					/> */}
+					/>
                     <Route
 						path='/'
 						element={

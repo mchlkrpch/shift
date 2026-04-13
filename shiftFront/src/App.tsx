@@ -1,6 +1,4 @@
-import { createContext, useContext, useState } from "react";
-import { Box } from "@chakra-ui/react";
-import { Card } from "./sh/card/card";
+import { createContext, useContext } from "react";
 import 'katex/dist/katex.min.css';
 
 interface SpEditorI {
@@ -40,36 +38,6 @@ export const useGraphCtx = ()=>{
 	return ctx;
 }
 
-const cntStr=`first
-@@@
-second<id=2>third<id=2>fourth
-
-d
-
-\`\`\`python
-import typing;
-def add_numbers(a, b)->typng.Any:
-	"""Function to return the sum of two numbers."""
-	return a + b
-\`\`\`
-===
-second
-@@@
-segssges sgds
-`;
-const inner2:string=`inner
-@@@
-inner complex definition of something <id=3>`;
-const inner3:string=`inner second def
-@@@
-more simple definition`;
-
-const ns: object={
-  '1': cntStr,
-  '2': inner2,
-  '3': inner3,
-};
-
 // const cntStr=`first
 // ---
 // first
@@ -97,24 +65,9 @@ import { BrowserRouter } from "react-router-dom";
 import { NavigateSetter } from "./pages/utils";
 
 function App() {
-  const [curNs,setNs]=useState(ns) as any;
   return (
     <>
 		<Provider store={store}>
-		{/* <Box
-			w={'400px'}
-			p={'10px'}
-		>
-			<GraphCtx.Provider value={{
-			ns:curNs,setNs:setNs,
-			}}>
-			<Card
-				id={'1'}
-				content={cntStr}
-				tp={'ghost'}
-			/>
-			</GraphCtx.Provider>
-		</Box> */}
 		<BrowserRouter>
 			<NavigateSetter />
 			<SpaceRouter />

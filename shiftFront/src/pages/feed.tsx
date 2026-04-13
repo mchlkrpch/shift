@@ -2,7 +2,10 @@ import React from 'react';
 import { Header } from '../components/header';
 /** @jsxImportSource @emotion/react */
 import { css } from '@emotion/react';
-import { VStack } from '@chakra-ui/react';
+import { Box, Button, HStack, Input, Separator, VStack } from '@chakra-ui/react';
+import { Profile } from './profile';
+import { FaBook } from "react-icons/fa6";
+import { ID } from 'appwrite';
 
 const feedStyle=css`
 display: flex;
@@ -28,10 +31,34 @@ export const Feed=()=>{
                 overflowY={'auto'}
                 scrollbarWidth={'none'}
             >
+                {/* <Profile preview={true}/> */}
+                {/* continue study */}
+                <HStack w={'100%'}>
+                    <Input w={'100%'} placeholder="search" />
+                    <Button
+                        fontWeight={600} p={'10px 4px'}
+                        gap={'3px'}
+                        onClick={()=>{
+                            console.log('create new graph')
+                            const id: string = ID.unique();
+                            console.log('id',id)
+                            
+                            History.push('/')
+                        }}
+                    >
+                        new
+                        <FaBook style={{marginTop:'1px',height: '15px', width: '15px'}}/>
+                    </Button>
+                </HStack>
+                {/* <Separator w={'100%'} h={'1px'}/> */}
+                Continue Study
+                <Separator w={'100%'} h={'1px'}/>
+                Available Courses
+                {/* <Separator w={'100%'} h={'1px'}/> */}
                 {/* editor of selected graphs */}
                 {/* randing material */}
                 {/* ask questions */}
-                feed
+                {/* feed */}
             </VStack>
         </div>
     )
