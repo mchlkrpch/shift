@@ -172,7 +172,6 @@ export function SpEdge({
       <path
         id={id}
         fill="none"
-        // fill={'transparnt'}
         stroke="color-mix(in srgb, white 10%, transparent)"
         d={edgePath}
         strokeWidth={selected ? 2 : 1.5}
