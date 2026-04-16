@@ -425,7 +425,7 @@ export const Card = forwardRef(({
     style={{fontSize:`${fontSize}px`}}
     onClick={async ()=>setIsEdit(true)}>
     {options?.textEdit===true?(
-      <HStack justifyContent={'start'} alignItems={'start'} w={'100%'}>
+      <HStack justifyContent={'stretch'} alignItems={'stretch'} w={'100%'}>
         <Box flex={1} maxW={'50%'} w={'50%'} minW={0}>
           <div
             ref={inputRef}
@@ -441,7 +441,7 @@ export const Card = forwardRef(({
             }}
           />
         </Box>
-        <Separator h={'100%'} w={'1px'} orientation={'vertical'}/>
+        <Separator orientation={'vertical'} h={'auto'} minH={'100%'} w={'1px'} />
         <Box flex={1} w={'50%'} minW={0} pl={'10px'}>
           {OptionSwitcher}
           <Box w={'100%'} overflowX={'auto'}>
