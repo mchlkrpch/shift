@@ -176,6 +176,17 @@ export const contentCSS = css`
 .chakra-breadcrumb__link {
   gap: 4px;
 }
+
+
+//////////////////////////////////////////////////////
+// options switcher
+//////////////////////////////////////////////////////
+
+.optionsTrigger{
+  width: 100%;
+  gap: 0;
+}
+
 `;
 
 
@@ -185,17 +196,17 @@ const CardPath:any=({path}:any)=>{
   const {setPath, setC}=useCardCtx()as any;
   return(
     <BreadcrumbRoot>
-      <BreadcrumbList>
-        {path.map((t:any,i:number)=>(
-          <BreadcrumbLink key={t+'_link'} onClick={(e:any)=>{
-              e.stopPropagation();
-              setPath(path.slice(0,i+1));
-              setC(ns[t])
-            }}>
-            <Card id={t} content={ns[t]} options={{stats:false,inner:true}}/>
-            {i!==path.length-1&&(<BreadcrumbSeparator key={'sep'+t}>/</BreadcrumbSeparator>)}
-          </BreadcrumbLink>))}
-      </BreadcrumbList>
+    <BreadcrumbList>
+      {path.map((t:any,i:number)=>(
+        <BreadcrumbLink key={t+'_link'} onClick={(e:any)=>{
+            e.stopPropagation();
+            setPath(path.slice(0,i+1));
+            setC(ns[t])
+          }}>
+          <Card id={t} content={ns[t]} options={{stats:false,inner:true}}/>
+          {i!==path.length-1&&(<BreadcrumbSeparator key={'sep'+t}>/</BreadcrumbSeparator>)}
+        </BreadcrumbLink>))}
+    </BreadcrumbList>
     </BreadcrumbRoot>
   )
 }
@@ -370,9 +381,10 @@ export const Card = forwardRef(({
     await setIsEdit(v=>!v);
   }
 
+
   const OptionSwitcher:any=(<>
       {(groupTp!=="multiple_fwd")&&(
-      <Accordion.Root collapsible defaultValue={["b"]}
+      <Accordion.Root collapsible defaultValue={[""]}
         mt={options.textEdit===true?'50px':0}
         onClick={async(e:any)=>{
           e.stopPropagation();
@@ -380,40 +392,35 @@ export const Card = forwardRef(({
         }}
       >
         <Accordion.Item value={fwdParts[option]}>
-          <Accordion.ItemTrigger w={'100%'} gap={0}>
-            <Box
-              w={'100%'}
-              onClick={(e:any)=>{
+          <Accordion.ItemTrigger className='optionsTrigger'>
+            <Box w={'100%'} onClick={(e:any)=>{
                 e.stopPropagation()
                 e.preventDefault()
                 setHide((h:any)=>!h)
-              }}
-            >
+              }}>
               {path.length>1&&(
                 <Box pl={'4px'} m={0}>
                   <CardPath path={path}/>
-                </Box>
-              )}
+                </Box>)}
               <Sh value={fwdParts[option]}/>
             </Box>
+
             {fwdParts.length>1&&(
-              <Box mr={'5px'}>
-                <Accordion.ItemIndicator/>
-              </Box>
+              <Accordion.ItemIndicator mr={'5px'}/>
             )}
           </Accordion.ItemTrigger>
 
           <Accordion.ItemContent gap={0} p={0}>
-            {fwdParts
-              .map((f:any,i:number)=>(
-                (i === option)
-                  ? (<span key={i}></span>)
-                  : (<Box key={i} p={0} onClick={()=>setOption(i)}>
-                    <Accordion.ItemBody key={i} p={0}>
-                      <Sh value={f}/>
-                    </Accordion.ItemBody>
-                  </Box>)
-            ))}
+          {fwdParts
+            .map((f:any,i:number)=>(
+            (i === option)
+              ? (<span key={i}></span>)
+              : (<Box key={i} p={0} onClick={()=>setOption(i)}>
+                <Accordion.ItemBody key={i} p={0}>
+                  <Sh value={f}/>
+                </Accordion.ItemBody>
+              </Box>)
+          ))}
           </Accordion.ItemContent>
         </Accordion.Item>
       </Accordion.Root>
