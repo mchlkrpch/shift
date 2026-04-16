@@ -24,7 +24,7 @@ export const Cell: any = forwardRef((
                 ref={ref}
                 id={id}
                 content={ns[id]}
-                tp={'embed'}
+                options={{inner:true}}
             />
         </span>
     )

@@ -108,7 +108,6 @@ export const gReq = new Repo(spaced_databases, APPWRITE_CONFIG.DATABASE_ID, APPW
 class UserService extends Repo<any> {
     async create(u: any) {
         try {
-            console.log('ud create:',u)
             const cell = {
                 'username': u.name,
                 'email': u.email,
@@ -137,8 +136,6 @@ class UserService extends Repo<any> {
             ]
         )
         const found = response.documents.length > 0
-        console.log('response.documents',response.documents)
-        
         if (found == true) {
             const ud =  response.documents[0]
             if (ud.repeats === null||ud.repeats===undefined) {
@@ -146,7 +143,6 @@ class UserService extends Repo<any> {
             } else {
                 ud.repeats = JSON.parse(ud.repeats);
             }
-            console.log('ud[getUserData]:', ud);
             return ud;
         }
         const ud = await this.create(u)
@@ -294,7 +290,6 @@ export async function fetch_user(acc: any) {
 	try {
 		const u = await acc.get();
 		const ud = await uReq.getUserData(u)
-		console.log('ud in fetch user:', ud)
 		store.dispatch({
 			type: 'set_user',
 			payload: [u,ud]

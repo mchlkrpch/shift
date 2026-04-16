@@ -12,6 +12,9 @@ interface SpEditorI {
 	// g:SpSubgraphView;setG: (g: SpSubgraphView)=>void;
 	// saveG:SpSubgraphView,setSaveG:(g: SpSubgraphView)=>void;
 	ns:any;setNs:any;
+	ref:any,
+	// sel:any;setSel:any;
+	// sel:any, //set_ns_s_ref:any,
 	// saveNs:any,setSaveNs:any;
 	// es:any;setEs:any;
 	

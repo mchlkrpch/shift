@@ -18,21 +18,17 @@ import {
     uReq,
 } from '../appwrite/service';
 import { logOut } from './auth';
-import { Card } from '../sh/card/card';
 import { GraphCtx } from '../App';
 import { Header } from '../components/header';
-import { topSort } from '../sh/card/utility';
 import { Graph } from '../sh/graph/graph';
 
 export const unknownPhotoUrl: string = "https://i.postimg.cc/MKZzBCG2/spaced-gray.png";
 
 export function SpAvatar(props:any) {
 	let url = unknownPhotoUrl
-	console.log('props.src',props.src)
 	if (props.src && props.src.slice(0,5)==='https') {
 		url=props.src
 	}
-	console.log('url:',url)
 	return (
 		<Box
 			border={props.border}
@@ -118,13 +114,13 @@ export function Profile(props:any){
 	}
 
 	const [localUserData,setLocalUserData] = useState(userData);
-    console.log('ld',localUserData)
 
 	const usernameRef = useRef<HTMLInputElement>(null);
 	const avatarRef = useRef<HTMLInputElement>(null);
 	const bioRef = useRef<HTMLInputElement>(null);
     const [curNs,setNs]=useState(ns) as any;
-    const sorted = topSort(ns as any);
+    // const [sel,setSel]=useState(Object.keys(ns));
+    const gRef=React.createRef() as any;
 
 	const f = async()=>{
 		const newOtherUserData = await uReq.read(props.id) as any;
@@ -139,7 +135,7 @@ export function Profile(props:any){
 			<Spinner/>
 		)
 	} else {
-        console.log(props.display)
+        // console.log(props.display)
         if (props.preview === false) {
             return (
                 <>
@@ -187,32 +183,12 @@ export function Profile(props:any){
                             </Box>
     
                             <Text opacity={0.4} fontSize={'12px'}>bio</Text>
-                            <Box mt={'-15px'} w={'100%'} className={'block'}>
-                                {/* <GraphCtx.Provider value={{
-                                    ns:curNs,setNs:setNs,
-                                }}>
-                                    <VStack
-                                        alignItems={'stretch'}
-                                        gap={'2px'}
-                                        display={'flex'}
-                                        w={'100%'}
-                                        mx={'auto'}
-                                    >
-                                        {sorted.map((item:any)=>{
-                                            return <>
-                                                <Card
-                                                    id={item.id}
-                                                    content={item.content}
-                                                    tp={'ghost'}
-                                                />
-                                            </>
-                                        })}
-                                    </VStack>
-                                </GraphCtx.Provider> */}
+                            <Box mt={'-15px'} w={'100%'} maxW={'600px'} className={'block'}>
                                 <GraphCtx.Provider value={{
                                     ns:curNs,setNs:setNs,
+                                    ref:gRef,
                                 }}>
-                                    <Graph/>
+                                    <Graph ref={gRef}/>
                                 </GraphCtx.Provider>
                             </Box>
     
@@ -233,7 +209,6 @@ export function Profile(props:any){
                                         await uReq.update(
                                             user,
                                             newUserData,
-                                            // true
                                         )
                                         setLocalUserData(newUserData);
                                     }}

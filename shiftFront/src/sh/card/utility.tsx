@@ -96,12 +96,14 @@ const CodeBlock = ({ node, inline, className, children, ...props }: any) => {
             }}
           />
         </Box>
-        <Box 
+        <Box
+          style={{scrollbarWidth: 'none'}}
           as="pre"
           overflowX="auto"
           p={'4px'}
         >
           <code {...props}
+            style={{scrollbarWidth: "none"}}
           >
             {children}
           </code>
@@ -216,25 +218,29 @@ export const shRemark: Plugin<[], Root> = () => {
   };
 };
 
-export declare type PreviewTp = 'embed'|'free'|'ghost'|undefined;
-export function getPreviewStyle(tp: PreviewTp) {
-  return match(tp,{
-    'embed':{
-      width:'100%',
-      padding:'0px',
-    },
-    'free':{
-      width:'100%',
-      padding: '0px',
-      borderRadius: '0px',
-      border: '1px solid color-mix(in srgb, #eee 15%, transparent)',
-    },
-    'ghost':{
-      width:'100%',
-      padding: '0px',
-      // borderRadius: '7px 7px 0px 0px',
-    },
-  })
+// export declare type PreviewTp = 'embed'|'free'|'ghost'|undefined;
+export function getPreviewStyle(tp: any) {
+  // return match(tp,{
+  //   'embed':{
+  //     width:'100%',
+  //     padding:'0px',
+  //   },
+  //   'free':{
+  //     width:'100%',
+  //     padding: '0px',
+  //     borderRadius: '0px',
+  //     border: '1px solid color-mix(in srgb, #eee 15%, transparent)',
+  //   },
+  //   'ghost':{
+  //     width:'100%',
+  //     padding: '0px',
+  //     // borderRadius: '7px 7px 0px 0px',
+  //   },
+  // })
+  return {
+    width:'100%',
+    padding: '0px',
+  }
 }
 
 export const md2sh=(

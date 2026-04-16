@@ -10,7 +10,6 @@ const History = {
         History.navigate(page);
 	},
 	loc: () => {
-        console.log('?', History.location)
 		return History.location.pathname;
 	},
 };
