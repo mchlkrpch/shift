@@ -52,11 +52,14 @@ export const contentCSS = css`
   outline: none;
   border: none;
   tab-index: 0;
-  display: flex;
+  // display: flex;
+  display: block;
   flex-direction: column;
   font-family: Roboto mono;
-  overflow-x: auto;
-  white-space: nowrap;
+  // overflow-x: auto;
+  overflow-x: hidden;
+  // white-space: nowrap;
+  white-space: pre-wrap;
   contain: content;
   scrollbar-width: none;
 }
@@ -67,13 +70,18 @@ export const contentCSS = css`
 }
 
 .sh_string{
-  height: 20px;
+  // height: 20px;
   border-bottom: 1px solid color-mix(in srgb, #555 25%, transparent);
   border-style: dotted;
-  overflow: hidden;
+  // overflow: hidden;
   width: fit-content;
   height: fit-content;
-  white-space: nowrap;
+  // white-space: nowrap;
+  white-space: pre-wrap;
+  word-break: break-word;
+
+  width: 100%;
+  height: auto;
 }
 
 .selectedOption{
@@ -246,7 +254,7 @@ export const Card = forwardRef(({
   const gCtx=useGraphCtx()as any;
   const{ns,setNs}=gCtx;
   // content to displays
-  const [c,setC]=useState(content);
+  const [c,setC]=useState(content||'empty');
   // if hovered - display upper tools
   const [hovered,setHovered]=useState(false);
   // if edit mode - editable div
@@ -276,10 +284,10 @@ export const Card = forwardRef(({
 
   // list[str]: of forward sides of card-group
   const fwdParts = groupTp==='multiple_bwd'? c
-    .split(RegExp(`${OPTION_SPLIT_SYM}`))
+    ?.split(RegExp(`${OPTION_SPLIT_SYM}`))
     .map((_:any,i)=>`${i+1}`)
     : c
-    .split(RegExp(`${OPTION_SPLIT_SYM}`))
+    ?.split(RegExp(`${OPTION_SPLIT_SYM}`))
     .map((n:any)=>n
       .split(SIDE_SPLIT_SYM)[0]
       .trim())
@@ -437,8 +445,8 @@ export const Card = forwardRef(({
     onClick={async ()=>setIsEdit(true)}>
     {options?.textEdit===true?(
       <HStack justifyContent={'stretch'} alignItems={'stretch'} w={'100%'} gap={0}>
-        <Box flex={1} maxW={'50%'} w={'50%'} minW={0} pl={'10px'}
-          backgroundColor={'color-mix(in srgb, #666 10%, transparent)'}
+        <Box flex={1} maxW={'50%'} w={'50%'} minW={0} pl={'10px'} pr={'10px'}
+          // backgroundColor={'color-mix(in srgb, #666 10%, transparent)'}
           >
           <div
             ref={inputRef}

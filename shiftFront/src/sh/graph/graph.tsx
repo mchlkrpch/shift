@@ -20,6 +20,7 @@ import {
   useState
 } from 'react'
 import {
+  GraphCtx,
   useGraphCtx
 } from '../../App';
 import {
@@ -283,6 +284,8 @@ export const Graph = forwardRef(({headerRef}:any,ref:any)=>{
   const [sel,setSel]=useState(Object.keys(ns));
   const [mode,setMode]=useState('eg') as any;
   const nameRef=useRef(null) as any;
+  const [curName,setCurName]=useState({'0':name}) as any;
+
   useImperativeHandle(ref,()=>({
     select: (ids:any)=>{
       setSel(ids);
@@ -303,8 +306,16 @@ export const Graph = forwardRef(({headerRef}:any,ref:any)=>{
       flexDirection={'row'}
       w={'100%'}
       alignItems={'center'}
+      gap={'10px'}
     >
-      <Input ref={nameRef} defaultValue={name} h={'30px'} outline={'none'} border={'none'}/>
+      <GraphCtx.Provider value={{
+        ns:curName, setNs:setCurName,
+        ref:null, id:'',
+        name: '',
+      }}>
+          <Card id={'0'} content={name} options={{}}/>
+      </GraphCtx.Provider>
+      
       <Tabs.List bg="bg.muted" rounded="4px" p="3px" minH="fit-content" alignItems={'center'} justifyContent={'center'}>
         <Tabs.Trigger className='tabsTrigger' value="eg">
           <BsDiagram2Fill /> graph
@@ -323,8 +334,9 @@ export const Graph = forwardRef(({headerRef}:any,ref:any)=>{
           console.log(nameRef.current);
           gReq.update(id,{
             content:JSON.stringify(ns),
-            name:nameRef.current.value,
+            name:curName['0'],
             collaborators:[],
+            owner:currentUserId,
           })
         }}
       >

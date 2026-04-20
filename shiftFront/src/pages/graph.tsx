@@ -5,6 +5,7 @@ import { gReq } from '../appwrite/service';
 import { GraphCtx } from '../App';
 import { Graph } from '../sh/graph/graph';
 import { History } from './utils';
+import { Sh } from '../sh/card/utility';
 // import store from '../storage';
 // 69e538c100181b0740ad
 
@@ -118,7 +119,7 @@ export const GraphPage = ({mode,id,name}: any) => {
         return <Box w={'100%'} onClick={()=>{
             History.push(`/${id}`)
         }}>
-            {name}
+            <Sh value={name}/>
         </Box>
     }
     if (mode==='page'){

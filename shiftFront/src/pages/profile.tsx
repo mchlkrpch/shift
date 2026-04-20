@@ -11,6 +11,9 @@ import {
 	Spinner,
 	Button,
 	Separator,
+	Spacer,
+	IconButton,
+	SkeletonText,
 } from '@chakra-ui/react'
 import { Image } from "@chakra-ui/react";
 import store from '../storage';
@@ -28,6 +31,7 @@ import { Card } from '../sh/card/card';
 import { History } from './utils';
 import { ID, Query } from 'appwrite';
 import { GraphPage } from './graph';
+import { FaRegTrashAlt } from 'react-icons/fa';
 
 export const unknownPhotoUrl: string = "https://i.postimg.cc/MKZzBCG2/spaced-gray.png";
 
@@ -159,7 +163,7 @@ export const InputStack=(props:any)=>{
 				{props.els.map((el:any,i:number)=>{
 					if (el.tp === 'input') {
 						return (
-							<Box p={0}m={0} key={i} w={'100%'}>
+							<Box p={0}m={0} key={i} w={'100%'} alignItems={'center'} display={'flex'} flexDirection={'column'}>
 								{i!==0&&<Separator w={'95%'}/>}
 								<Input key={i} ref={el.ref} defaultValue={el.d} placeholder={el.p}/>
 							</Box>
@@ -169,13 +173,14 @@ export const InputStack=(props:any)=>{
 						const [localNs,setLocalNs]=useState({'0':'default bio'})
 
 						return (
-							<Box p={0}m={0} key={i} w={'100%'}>
+							<Box p={0}m={0} key={i} w={'100%'} alignItems={'center'} display={'flex'} flexDirection={'column'}>
 								{i!==0&&<Separator w={'95%'}/>}
 								<Box m={0} alignItems={'start'} w={'100%'} p={'5px'}>
 									<GraphCtx.Provider value={{
 										ns:localNs,setNs:setLocalNs,
 										ref:el.ref,
 										id:'',
+										name:'',
 									}}>
 										<Card id={'0'} content={localNs['0']} options={{stats:false,textEdit:false}}/>
 									</GraphCtx.Provider>
@@ -223,21 +228,50 @@ export const MyGraphs=()=>{
 		fetchGraphData();
 	},[]);
 	console.log(graphData)
-	return <VStack w={'100%'} alignItems={'stretch'}>
-		{graphData&&graphData.map((g:any,i:number)=>{
-			return(
-				<Box w={'100%'}>
-					<GraphCtx.Provider value={{
-						ns:null,setNs:null,
-						ref:null,
-						id:g.$id,
-					}}>
-						<GraphPage mode={'brief'} name={g.name} id={g.$id}/>
-					</GraphCtx.Provider>
-				</Box>
-			)
-		})}
-	</VStack>
+	return (
+		<div css={inputStackCSS}>
+			<VStack w={'100%'} alignItems={'stretch'} className={'block'} p={'10px'} gap={'5px'}>
+				{loading&&(
+					<>
+						<SkeletonText noOfLines={1} h={'32px'} />
+						<SkeletonText noOfLines={1} h={'32px'} mt={'5px'}/>
+						<SkeletonText noOfLines={1} h={'32px'} mt={'5px'}/>
+						<SkeletonText noOfLines={1} h={'32px'} mt={'5px'}/>
+					</>
+				)}
+				{graphData&&graphData.map((g:any,i:number)=>{
+					return(
+						<Box m={0} p={0} w={'100%'} key={`g_${g.$id}_i`}>
+							{i!==0&&<Separator w={'100%'}/>}
+							<Box
+								w={'100%'} cursor={'pointer'} display={'flex'} flexDirection={'row'}
+								p={0} alignItems={'center'}
+								>
+								<GraphCtx.Provider value={{
+									ns:null,setNs:null,
+									ref:null,
+									id:g.$id,
+									name:'',
+								}}>
+									<GraphPage mode={'brief'} name={g.name} id={g.$id}/>
+								</GraphCtx.Provider>
+								<Spacer/>
+								<IconButton
+									onClick={async()=>{
+										await gReq.delete(g.$id);
+										setGraphData(graphData.filter((gr:any)=>gr.$id !== g.$id));
+									}}
+									h={'30px'} variant={'plain'} colorPalette={'red'}
+									>
+									<FaRegTrashAlt style={{width:'13px',height:'13px'}}/>
+								</IconButton>
+							</Box>
+						</Box>
+					)
+				})}
+			</VStack>
+		</div>
+	)
 }
 
 export function Profile(props:any){
@@ -285,7 +319,7 @@ export function Profile(props:any){
 								h={'70px'}
 								w={'70px'}/>
 
-							<Text opacity={0.4} fontSize={'12px'}>Profile settings</Text>
+							<Text opacity={0.4} mb={'-15px'} fontSize={'12px'}>Profile settings</Text>
 
 							<InputStack
 								els={[
@@ -294,29 +328,38 @@ export function Profile(props:any){
 									{ref:bioRef,     p:'about you',  d:localUserData.photo_url,tp:'card'}
 								]} />
 	
-							<Text opacity={0.4} fontSize={'12px'}>my graphs</Text>
+							<HStack p={'0px 10px'} m={0} w={'100%'} mb={'-15px'}>
+								<Text opacity={0.4} fontSize={'12px'}>my graphs</Text>
+								<Spacer/>
+								<Button
+									h={'fit-content'} colorPalette={'green'}
+									w={'fit-content'}
+									fontSize={'12px'}
+									p={0}
+									variant={'plain'}
+									onClick={async()=>{
+										const user = await spaced_account.get();
+          								const currentUserId = user.$id;
+										const gId = ID.unique();
+										await gReq.create({
+											content:'{}',
+											collaborators:[],
+											owner:currentUserId,
+										},gId);
+										History.push(`/${gId}`)
+									}}
+								>
+									create graph
+								</Button>
+							</HStack>
 							<MyGraphs/>
-
-							<Button
-								h={'20px'} variant={'subtle'} colorPalette={'green'}
-								onClick={async ()=>{
-									console.log('??')
-									const gId = ID.unique();
-									await gReq.create({
-										content:'{}',
-										collaborators:[],
-									},gId);
-									History.push(`/${gId}`)
-								}}
-							>
-								create graph
-							</Button>
 
 							<Box mt={'-15px'} w={'100%'} maxW={'600px'} className={'block'}>
 								<GraphCtx.Provider value={{
 									ns:curNs,setNs:setNs,
 									ref:gRef,
 									id:'',
+									name:'',
 								}}>
 									<Graph ref={gRef}/>
 								</GraphCtx.Provider>
