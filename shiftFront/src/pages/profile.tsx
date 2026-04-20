@@ -14,6 +14,7 @@ import {
 	Spacer,
 	IconButton,
 	SkeletonText,
+	Dialog,
 } from '@chakra-ui/react'
 import { Image } from "@chakra-ui/react";
 import store from '../storage';
@@ -32,6 +33,7 @@ import { History } from './utils';
 import { ID, Query } from 'appwrite';
 import { GraphPage } from './graph';
 import { FaRegTrashAlt } from 'react-icons/fa';
+import { HiDocumentAdd } from "react-icons/hi";
 
 export const unknownPhotoUrl: string = "https://i.postimg.cc/MKZzBCG2/spaced-gray.png";
 
@@ -256,15 +258,46 @@ export const MyGraphs=()=>{
 									<GraphPage mode={'brief'} name={g.name} id={g.$id}/>
 								</GraphCtx.Provider>
 								<Spacer/>
-								<IconButton
-									onClick={async()=>{
-										await gReq.delete(g.$id);
-										setGraphData(graphData.filter((gr:any)=>gr.$id !== g.$id));
-									}}
-									h={'30px'} variant={'plain'} colorPalette={'red'}
-									>
-									<FaRegTrashAlt style={{width:'13px',height:'13px'}}/>
-								</IconButton>
+								
+								<Dialog.Root>
+									<Dialog.Trigger>
+										<IconButton
+											h={'30px'} variant={'plain'} colorPalette={'red'}>
+											<FaRegTrashAlt style={{width:'13px',height:'13px'}}/>
+										</IconButton>
+									</Dialog.Trigger>
+									<Dialog.Backdrop />
+									<Dialog.Positioner>
+										<Dialog.Content p={'20px'}>
+											<Dialog.CloseTrigger />
+											<Dialog.Header w={'100%'} p={'0px 20px'}>
+												<Dialog.Title>Delete graph "{g.name}"?</Dialog.Title>
+											</Dialog.Header>
+											<Dialog.Body
+												w={'100%'} alignItems={'start'} p={'0px 20px'}
+												textAlign={'start'}
+												fontSize={'12px'}
+												fontWeight={300}
+											>
+												Content will be deleted without ability to restore it.
+
+												<Button
+													mt={'20px'}
+													w={'100%'}
+													variant={'subtle'}
+													colorPalette={'red'}
+													h={'20px'}
+													onClick={async()=>{
+														await gReq.delete(g.$id);
+														setGraphData(graphData.filter((gr:any)=>gr.$id !== g.$id));
+													}}
+													>
+													Delete
+												</Button>
+											</Dialog.Body>
+										</Dialog.Content>
+									</Dialog.Positioner>
+								</Dialog.Root>
 							</Box>
 						</Box>
 					)
@@ -332,6 +365,7 @@ export function Profile(props:any){
 								<Text opacity={0.4} fontSize={'12px'}>my graphs</Text>
 								<Spacer/>
 								<Button
+									gap={'3px'}
 									h={'fit-content'} colorPalette={'green'}
 									w={'fit-content'}
 									fontSize={'12px'}
@@ -349,7 +383,7 @@ export function Profile(props:any){
 										History.push(`/${gId}`)
 									}}
 								>
-									create graph
+									<HiDocumentAdd style={{width:'13px',height:'13px'}}/> create
 								</Button>
 							</HStack>
 							<MyGraphs/>
