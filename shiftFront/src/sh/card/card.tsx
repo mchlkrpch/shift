@@ -397,7 +397,11 @@ export const Card = forwardRef(({
                 e.stopPropagation()
                 e.preventDefault()
                 setHide((h:any)=>!h)
-              }}>
+              }}
+              onDoubleClick={(e:any)=>(
+                setIsEdit(true)
+              )}
+              >
               {path.length>1&&(
                 <Box pl={'4px'} m={0}>
                   <CardPath path={path}/>
@@ -432,8 +436,10 @@ export const Card = forwardRef(({
     style={{fontSize:`${fontSize}px`}}
     onClick={async ()=>setIsEdit(true)}>
     {options?.textEdit===true?(
-      <HStack justifyContent={'stretch'} alignItems={'stretch'} w={'100%'}>
-        <Box flex={1} maxW={'50%'} w={'50%'} minW={0}>
+      <HStack justifyContent={'stretch'} alignItems={'stretch'} w={'100%'} gap={0}>
+        <Box flex={1} maxW={'50%'} w={'50%'} minW={0} pl={'10px'}
+          backgroundColor={'color-mix(in srgb, #666 10%, transparent)'}
+          >
           <div
             ref={inputRef}
             role='textbox'
@@ -451,7 +457,7 @@ export const Card = forwardRef(({
         <Separator orientation={'vertical'} h={'auto'} minH={'100%'} w={'1px'} />
         <Box flex={1} w={'50%'} minW={0} pl={'10px'}>
           {OptionSwitcher}
-          <Box w={'100%'} overflowX={'auto'}>
+          <Box w={'100%'} overflowX={'auto'} scrollbarWidth={'none'}>
             <Sh value={bwd_content}/>
           </Box>
         </Box>

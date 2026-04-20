@@ -11,6 +11,7 @@ import { Profile } from "./profile";
 import { Header } from "../components/header";
 import { Feed } from "./feed";
 import { Graph } from "../sh/graph/graph";
+import { GraphPage } from "./graph";
 
 export async function loginGoogle(){
 	try {
@@ -342,7 +343,7 @@ class SpaceRouter extends React.Component<any,any> {
 					<Route
 						path=':route'
 						element={
-							<Graph/>
+							<GraphPage mode={'page'}/>
 						}
 					/>
                     <Route

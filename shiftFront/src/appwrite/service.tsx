@@ -1,5 +1,19 @@
-import { Databases, ID, Query, Client, Account, type Models } from "appwrite";
+import { Databases, ID, Query, Client, Account, type Models, Permission, Role } from "appwrite";
 import store from "../storage";
+
+
+export const APPWRITE_CONFIG = {
+    ENDPOINT: 'https://fra.cloud.appwrite.io/v1',
+    PROJECT_ID: '69baae7d0010fa0c541d',
+    DATABASE_ID: '69bdb002002e102b695c',
+    COLLECTIONS: {
+        USERS_ID: 'user',
+        NODES: 'nodes',
+        CARDS: 'cards',
+        GRAPHS_ID: 'graphs',
+    }
+};
+
 
 export class Repo<T extends Models.Document> {
 	protected db: Databases;
@@ -14,11 +28,18 @@ export class Repo<T extends Models.Document> {
 
     async create(data: any, documentId: string = ID.unique()): Promise<T> {
         try {
+            const user = await spaced_account.get();
+		    const userId = user.$id;
             return await this.db.createDocument<T>(
                 this.dbId,
                 this.colId,
                 documentId,
                 data,
+                [
+                    Permission.read(Role.any()),
+                    Permission.update(Role.user(userId)),
+                    Permission.delete(Role.user(userId)),
+                ]
             );
         } catch (error) {
             console.error(`[create] Error in ${this.colId}:`, error);
@@ -34,6 +55,20 @@ export class Repo<T extends Models.Document> {
                 [Query.equal('$id', id), Query.limit(1)]
             );
             return response.documents.length > 0 ? response.documents[0] : null;
+        } catch (error) {
+            console.error(`[read] Error in ${this.colId}:`, error);
+            return null;
+        }
+    }
+
+    async search(filters:any): Promise<T[]|null> {
+        try {
+            const response = await this.db.listDocuments<T>(
+                this.dbId,
+                this.colId,
+                filters,
+            );
+            return response.documents.length > 0 ? response.documents : null;
         } catch (error) {
             console.error(`[read] Error in ${this.colId}:`, error);
             return null;
@@ -82,17 +117,6 @@ export class Repo<T extends Models.Document> {
     }
 }
 
-export const APPWRITE_CONFIG = {
-    ENDPOINT: 'https://fra.cloud.appwrite.io/v1',
-    PROJECT_ID: '69baae7d0010fa0c541d',
-    DATABASE_ID: '69bdb002002e102b695c',
-    COLLECTIONS: {
-        USERS: 'user',
-        NODES: 'nodes',
-        CARDS: 'cards',
-        GRAPHS: 'graphs',
-    }
-};
 
 export const spaced_client = new Client()
     .setEndpoint(APPWRITE_CONFIG.ENDPOINT)
@@ -101,9 +125,9 @@ export const spaced_client = new Client()
 export const spaced_account = new Account(spaced_client);
 const spaced_databases = new Databases(spaced_client);
 
-export const nReq = new Repo(spaced_databases, APPWRITE_CONFIG.DATABASE_ID, APPWRITE_CONFIG.COLLECTIONS.NODES);
-export const cReq = new Repo(spaced_databases, APPWRITE_CONFIG.DATABASE_ID, APPWRITE_CONFIG.COLLECTIONS.CARDS);
-export const gReq = new Repo(spaced_databases, APPWRITE_CONFIG.DATABASE_ID, APPWRITE_CONFIG.COLLECTIONS.GRAPHS);
+// export const nReq = new Repo(spaced_databases, APPWRITE_CONFIG.DATABASE_ID, APPWRITE_CONFIG.COLLECTIONS.NODES);
+// export const cReq = new Repo(spaced_databases, APPWRITE_CONFIG.DATABASE_ID, APPWRITE_CONFIG.COLLECTIONS.CARDS);
+export const gReq = new Repo(spaced_databases, APPWRITE_CONFIG.DATABASE_ID, APPWRITE_CONFIG.COLLECTIONS.GRAPHS_ID);
 
 class UserService extends Repo<any> {
     async create(u: any) {
@@ -150,7 +174,7 @@ class UserService extends Repo<any> {
     }
 }
 
-export const uReq = new UserService(spaced_databases, APPWRITE_CONFIG.DATABASE_ID, APPWRITE_CONFIG.COLLECTIONS.USERS);
+export const uReq = new UserService(spaced_databases, APPWRITE_CONFIG.DATABASE_ID, APPWRITE_CONFIG.COLLECTIONS.USERS_ID);
 
 
 // import { Account, Client, Databases, Permission, Query, Role, TablesDB } from "appwrite";

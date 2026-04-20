@@ -24,6 +24,8 @@ const initState = {
 	// keyboard state to handle shortucts
 	keyboard: {},
 	inner_blocks: {},
+
+	header_ref: null,
 }
 
 const reducer = (state = initState, action: any) => {
@@ -110,6 +112,13 @@ const reducer = (state = initState, action: any) => {
 			return {
 				...state,
 				inner_blocks: inner_blocks
+			}
+		}
+
+		case 'set_header': {
+			return {
+				...state,
+				header_ref: action.payload,
 			}
 		}
 

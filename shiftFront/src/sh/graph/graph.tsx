@@ -14,6 +14,7 @@ import {
 import {
   forwardRef,
   useCallback,
+  useEffect,
   useImperativeHandle,
   useRef,
   useState
@@ -28,19 +29,28 @@ import {
 } from '../../main';
 import {
   Box,
-  CardHeader,
+  Button,
   CardRoot,
   HStack,
+  Input,
+  Spacer,
   Tabs,
-  Text,
   VStack
 } from '@chakra-ui/react';
 import { calcG, Sh, topSort } from '../card/utility';
 import { Card } from '../card/card';
 import { FaParagraph } from "react-icons/fa6";
 import { BsDiagram2Fill } from "react-icons/bs";
+import { gReq, spaced_account } from "../../appwrite/service";
 
 export const graphCSS = css`
+display:flex;
+flex:1;
+margin: 0;
+
+.graphStack{
+  overflow-y: hidden;
+}
 
 //////////////////////////////////////////////////////
 // graph tabs
@@ -57,16 +67,17 @@ export const graphCSS = css`
   gap: 2px;
 }
 
-
 .GraphEditorStack {
   align-items: stretch;
-  gap: 2px;
+  gap: 20px;
   display: flex;
   flex: 1;
-
-  // mx: auto;
+  min-height:0;
   min-width: 50%;
   max-width: 50%;
+  overflow-y: auto;
+  scrollbar-width: none;
+  overflow-x: auto;
 }
 
 .TextEditorStack {
@@ -74,14 +85,30 @@ export const graphCSS = css`
   gap: 0;
   display: flex;
   flex: 1;
-  mx: auto;
+  min-height:0;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+//////////////////////////////////////////////////////
+// graph frame
+//////////////////////////////////////////////////////
+
+.graphFrame {
+  flex: 1;
+  position: relative;
+  min-height: 500px;
+  // border-radius: 20px;
+  overflow: hidden;
+  background-color: color-mix(in srgb, #666 10%, transparent);
+}
+
+.defNode {
 }
 `;
 
 export const SpDefinition = (card: any) => {
-  const { data } = card;
-  const { editViewMode } = useGraphCtx() as any;
-
+  const {data} = card;
   if (!data.tp) {
     data.tp = 'Def';
   }
@@ -90,51 +117,26 @@ export const SpDefinition = (card: any) => {
   const firstLine = data.forward[0];
 
   const content = (
-    <Box backgroundColor={'transparent'}>
-      <Box>
-        <Handle
-          type='target'
-          position={Position.Top}
-          style={{ top: '100%', opacity: '0%' }}
-          isConnectable={false}
-        />
-        <Handle
-          type="source"
-          style={{ top: '100%', opacity: '0%' }}
-          position={Position.Top}
-          isConnectable={false}
-        />
-      </Box>
+    <Box className='defNode'>
+      <Handle
+        type='target'
+        position={Position.Top}
+        style={{ top:'100%', left: '50%', opacity: '0%' }}
+        isConnectable={false}
+      />
+      <Handle
+        type="source"
+        style={{ top: '100%', left: '50%', opacity: '0%' }}
+        position={Position.Top}
+        isConnectable={false}
+      />
       <CardRoot
         className={`SpDef-frame feed-block-${data.tp}`}
-        borderRadius={'15px'}
+        borderRadius={'5px'}
         w={'fit-content'}
-        minW={'80px'}
         maxW={'250px'}
-        h={'fit-content'}
-        minH={'30px'}
-        display={'flex'}
-        alignContent={'center'}
-        alignItems={'center'}
-      >
-        <CardHeader
-          p={'5px'}
-          overflow={'hidden'}
-          whiteSpace={'normal'}
-          wordBreak={'break-word'}
-          mt={'auto'}
-          mb={'auto'}
-          w={'100%'}
-        >
-          <Sh value={firstLine} isInner={true}/>
-        </CardHeader>
-        {editViewMode === 'repeat' &&
-          <HStack ml={'auto'} mr={'auto'}>
-            <Text fontSize={'10px'} opacity={0.4}>
-              {/* {progress[data.id].float} */}
-            </Text>
-          </HStack>
-        }
+        minH={'30px'}>
+        <Sh value={firstLine} isInner={true}/>
       </CardRoot>
     </Box>
   );
@@ -191,13 +193,14 @@ export function SpEdge({
 const nodeTypes = {SpDef:  SpDefinition}
 const edgeTypes = {SpEdge: SpEdge}
 
+
 const Flow=()=>{
   const gCtx=useGraphCtx()as any;
   const{ns,ref}=gCtx;
   const [react_ns,react_es] = calcG(ns);
   const tempSelRef = useRef(new Set());
   const flowRef = useRef(null) as any;
-  const { setViewport, getViewport, getZoom } = useReactFlow();
+  const {setViewport,getViewport,getZoom} = useReactFlow();
 
   const handleWheel = useCallback((event:any) => {
     if (event.ctrlKey) {
@@ -221,7 +224,6 @@ const Flow=()=>{
 
   const onSelectionEnd = () => {
     const finalSelectionArray = Array.from(tempSelRef.current);
-    console.log("Окончательное выделение:", finalSelectionArray);
     ref.current.select(finalSelectionArray);
     tempSelRef.current=new Set()
   };
@@ -242,16 +244,13 @@ const Flow=()=>{
 
   return (
     <Box
-      flex={1}
-      position="relative"
+      className='graphFrame'
       ref={flowRef}
-      minH={'500px'}
     >
       <ReactFlow
         onNodesChange  = {(e)=>onNodesChange(e)}
         onSelectionEnd = {onSelectionEnd}
-        // onPaneClick    = {onPaneClick}
-        // onKeyDown={handleKeyDown}
+
         snapGrid   = {[20, 20]}
         snapToGrid = {true}
         minZoom={0.01}
@@ -260,14 +259,11 @@ const Flow=()=>{
         selectionOnDrag
         panOnDrag={[1]}
         proOptions={{ hideAttribution: true }}
-        // onMoveStart={onMoveStart}
-        // onPaneContextMenu={onPaneContextMenu}
-        // onNodeContextMenu={onNodeContextMenu}
-        // onPaneContextMenu={}
+
         panOnScrollSpeed  = {1.8}
         selectionMode     = {SelectionMode.Partial}
-        zoomOnPinch={false}
-        onWheel={(e:any)=>{
+        zoomOnPinch       = {false}
+        onWheel           = {(e:any)=>{
           handleWheel(e)
         }}
         nodes     = {react_ns}
@@ -281,11 +277,12 @@ const Flow=()=>{
 }
 
 
-export const Graph = forwardRef((_:any,ref:any)=>{
+export const Graph = forwardRef(({headerRef}:any,ref:any)=>{
   const gCtx=useGraphCtx()as any;
-  const{ns}=gCtx;
+  const{ns,id,name}=gCtx;
   const [sel,setSel]=useState(Object.keys(ns));
   const [mode,setMode]=useState('eg') as any;
+  const nameRef=useRef(null) as any;
   useImperativeHandle(ref,()=>({
     select: (ids:any)=>{
       setSel(ids);
@@ -295,27 +292,80 @@ export const Graph = forwardRef((_:any,ref:any)=>{
     }
   }))
 
-
   const sorted_ns = topSort(
     Object.keys(ns)
       .filter(key => sel.includes(key)) 
       .reduce((obj: any, key: any) => {obj[key] = ns[key]; return obj;}, {}) as any);
 
+  const TabsHeader = (
+    <Tabs.Root css={graphCSS} value={mode} onValueChange={(e) => setMode(e.value)} variant="plain"
+      display={'flex'}
+      flexDirection={'row'}
+      w={'100%'}
+      alignItems={'center'}
+    >
+      <Input ref={nameRef} defaultValue={name} h={'30px'} outline={'none'} border={'none'}/>
+      <Tabs.List bg="bg.muted" rounded="4px" p="3px" minH="fit-content" alignItems={'center'} justifyContent={'center'}>
+        <Tabs.Trigger className='tabsTrigger' value="eg">
+          <BsDiagram2Fill /> graph
+        </Tabs.Trigger>
+        <Tabs.Trigger className='tabsTrigger' value="tr">
+          <FaParagraph /> text
+        </Tabs.Trigger>
+        <Tabs.Indicator />
+      </Tabs.List>
+      <Spacer />
+      <Button h={'20px'} variant={'subtle'} colorPalette={'green'}
+        onClick={async()=>{
+          const user = await spaced_account.get();
+          const currentUserId = user.$id;
+          console.log('id',currentUserId);
+          console.log(nameRef.current);
+          gReq.update(id,{
+            content:JSON.stringify(ns),
+            name:nameRef.current.value,
+            collaborators:[],
+          })
+        }}
+      >
+        commit
+      </Button>
+    </Tabs.Root>
+  );
 
-  const GraphTabs = <Tabs.Root defaultValue="GraphEditor" variant="plain" className={'graphTabs'}>
-    <Tabs.List bg="bg.muted" rounded="4px" p="3px" minH={'fit-content'}>
-      <Tabs.Trigger value="GraphEditor" className='tabsTrigger' onClick={()=>setMode('eg')}>
-        <BsDiagram2Fill/> graph
-      </Tabs.Trigger>
-      <Tabs.Trigger value="TextEditor" className='tabsTrigger' onClick={()=>{setMode('tr')}}>
-        <FaParagraph style={{width:'15px', height:'15px'}}/> text
-      </Tabs.Trigger>
-      <Tabs.Indicator />
-    </Tabs.List>
+  useEffect(()=>{
+    console.log('??',headerRef)
+    if (headerRef&&headerRef.current) {
+      console.log('!')
+      const f=async()=>{
+        await headerRef.current.resetContent();
+        const dc=headerRef.current.getContent();
+        console.log(dc)
+        headerRef.current.setContent([
+          dc[0],
+          TabsHeader,
+          dc[2],
+        ]);
+  
+        console.log(headerRef.current.getContent())
+      }
+      f();
+    }
+  },[mode])
 
-    <Tabs.Content value="GraphEditor">
-      <HStack w={'100%'} h={'100%'} alignItems={'stretch'} gap={0}>
-        <VStack className='GraphEditorStack'>
+  const GraphTabs = (
+  <Tabs.Root defaultValue="GraphEditor" variant="plain" className={'graphTabs'}
+      w={'100%'}
+      display="flex" flexDirection="column" gap={0}
+      minH={0}
+      flex={1}
+      >
+    {mode==='eg'&&(
+      <HStack w={'100%'}
+        flex={1}
+        minH={0}
+        alignItems={'stretch'} gap={0}>
+        <VStack className='GraphEditorStack' flex={1} minH={0}>
         {sorted_ns.map((item:any)=>{
           return <Card
             key={item.id}
@@ -329,10 +379,13 @@ export const Graph = forwardRef((_:any,ref:any)=>{
           <Flow/>
         </ReactFlowProvider>
       </HStack>
-    </Tabs.Content>
-
-    <Tabs.Content value="TextEditor">
-      <VStack className='TextEditorStack'>
+    )}
+    {mode==='tr'&&(
+      <VStack className='TextEditorStack'
+        flex={1}
+        minH={0}
+        overflowY={'auto'}
+        >
       {sorted_ns.map((item:any)=>{
         return <Card
           key={item.id}
@@ -342,12 +395,17 @@ export const Graph = forwardRef((_:any,ref:any)=>{
         />
       })}
       </VStack>
-    </Tabs.Content>
-  </Tabs.Root>
+    )}
+  </Tabs.Root>)
 
   return (
-    <VStack css={graphCSS}>
-      {GraphTabs}
-    </VStack>
+    <div css={graphCSS}
+      style={{ position: 'relative', flex: 1, width: '100%', minHeight: 0 }}>
+      <Box position="absolute" inset={0} display="flex" flexDirection="column">
+        <VStack className={'graphStack'} flex={1} minH={0} gap={0}>
+          {GraphTabs}
+        </VStack>
+      </Box>
+    </div>
   )
 });

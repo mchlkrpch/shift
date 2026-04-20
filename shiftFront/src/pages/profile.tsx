@@ -1,5 +1,7 @@
+/** @jsxImportSource @emotion/react */
+import { css } from '@emotion/react';
 // @ts-expect-error: to ignore empy import react 
-import React, { useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
 	HStack,
 	Input,
@@ -8,19 +10,24 @@ import {
 	Text,
 	Spinner,
 	Button,
+	Separator,
 } from '@chakra-ui/react'
 import { Image } from "@chakra-ui/react";
 import store from '../storage';
 
-/** @jsxImportSource @emotion/react */
-import { css } from '@emotion/react';
 import {
-    uReq,
+	gReq,
+	spaced_account,
+	uReq,
 } from '../appwrite/service';
 import { logOut } from './auth';
 import { GraphCtx } from '../App';
 import { Header } from '../components/header';
 import { Graph } from '../sh/graph/graph';
+import { Card } from '../sh/card/card';
+import { History } from './utils';
+import { ID, Query } from 'appwrite';
+import { GraphPage } from './graph';
 
 export const unknownPhotoUrl: string = "https://i.postimg.cc/MKZzBCG2/spaced-gray.png";
 
@@ -63,17 +70,45 @@ second
 @@@
 segssges sgds
 `;
+
+
 const inner2:string=`inner
 @@@
 inner complex definition of something <id=3>`;
+
+
 const inner3:string=`inner second def
 @@@
 more simple definition`;
+
+
+const inner4:string=`Аффинные многообразия
+@@@
+Пусть k — алгебраически замкнутое поле (в классической алгебраической геометрии
+— поле комплексных чисел);
+$\{\\displaystyle \\mathbb \{A\}^\{n\}\}$ — n-мерное аффинное пространство над k.
+Существует теорема из классического анализа, утверждающая, что замкнутые подмножества
+
+$\{\\displaystyle \\mathbb {R} ^{n}} — это в точности множества нулей всевозможных
+бесконечно дифференцируемых функций.[4] Топология Зарисского в некотором смысле
+переносит это свойство на случай полиномиальных функций: при определении топологии
+Зарисского каждому множеству многочленов от n переменных сопоставляется множество точек
+аффинного пространства, на которых все эти многочлены равны нулю:
+
+\$\{\\displaystyle Z(S)=\\{x\\in \\mathbb {A}^{n}\\mid f(x)=0\;\\forall f\\in S\\}}$
+Замкнутые множества в топологии Зарисского на 
+\{\\displaystyle \\mathbb {A}^{n}}$
+— это все множества вида Z(S), также эти замкнутые множества называются
+алгебраическими множествами. Аффинное алгебраическое многообразие
+— это алгебраическое множество, которое нельзя представить в виде объединения
+двух меньших алгебраических множеств
+`;
 
 const ns: object={
   '1': cntStr,
   '2': inner2,
   '3': inner3,
+  '4':inner4,
 };
 
 
@@ -86,21 +121,124 @@ max-width: 450px;
 margin-left: auto;
 margin-right: auto;
 
-input{
-    border: none;
-    outline: none;
-}
-.block{
-    display: flex;
-    width: 100%;
-    padding: 5px;
-    font-size: 14px;
-    color: color-mix(in srgb,#fff 90%,transparent);
-    border-radius: 7px;
-    background-color: color-mix(in srgb, #555 10%, transparent);
-    border: 1px solid color-mix(in srgb, #555 20%, transparent);
+.profilePg {
+	margin-top: 25px;
+	width :100%;
+	max-width: 100%;
+	mx:10px;
+	gap: 20px;
+	overflow-y: auto;
+	scrollbar-width: none;
 }
 `;
+
+const inputStackCSS = css`
+display: flex;
+flex-direction: column;
+width: 100%;
+align-items: stretch;
+
+.block {
+	width: 100%;
+	display: flex;
+	flex-direction: column;
+	border-radius: 10px;
+	background-color: color-mix(in srgb, #999 10%, transparent);
+	align-items: center;
+}
+
+input{
+	border: none;
+	outline: none;
+}
+`
+export const InputStack=(props:any)=>{
+	return (
+		<div css={inputStackCSS}>
+			<Box className='block'>
+				{props.els.map((el:any,i:number)=>{
+					if (el.tp === 'input') {
+						return (
+							<Box p={0}m={0} key={i} w={'100%'}>
+								{i!==0&&<Separator w={'95%'}/>}
+								<Input key={i} ref={el.ref} defaultValue={el.d} placeholder={el.p}/>
+							</Box>
+						)
+					}
+					if (el.tp === 'card') {
+						const [localNs,setLocalNs]=useState({'0':'default bio'})
+
+						return (
+							<Box p={0}m={0} key={i} w={'100%'}>
+								{i!==0&&<Separator w={'95%'}/>}
+								<Box m={0} alignItems={'start'} w={'100%'} p={'5px'}>
+									<GraphCtx.Provider value={{
+										ns:localNs,setNs:setLocalNs,
+										ref:el.ref,
+										id:'',
+									}}>
+										<Card id={'0'} content={localNs['0']} options={{stats:false,textEdit:false}}/>
+									</GraphCtx.Provider>
+								</Box>
+							</Box>
+						)
+					}
+					return <></>
+				})}
+			</Box>
+		</div>
+	)
+}
+
+
+export const MyGraphs=()=>{
+	const [graphData,setGraphData] = useState<any>(null);
+	const [loading,setLoading] = useState<boolean>(true);
+	const [error,setError] = useState<string | null>(null);
+
+	useEffect(() => {
+		const fetchGraphData = async()=>{
+			try {
+				const user = await spaced_account.get();
+        		const currentUserId = user.$id;
+				const filters =[
+					Query.equal('owner', currentUserId),
+					Query.select(['$id', 'owner', 'name'])
+				];
+
+				const myDocuments = await gReq.search(filters);
+				if (myDocuments) {
+					console.log('your docs:', myDocuments);
+					setGraphData(myDocuments)
+					setLoading(false)
+				} else {
+					console.log('you have no docs');
+				}
+			} catch (err) {
+				setError("err");
+			} finally {
+				setLoading(false);
+			}
+		};
+		fetchGraphData();
+	},[]);
+	console.log(graphData)
+	return <VStack w={'100%'} alignItems={'stretch'}>
+		{graphData&&graphData.map((g:any,i:number)=>{
+			return(
+				<Box w={'100%'}>
+					<GraphCtx.Provider value={{
+						ns:null,setNs:null,
+						ref:null,
+						id:g.$id,
+					}}>
+						<GraphPage mode={'brief'} name={g.name} id={g.$id}/>
+					</GraphCtx.Provider>
+				</Box>
+			)
+		})}
+	</VStack>
+}
 
 export function Profile(props:any){
 	let userData=undefined;
@@ -114,13 +252,12 @@ export function Profile(props:any){
 	}
 
 	const [localUserData,setLocalUserData] = useState(userData);
-
 	const usernameRef = useRef<HTMLInputElement>(null);
 	const avatarRef = useRef<HTMLInputElement>(null);
 	const bioRef = useRef<HTMLInputElement>(null);
-    const [curNs,setNs]=useState(ns) as any;
-    // const [sel,setSel]=useState(Object.keys(ns));
-    const gRef=React.createRef() as any;
+	const [curNs,setNs]=useState(ns) as any;
+	const gRef=React.createRef() as any;
+	const headerRef=useRef(null) as any;
 
 	const f = async()=>{
 		const newOtherUserData = await uReq.read(props.id) as any;
@@ -135,121 +272,112 @@ export function Profile(props:any){
 			<Spinner/>
 		)
 	} else {
-        // console.log(props.display)
-        if (props.preview === false) {
-            return (
-                <>
-                    <Header/>
-                    <div
-                        // @ts-expect-error
-                        css={profileStyle}
-                        >
-                        <VStack
-                            mt={'25px'}
-                            w={'100%'}
-                            maxW={'100%'}
-                            mx={'auto'}
-                            gap={"20px"}
-                            overflowY={'auto'}
-                            scrollbarWidth={'none'}
-                        >
-                            <Box
-                                minH={'70px'}
-                                maxW={'70px'}
-                                h={'70px'}
-                                w={'70px'}
-                                mb={'-15px'}
-                                >
-                                <SpAvatar
-                                    src={localUserData.photo_url}
-                                    username={localUserData.username}
-                                    backgroundColor={'white'}
-                                    h={'70px'}
-                                    w={'70px'}
-                                />
-                            </Box>
-    
-                            <Text opacity={0.4} fontSize={'12px'}>Profile settings</Text>
-                            <Box
-                                className={'block'}
-                                mt={'-15px'}
-                            >
-                                <Input ref={usernameRef} placeholder='username'
-                                    defaultValue={localUserData.username}
-                                />
-                                <Input ref={avatarRef} placeholder='avatar link'
-                                    defaultValue={localUserData.photo_url}
-                                />
-                            </Box>
-    
-                            <Text opacity={0.4} fontSize={'12px'}>bio</Text>
-                            <Box mt={'-15px'} w={'100%'} maxW={'600px'} className={'block'}>
-                                <GraphCtx.Provider value={{
-                                    ns:curNs,setNs:setNs,
-                                    ref:gRef,
-                                }}>
-                                    <Graph ref={gRef}/>
-                                </GraphCtx.Provider>
-                            </Box>
-    
-                            {/* stats */}
-    
-                            <HStack w={'100%'}
-                                alignItems={'stretch'}
-                                justifyContent={'stretch'}
-                            >
-                                <Button
-                                    flex={1}
-                                    variant={'outline'}
-                                    onClick={async ()=>{
-                                        const newUserData = JSON.parse(JSON.stringify(localUserData))
-                                        newUserData.username = usernameRef.current?.value||'';
-                                        newUserData.photo_url = avatarRef.current?.value||'';
-                                        newUserData.bio = bioRef.current?.value||'';
-                                        await uReq.update(
-                                            user,
-                                            newUserData,
-                                        )
-                                        setLocalUserData(newUserData);
-                                    }}
-                                >
-                                    save
-                                </Button>
-                                <Button
-                                    flex={1}
-                                    variant={'outline'}
-                                    colorPalette={'red'}
-                                    onClick={()=>{
-                                        const SpaceRouter=store.getState().components['SpaceRouter']
-                                        SpaceRouter.setState({
-                                            user:null,
-                                        })
-                                        logOut()
-                                    }}
-                                >
-                                    log out
-                                </Button>
-                            </HStack>
-                        </VStack>
-                    </div>
-                </>
-            )
-        }
-        if (props.preview === true) {
-            return (
-                <>
-                    <HStack fontSize={'13px'}>
-                        <SpAvatar
-                            src={localUserData.photo_url}
-                            username={localUserData.username}
-                            backgroundColor={'white'}
-                            h={'18px'}
-                            w={'18px'}
-                        />
-                        {localUserData.username}
-                    </HStack>
-                </>
-            )
-        }
+		if (props.preview === false) {
+			return (
+				<>
+					<Header ref={headerRef}/>
+					<div css={profileStyle}>
+						<VStack className='profilePg'>
+							<SpAvatar
+								src={localUserData.photo_url}
+								username={localUserData.username}
+								backgroundColor={'white'}
+								h={'70px'}
+								w={'70px'}/>
+
+							<Text opacity={0.4} fontSize={'12px'}>Profile settings</Text>
+
+							<InputStack
+								els={[
+									{ref:usernameRef,p:'username',   d:localUserData.username, tp:'input'},
+									{ref:avatarRef,  p:'avatar link',d:localUserData.photo_url,tp:'input'},
+									{ref:bioRef,     p:'about you',  d:localUserData.photo_url,tp:'card'}
+								]} />
+	
+							<Text opacity={0.4} fontSize={'12px'}>my graphs</Text>
+							<MyGraphs/>
+
+							<Button
+								h={'20px'} variant={'subtle'} colorPalette={'green'}
+								onClick={async ()=>{
+									console.log('??')
+									const gId = ID.unique();
+									await gReq.create({
+										content:'{}',
+										collaborators:[],
+									},gId);
+									History.push(`/${gId}`)
+								}}
+							>
+								create graph
+							</Button>
+
+							<Box mt={'-15px'} w={'100%'} maxW={'600px'} className={'block'}>
+								<GraphCtx.Provider value={{
+									ns:curNs,setNs:setNs,
+									ref:gRef,
+									id:'',
+								}}>
+									<Graph ref={gRef}/>
+								</GraphCtx.Provider>
+							</Box>
+
+							<HStack w={'100%'}
+								alignItems={'stretch'}
+								justifyContent={'stretch'}
+							>
+								<Button
+									flex={1}
+									variant={'outline'}
+									onClick={async ()=>{
+										const newUserData = JSON.parse(JSON.stringify(localUserData))
+										newUserData.username = usernameRef.current?.value||'';
+										newUserData.photo_url = avatarRef.current?.value||'';
+										newUserData.bio = bioRef.current?.value||'';
+										await uReq.update(
+											user,
+											newUserData,
+										)
+										setLocalUserData(newUserData);
+									}}
+								>
+									save
+								</Button>
+								<Button
+									flex={1}
+									variant={'outline'}
+									colorPalette={'red'}
+									onClick={()=>{
+										const SpaceRouter=store.getState().components['SpaceRouter']
+										SpaceRouter.setState({
+											user:null,
+										})
+										logOut()
+									}}
+								>
+									log out
+								</Button>
+							</HStack>
+						</VStack>
+					</div>
+				</>
+			)
+		}
+		if (props.preview === true) {
+			return (
+				<>
+					<HStack fontSize={'13px'}>
+						<SpAvatar
+							src={localUserData.photo_url}
+							username={localUserData.username}
+							backgroundColor={'white'}
+							h={'18px'}
+							w={'18px'}
+						/>
+						{localUserData.username}
+					</HStack>
+				</>
+			)
+		}
 	}
 }
