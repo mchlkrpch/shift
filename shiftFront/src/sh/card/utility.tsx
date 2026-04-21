@@ -326,10 +326,11 @@ export const onKeyDownCb:any=async(
 	}
 }
 
-export function topSort(ns: Record<string,string>) {
+export function topSort(ns: Record<string, string>, preferredOrder: string[] =[]) {
   const used = new Set<string>();
   const visiting = new Set<string>();
   const res: { id: string; content: string }[] = [];
+
   const getDependencies = (str: string): string[] => {
     const deps = new Set<string>();
     const regex = /<id=([^>]+)>/g;
@@ -339,15 +340,14 @@ export function topSort(ns: Record<string,string>) {
     }
     return Array.from(deps);
   };
+
   const dfs = (id: string) => {
-    if (visiting.has(id)) {
-      throw new Error(`id: ${id}`);
-    }
-    if (used.has(id)) {
-      return;
-    }
+    if (visiting.has(id)) return;
+    if (used.has(id)) return;
+    
     visiting.add(id);
     const content = ns[id];
+    
     if (content !== undefined) {
       const dependencies = getDependencies(content);
       for (const depId of dependencies) {
@@ -358,14 +358,14 @@ export function topSort(ns: Record<string,string>) {
     }
     visiting.delete(id);
     used.add(id);
-    res.push({
-      id: id,
-      content: content
-    });
+    res.push({ id, content });
   };
-  for (const id of Object.keys(ns)) {
-    dfs(id);
+
+  const initialKeys = preferredOrder.length > 0 ? preferredOrder : Object.keys(ns);
+  for (const id of initialKeys) {
+    if (ns[id] !== undefined) dfs(id);
   }
+  
   return res;
 }
 

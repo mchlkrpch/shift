@@ -22,7 +22,6 @@ import {
   Separator,
   Spacer,
   Text,
-  VStack,
 } from "@chakra-ui/react";
 import {
   Clip
@@ -46,6 +45,35 @@ import { createPortal } from 'react-dom';
 
 
 export const contentCSS = css`
+position: relative;
+
+//////////////////////////////////////////////////////
+// Special sym dropped menu style
+// when you press special key in textbox you will see
+// options to insert inside your's card code
+//////////////////////////////////////////////////////
+
+.menuFrame {
+  position: fixed;
+  backdrop-filter:blur(10px);
+  background-color: color-mix(in srgb, #333 60%, transparent);
+  border: 1px solid color-mix(in srgb, #666 60%, transparent);
+  border-radius: 5px;
+  padding: 5px;
+  max-height: 200px;
+  overflow-y: auto;
+  min-width: 150px;
+}
+
+.menuFrame tip{
+ opacity: .3;
+ font-weight: 400;
+ font-size: 11px;
+}
+
+
+
+
 .chakra-stack{
   scrollbar-width: none;
 }
@@ -112,8 +140,6 @@ export const contentCSS = css`
 }
 
 
-
-
 //////////////////////////////////////////////////////
 // card content 
 //////////////////////////////////////////////////////
@@ -132,8 +158,6 @@ export const contentCSS = css`
   overflow: hidden;
   width: 100%;
 }
-
-
 
 
 //////////////////////////////////////////////////////
@@ -253,7 +277,6 @@ export const Card = forwardRef(({
   // Card to display content either as code or visual card
   if (content === undefined) return <></>;
 
-
   const gCtx=useGraphCtx()as any;
   const{ns,setNs}=gCtx;
   // content to displays
@@ -286,7 +309,7 @@ export const Card = forwardRef(({
   const mentionOptions = Object.keys(ns)
     .filter(nid => ns[nid]?.toLowerCase().includes(mentionMenu.query.toLowerCase()))
     .map(nid => ({ id: nid, text: ns[nid].split('\n')[0] || 'empty' }));
-  
+
   const insertMention=(item: {id: string, text: string})=>{
     const sel = window.getSelection();
     if (!sel || !mentionMenu.range) return;
@@ -314,7 +337,6 @@ export const Card = forwardRef(({
   };
 
   const localOnKeyDown = (e: React.KeyboardEvent) => {
-    // 1. Перемещение карточки
     if (e.altKey && e.key === 'ArrowUp') {
       e.preventDefault();
       if (options.onMove) options.onMove(-1);
@@ -353,14 +375,6 @@ export const Card = forwardRef(({
         if (sel && sel.rangeCount > 0) {
           const range = sel.getRangeAt(0).cloneRange();
           const rect = range.getBoundingClientRect();
-          const wrapperRect = inputRef.current.getBoundingClientRect();
-          // setMentionMenu({
-          //   isOpen: true,
-          //   query: '',
-          //   x: rect.left - wrapperRect.left,
-          //   y: (rect.bottom - wrapperRect.top) + 5,
-          //   range: range 
-          // });
           setMentionMenu({
             isOpen: true,
             query: '',
@@ -409,70 +423,11 @@ export const Card = forwardRef(({
 
 
   // str: cur backward side of the card
-  let bwd_content:string = (hide===false||options.textEdit===true)
+  let bwd_content:string = (hide===false||options.twoSides===true)
     ? innerC.split('@@@').slice(1).join('')
     : '';
 
   const isHTML_set = useRef(false);
-
-  useEffect(()=>{
-    if ((isEdit||options?.textEdit === true) && !isHTML_set.current||focus) {
-      isHTML_set.current = true; 
-      const mergedTxt = `${c.split('\n').map((t:any)=>{
-        return t === ''
-          ? `<br>`
-          : `<div class="sh_string"}>${t}</div>`;
-      }).join('')}`;
-      const html = mergedTxt
-        .split(/(<id=[^>]*>)/)
-        .map((n:any)=>(
-          (n.slice(0,3)==='<id')
-            ? renderToString(
-              <GraphCtx.Provider value={gCtx}>
-              <CardCtx.Provider value={cardCtx}>
-              <Cell id={n.slice(4,n.length-1)}/>
-              </CardCtx.Provider>
-              </GraphCtx.Provider>)
-            : n
-        ))
-        .join('');
-      setTimeout(() => {
-        if (inputRef.current) {
-          inputRef.current.innerHTML = html;
-          if (isEdit||focus) {
-            focus=false
-            inputRef.current.focus();
-            if (typeof window.getSelection !== "undefined" && typeof document.createRange !== "undefined") {
-                const range = document.createRange();
-                range.selectNodeContents(inputRef.current);
-                range.collapse(false);
-                const sel = window.getSelection();
-                if (sel) {
-                  sel.removeAllRanges();
-                  sel.addRange(range);
-                }
-            }
-          }
-        }
-      },0);
-    }
-
-    if (!isEdit && options?.textEdit !== true) {isHTML_set.current = false;}
-  }, [isEdit, c, options?.textEdit, focus]);
-
-  useEffect(()=>{
-    if (focus) {
-      const tryFocus = (attempts = 0) => {
-        if (inputRef.current) {
-          inputRef.current.focus();
-        } else if (attempts < 15) {
-          // Если ref еще null, пробуем снова через 10мс (до 15 попыток)
-          setTimeout(() => tryFocus(attempts + 1), 10);
-        }
-      }
-      tryFocus();
-    }
-  },[inputRef])
 
 
   const onBlurCb=async()=>{
@@ -494,14 +449,16 @@ export const Card = forwardRef(({
     await setC(newC)
     ns[path[path.length-1]]=newC;
     await setNs(ns);
-    await setIsEdit(v=>!v);
+    if (options.twoSides===false) {
+      await setIsEdit(v=>!v);
+    }
   }
 
 
   const OptionSwitcher:any=(<>
-      {(groupTp!=="multiple_fwd")&&(
+    {(groupTp!=="multiple_fwd")&&(
       <Accordion.Root collapsible defaultValue={[""]}
-        mt={options.textEdit===true?'50px':0}
+        mt={options.twoSides===true?'50px':0}
         onClick={async(e:any)=>{
           e.stopPropagation();
           e.preventDefault();
@@ -547,76 +504,79 @@ export const Card = forwardRef(({
     )}
   </>);
 
+
+  // Editor card's code 
+  const TextBox=<div
+    ref={inputRef}
+    role='textbox'
+    contentEditable
+    suppressContentEditableWarning={true}
+    defaultValue={c}
+    onBlur={onBlurCb}
+    onKeyDown={localOnKeyDown}
+    style={{
+      width:'100%',
+      marginTop: options.twoSides===true?'50px':0,
+      flex: 1,
+      padding: '0px 10px',
+    }}/>
+
   
-  const CardBody = <div className={'editor'}
-    style={{fontSize:`${fontSize}px`, position: 'relative'}}
-    onClick={async ()=>setIsEdit(true)}>
-
-    {mentionMenu.isOpen && createPortal(
-      <Box position="fixed" left={mentionMenu.x} top={mentionMenu.y} zIndex={99999}
-          bg="gray.900" border="1px solid" borderColor="#2D3748" borderRadius="md" p={1} shadow="dark-lg" maxH="200px" overflowY="auto" minW="150px">
-        {mentionOptions.length === 0 ? <Box p={2} fontSize="sm" color="gray.400">no cards to mention</Box>:
-        <Text opacity={.3} fontWeight={400} fontSize={'11px'} mb={'3px'}>
-          cards to mention
-        </Text>}
-        {mentionOptions.map((opt, i) => (
-          <Box key={opt.id} p={'2px 5px'} borderRadius="sm" fontSize="sm"
-               bg={i === mentionIndex ? 'blue.600' : 'transparent'}
-               cursor="pointer" 
-               onMouseDown={(e) => { e.preventDefault(); insertMention(opt); }}> 
-            {opt.text}
+  const CardBody=(
+    <div
+      css={contentCSS}
+      className={'editor'}
+      onMouseEnter={()=>setHovered(true)}
+      onMouseLeave={()=>setHovered(false)} 
+      onClick={async ()=>{
+        console.log('here?')
+        if (options.twoSides===false) {
+          setIsEdit(true)
+        }
+      }}
+      style={{fontSize:`${fontSize}px`}}>
+      {/* menu with auxilary menu of insertion */}
+      {mentionMenu.isOpen&&createPortal(
+        <span css={contentCSS}>
+          <Box className='menuFrame' left={mentionMenu.x} top={mentionMenu.y}>
+            {/* Show all options if options.length > 0
+            otherwise show 'no cards...' message */}
+            {mentionOptions.length===0
+              ? (<Text className='tip'>no cards to mention</Text>)
+              : (<Text className='tip'>cards to mention</Text>)}
+            {/* Display options */}
+            {mentionOptions.map((opt,i) => (
+              <Box key={i} p={'2px 5px'} borderRadius="sm" fontSize="sm" mt={'3px'}
+                  bg={i===mentionIndex? 'blue.600':'transparent'}
+                  cursor="pointer" 
+                  onMouseDown={(e:any)=>{
+                    e.preventDefault();
+                    insertMention(opt);
+                  }}> 
+                {opt.text}
+              </Box>
+            ))}
           </Box>
-        ))}
-      </Box>,
-      document.body
-    )}
+        </span>
+        , document.body)}
+      {/* Editable div + Card previewr */}
+      {isEdit?(TextBox):(
+        <HStack justifyContent={'stretch'} alignItems={'stretch'} w={'100%'} gap={0}>
+          {/* If preview both edior and card at the same
+          time preview through the vertical separator */}
+          {options?.twoSides===true&&(<>
+              {TextBox}
+              <Separator orientation={'vertical'} h={'auto'} minH={'100%'} w={'1px'} />
+          </>)}
 
-    {options?.textEdit===true?(
-      <HStack justifyContent={'stretch'} alignItems={'stretch'} w={'100%'} gap={0}>
-        <Box flex={1} maxW={'50%'} w={'50%'} minW={0} pl={'10px'} pr={'10px'}>
-          <div
-            ref={inputRef}
-            role='textbox'
-            contentEditable
-            suppressContentEditableWarning={true}
-            defaultValue={c}
-            onBlur={onBlurCb}
-            onKeyDown={localOnKeyDown}
-            style={{
-              width: '100%',
-              marginTop: options.textEdit===true?'50px':0,
-            }}
-          />
-        </Box>
-        <Separator orientation={'vertical'} h={'auto'} minH={'100%'} w={'1px'} />
-        <Box flex={1} w={'50%'} minW={0} pl={'10px'}>
-          {OptionSwitcher}
-          <Box w={'100%'} overflowX={'auto'} scrollbarWidth={'none'}>
-            <Sh value={bwd_content}/>
-          </Box>
-        </Box>
-      </HStack>
-    ):(
-      <>
-        {isEdit?(
-          <div
-            ref={inputRef}
-            role='textbox'
-            contentEditable
-            suppressContentEditableWarning={true}
-            defaultValue={c}
-            onBlur={onBlurCb}
-            onKeyDown={onKeyDownCb}
-          />
-        ):(
-          <>
+          {/* Preview: card option switcher + backward preveiw if opened */}
+          <Box flex={1} w={'50%'} minW={0} pl={'10px'}>
             {OptionSwitcher}
-            <Sh value={bwd_content}/>
-          </>
-        )}
-      </>
-    )}
-  </div>
+            <Sh value={bwd_content} />
+          </Box>
+        </HStack>
+      )}
+    </div>)
 
 
   const CardStats=<HStack className='cardStats' style={{opacity:hovered===true? 1:0}}>
@@ -665,26 +625,80 @@ export const Card = forwardRef(({
   </HStack>
 
 
-  // link inside card's code editor
-  if (options?.inner===true) {
-    return (<span className='card_inline_link'>{fwdParts[0]}</span>)
-  }
+  useEffect(()=>{
+    if ((isEdit||options?.twoSides === true) && !isHTML_set.current||focus) {
+      isHTML_set.current = true; 
+      const mergedTxt = `${c.split('\n').map((t:any)=>{
+        return t === ''
+          ? `<br>`
+          : `<div class="sh_string"}>${t}</div>`;
+      }).join('')}`;
+      const html = mergedTxt
+        .split(/(<id=[^>]*>)/)
+        .map((n:any)=>(
+          (n.slice(0,3)==='<id')
+            ? renderToString(
+              <GraphCtx.Provider value={gCtx}>
+              <CardCtx.Provider value={cardCtx}>
+              <Cell id={n.slice(4,n.length-1)}/>
+              </CardCtx.Provider>
+              </GraphCtx.Provider>)
+            : n
+        ))
+        .join('');
+      setTimeout(() => {
+        if (inputRef.current) {
+          inputRef.current.innerHTML = html;
+          if (isEdit||focus) {
+            focus=false
+            inputRef.current.focus();
+            if (typeof window.getSelection !== "undefined" && typeof document.createRange !== "undefined") {
+                const range = document.createRange();
+                range.selectNodeContents(inputRef.current);
+                range.collapse(false);
+                const sel = window.getSelection();
+                if (sel) {
+                  sel.removeAllRanges();
+                  sel.addRange(range);
+                }
+            }
+          }
+        }
+      },0);
+    }
+
+    if (!isEdit && options?.twoSides !== true) {isHTML_set.current = false;}
+  }, [isEdit, c, options?.twoSides, focus]);
+
+  useEffect(()=>{
+    if (focus) {
+      const tryFocus = (attempts = 0) => {
+        if (inputRef.current) {
+          inputRef.current.focus();
+        } else if (attempts < 15) {
+          // Если ref еще null, пробуем снова через 10мс (до 15 попыток)
+          setTimeout(() => tryFocus(attempts + 1), 10);
+        }
+      }
+      tryFocus();
+    }
+  },[inputRef])
+
 
   useImperativeHandle(ref,()=>({
     focus: async()=>await setIsEdit(true),
     getContent: ()=>c,
   }));
 
+  // link inside card's code editor
+  if (options?.inner===true) {
+    return (<span className='card_inline_link'>{fwdParts[0]}</span>)
+  }
+
   return (
     <CardCtx.Provider value={cardCtx}>
-      <VStack
-        css={contentCSS}
-        className={'cardContent'}
-        onMouseEnter={()=>setHovered(true)}
-        onMouseLeave={()=>setHovered(false)}>
-        {CardBody}
-        {options?.showStats && CardStats}
-      </VStack>
+      {CardBody}
+      {options?.showStats && CardStats}
     </CardCtx.Provider>
   )
 });

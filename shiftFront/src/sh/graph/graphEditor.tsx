@@ -125,6 +125,7 @@ overflow-y: hidden;
   overflow-y: auto;
   overflow-x: auto;
   scrollbar-width: none;
+  padding: 0px 10px;
 
   gap: 20px;
   min-width: 50%;
@@ -259,7 +260,7 @@ export const TempDef = ({data,id}: any) => {
             id={id} 
             content={data.content}
             focus
-            options={{textEdit:false, stats:false}} 
+            options={{twoSides:false, stats:false}} 
           />
         </GraphCtx.Provider>
       </CardRoot>
@@ -317,7 +318,7 @@ const Flow=React.forwardRef((props:any,ref:any)=>{
 
   const[tempNode, setTempNode] = useState<any>(null);
   const tempContentRef = useRef('');
-  const[nodeToZoomId, setNodeToZoomId] = useState<string | null>(null);
+  const[nodeToZoomId, setNodeToZoomId] = useState<string|null>(null);
 
   const {
     setViewport,getViewport,
@@ -502,16 +503,12 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
   const{ns,id,name}=useGraphCtx()as any;
   const [sel,setSel]=useState(Object.keys(ns));
   // graphmode / textmode
-  const [mode,setMode]=useState('eg') as any;
+  const [mode,setMode]=useState('tr') as any;
   // name of the graph
   const [curName,setCurName]=useState({'0':name}) as any;
   // reactflow component with editable ns content forward ref
   const flowRef=useRef(null) as any;
 
-  // const sorted_ns = topSort(
-  //   Object.keys(ns)
-  //     .filter(key => sel.includes(key)) 
-  //     .reduce((obj:any,key:any) => {obj[key] = ns[key]; return obj;}, {}) as any);
 
   const [orderedIds, setOrderedIds] = useState<string[]>(Object.keys(ns).filter(k => sel.includes(k)));
   useEffect(() => {
@@ -599,7 +596,7 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
   },[mode])
 
   const Editor = (
-  <Tabs.Root defaultValue="GraphEditor" variant="plain" className={'graphTabs'}>
+  <Tabs.Root defaultValue="tr" variant="plain" className={'graphTabs'}>
     {mode==='eg'&&(
       <HStack className='GraphmodeSides'>
         <VStack className='GraphmodeStack'>
@@ -608,7 +605,7 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
             key={item.id}
             id={item.id}
             content={item.content}
-            options={{stats: false}}
+            options={{stats:false, twoSides:false}}
           />
         })}
         </VStack>
@@ -635,7 +632,7 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
               content={ns[curId]}
               options={{ 
                 stats: false, 
-                textEdit: true, 
+                twoSides: true, 
                 onMove: (dir: number) => handleMoveCard(curId, dir as -1|1)
               }}
             />
