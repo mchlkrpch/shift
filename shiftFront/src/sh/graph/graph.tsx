@@ -11,11 +11,12 @@ import {
   SelectionMode,
   useReactFlow
 } from '@xyflow/react'
-import {
+import React, {
   forwardRef,
   useCallback,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState
 } from 'react'
@@ -33,16 +34,18 @@ import {
   Button,
   CardRoot,
   HStack,
-  Input,
+  IconButton,
   Spacer,
   Tabs,
   VStack
 } from '@chakra-ui/react';
-import { calcG, Sh, topSort } from '../card/utility';
+import { calcG, OPTION_SPLIT_SYM, Sh, SIDE_SPLIT_SYM, topSort } from '../card/utility';
 import { Card } from '../card/card';
 import { FaParagraph } from "react-icons/fa6";
 import { BsDiagram2Fill } from "react-icons/bs";
 import { gReq, spaced_account } from "../../appwrite/service";
+import { Panel } from '@xyflow/react';
+import { MdFilterCenterFocus } from "react-icons/md";
 
 export const graphCSS = css`
 display:flex;
@@ -148,6 +151,45 @@ export const SpDefinition = (card: any) => {
   return <DarkMode>{content}</DarkMode>;
 };
 
+export const TempDefinition = ({ data, id }: any) => {
+  const fakeGCtx = {
+    ns: { [id]: data.content },
+    setNs: (newNs: any) => data.setContent(newNs[id]),
+    name:'',
+    id:'',
+    ref:null,
+  };
+  const { colorMode } = useColorMode();
+  const content= (
+    <Box 
+      className='defNode'
+      onClick={(e) => e.stopPropagation()} 
+      onDoubleClick={(e) => e.stopPropagation()}
+    >
+      <CardRoot
+        className={`SpDef-frame feed-block-Def`}
+        borderRadius={'5px'}
+        w={'350px'}
+        minH={'30px'}
+        boxShadow={'0px 0px 20px rgba(0, 0, 0, 0.4)'}
+      >
+        <GraphCtx.Provider value={fakeGCtx}>
+          <Card 
+            id={id} 
+            content={data.content}
+            focus
+            options={{textEdit:false, stats:false}} 
+          />
+        </GraphCtx.Provider>
+      </CardRoot>
+    </Box>
+  );
+  if (colorMode == 'light') {
+    return <LightMode>{content}</LightMode>;
+  }
+  return <DarkMode>{content}</DarkMode>;
+};
+
 
 export function SpEdge({
   id,
@@ -191,17 +233,39 @@ export function SpEdge({
 }
 
 
-const nodeTypes = {SpDef:  SpDefinition}
+const nodeTypes = {SpDef:SpDefinition, TempDef:TempDefinition}
 const edgeTypes = {SpEdge: SpEdge}
 
 
-const Flow=()=>{
+function getContent(data:any) {
+  console.log('data:',data);
+  return data.forward.map((f_s:string,i:number)=>(
+    f_s
+    + `\n${SIDE_SPLIT_SYM}\n`
+    + data.backward[i]
+  )).join(`\n${OPTION_SPLIT_SYM}\n`)
+}
+
+const Flow=React.forwardRef((props:any,r:any)=>{
   const gCtx=useGraphCtx()as any;
-  const{ns,ref}=gCtx;
+  const{ns,setNs,ref}=gCtx;
   const [react_ns,react_es] = calcG(ns);
   const tempSelRef = useRef(new Set());
   const flowRef = useRef(null) as any;
-  const {setViewport,getViewport,getZoom} = useReactFlow();
+
+  const[tempNode, setTempNode] = useState<any>(null);
+  const tempContentRef = useRef('');
+  const[nodeToZoomId, setNodeToZoomId] = useState<string | null>(null);
+
+  const {
+    setViewport,
+    getViewport,
+    getZoom,
+    fitView,
+    screenToFlowPosition,
+    setCenter,
+    getNodes
+  }=useReactFlow();
 
   const handleWheel = useCallback((event:any) => {
     if (event.ctrlKey) {
@@ -241,16 +305,101 @@ const Flow=()=>{
       }
     }
   };
-  
+
+
+  useEffect(() => {
+    if (nodeToZoomId) {
+      const timer = setTimeout(() => {
+        const nodes = getNodes();
+        const targetNode = nodes.find((n:any)=>n.id === nodeToZoomId);
+        if (targetNode && targetNode.position) {
+          const width = targetNode.measured?.width ?? 250;
+          const height = targetNode.measured?.height ?? 100;
+          const x = targetNode.position.x + width / 2 - 150;
+          const y = targetNode.position.y + height / 2;
+          setCenter(x, y, { zoom: 1.5, duration: 800 });
+          setNodeToZoomId(null);
+        }
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+  },[react_ns, nodeToZoomId, getNodes, setCenter]);
+
+
+  const displayNodes = useMemo(() => {
+    if (tempNode) {
+      const tNode = {
+        id: tempNode.id,
+        position: tempNode.position,
+        type: 'TempDef',
+        draggable: true,
+        data: {
+          content: tempNode.content,
+          setContent: (val: string) => {
+            tempContentRef.current = val;
+            setTempNode((prev: any) => ({ ...prev, content: val }));
+          }
+        }
+      };
+      return [...react_ns, tNode];
+    }
+    return react_ns;
+  }, [react_ns, tempNode]);
+
+
+  const handleWrapperDoubleClick = useCallback((e: React.MouseEvent)=>{
+    const target = e.target as HTMLElement;
+    e.stopPropagation();
+    e.preventDefault();
+    if (target.classList.contains('react-flow__pane')) {
+      const position = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+      const newId = `id_${Date.now()}`;
+      tempContentRef.current = '';
+      setTempNode({
+        id: newId,
+        position,
+        content: ''
+      });
+    }
+  }, [screenToFlowPosition]);
+
+
+  const onPaneClick = useCallback(() => {
+    if (tempNode) {
+      const finalContent = tempContentRef.current;
+      if (finalContent.trim() !== '') {
+        setNs((prev: any) => ({
+          ...prev,
+          [tempNode.id]: finalContent
+        }));
+        setNodeToZoomId(tempNode.id);
+      }
+      setTempNode(null);
+    }
+  }, [tempNode, setNs]);
+
+
+
+  // //////////////////////////////////////////////////////////////////////////////////////////////
+  useImperativeHandle(r,()=>({
+    getNodes:()=>displayNodes.reduce((acc:any,n:any)=>{
+      // console.log('N',n);
+      acc[n.id]=getContent(n.data);
+      return acc;
+    }, {} as Record<string,any>),
+  }))
 
   return (
     <Box
       className='graphFrame'
       ref={flowRef}
+      onDoubleClick={handleWrapperDoubleClick}
     >
       <ReactFlow
         onNodesChange  = {(e)=>onNodesChange(e)}
         onSelectionEnd = {onSelectionEnd}
+        zoomOnDoubleClick={false}
+        onPaneClick={onPaneClick}
 
         snapGrid   = {[20, 20]}
         snapToGrid = {true}
@@ -259,7 +408,8 @@ const Flow=()=>{
         panOnScroll
         selectionOnDrag
         panOnDrag={[1]}
-        proOptions={{ hideAttribution: true }}
+        proOptions={{hideAttribution:true}}
+        fitView
 
         panOnScrollSpeed  = {1.8}
         selectionMode     = {SelectionMode.Partial}
@@ -267,15 +417,31 @@ const Flow=()=>{
         onWheel           = {(e:any)=>{
           handleWheel(e)
         }}
-        nodes     = {react_ns}
+        // nodes     = {react_ns}
+        nodes={displayNodes}
         edges     = {react_es}
         nodeTypes = {nodeTypes}
         edgeTypes = {edgeTypes}
       >
+        <Panel position="top-right">
+          <IconButton
+            aria-label="Центрировать граф"
+            variant="subtle"
+            size="sm"
+            bg="rgba(150, 150, 150, 0.1)" 
+            backdropFilter="blur(5px)"
+            borderRadius="md"
+            onClick={() => {
+              fitView({ padding: 0.2, duration: 800 });
+            }}
+          >
+            <MdFilterCenterFocus size="20px" />
+          </IconButton>
+        </Panel>
       </ReactFlow>
     </Box>
   )
-}
+})
 
 
 export const Graph = forwardRef(({headerRef}:any,ref:any)=>{
@@ -283,8 +449,8 @@ export const Graph = forwardRef(({headerRef}:any,ref:any)=>{
   const{ns,id,name}=gCtx;
   const [sel,setSel]=useState(Object.keys(ns));
   const [mode,setMode]=useState('eg') as any;
-  const nameRef=useRef(null) as any;
   const [curName,setCurName]=useState({'0':name}) as any;
+  const flowRef=useRef(null) as any;
 
   useImperativeHandle(ref,()=>({
     select: (ids:any)=>{
@@ -330,10 +496,10 @@ export const Graph = forwardRef(({headerRef}:any,ref:any)=>{
         onClick={async()=>{
           const user = await spaced_account.get();
           const currentUserId = user.$id;
-          console.log('id',currentUserId);
-          console.log(nameRef.current);
+          const newNs = flowRef.current.getNodes();
+
           gReq.update(id,{
-            content:JSON.stringify(ns),
+            content:JSON.stringify(newNs),
             name:curName['0'],
             collaborators:[],
             owner:currentUserId,
@@ -346,9 +512,7 @@ export const Graph = forwardRef(({headerRef}:any,ref:any)=>{
   );
 
   useEffect(()=>{
-    console.log('??',headerRef)
     if (headerRef&&headerRef.current) {
-      console.log('!')
       const f=async()=>{
         await headerRef.current.resetContent();
         const dc=headerRef.current.getContent();
@@ -388,7 +552,7 @@ export const Graph = forwardRef(({headerRef}:any,ref:any)=>{
         })}
         </VStack>
         <ReactFlowProvider>
-          <Flow/>
+          <Flow ref={flowRef}/>
         </ReactFlowProvider>
       </HStack>
     )}

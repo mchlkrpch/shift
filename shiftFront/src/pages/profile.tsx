@@ -20,6 +20,7 @@ import { Image } from "@chakra-ui/react";
 import store from '../storage';
 
 import {
+	APPWRITE_CONFIG,
 	gReq,
 	spaced_account,
 	uReq,
@@ -32,8 +33,10 @@ import { Card } from '../sh/card/card';
 import { History } from './utils';
 import { ID, Query } from 'appwrite';
 import { GraphPage } from './graph';
-import { FaRegTrashAlt } from 'react-icons/fa';
+import { FaRegTrashAlt, FaShare } from 'react-icons/fa';
 import { HiDocumentAdd } from "react-icons/hi";
+import { FiShare } from "react-icons/fi";
+import { Clip } from '../sh/clip';
 
 export const unknownPhotoUrl: string = "https://i.postimg.cc/MKZzBCG2/spaced-gray.png";
 
@@ -172,19 +175,25 @@ export const InputStack=(props:any)=>{
 						)
 					}
 					if (el.tp === 'card') {
-						const [localNs,setLocalNs]=useState({'0':'default bio'})
+						const [localNs,setLocalNs]=useState({'0':el.d})
 
 						return (
 							<Box p={0}m={0} key={i} w={'100%'} alignItems={'center'} display={'flex'} flexDirection={'column'}>
 								{i!==0&&<Separator w={'95%'}/>}
-								<Box m={0} alignItems={'start'} w={'100%'} p={'5px'}>
+								<Box m={0} alignItems={'start'} w={'100%'} p={'5px 10px'}>
 									<GraphCtx.Provider value={{
 										ns:localNs,setNs:setLocalNs,
 										ref:el.ref,
 										id:'',
 										name:'',
 									}}>
-										<Card id={'0'} content={localNs['0']} options={{stats:false,textEdit:false}}/>
+										<Card
+											ref={el.ref}
+											id={'0'}
+											content={localNs['0']}
+											options={{stats:false,textEdit:false}}
+											focus={false}
+											/>
 									</GraphCtx.Provider>
 								</Box>
 							</Box>
@@ -261,10 +270,9 @@ export const MyGraphs=()=>{
 								
 								<Dialog.Root>
 									<Dialog.Trigger>
-										<IconButton
-											h={'30px'} variant={'plain'} colorPalette={'red'}>
+										<Box cursor={'pointer'} h={'30px'} colorPalette={'red'} w={'30px'} justifyItems={'center'} alignContent={'center'}>
 											<FaRegTrashAlt style={{width:'13px',height:'13px'}}/>
-										</IconButton>
+										</Box>
 									</Dialog.Trigger>
 									<Dialog.Backdrop />
 									<Dialog.Positioner>
@@ -280,7 +288,6 @@ export const MyGraphs=()=>{
 												fontWeight={300}
 											>
 												Content will be deleted without ability to restore it.
-
 												<Button
 													mt={'20px'}
 													w={'100%'}
@@ -352,13 +359,26 @@ export function Profile(props:any){
 								h={'70px'}
 								w={'70px'}/>
 
-							<Text opacity={0.4} mb={'-15px'} fontSize={'12px'}>Profile settings</Text>
+							<HStack mb={'-15px'} gap={'2px'} opacity={.4}>
+								<Text fontSize={'12px'}>Profile</Text>
+								<Clip
+									props={{
+										h:'20px',
+										variant:'plain',
+										p:'0',
+										w:'20px',
+										minW:'20px',
+									}}
+									copyIcon={<FaShare style={{width:'13px',height:'13px'}}/>}
+									value={APPWRITE_CONFIG.BASE_URL+'/u'+localUserData.$id}
+									/>
+							</HStack>
 
 							<InputStack
 								els={[
-									{ref:usernameRef,p:'username',   d:localUserData.username, tp:'input'},
-									{ref:avatarRef,  p:'avatar link',d:localUserData.photo_url,tp:'input'},
-									{ref:bioRef,     p:'about you',  d:localUserData.photo_url,tp:'card'}
+									{ref:usernameRef,p:'username',   d:localUserData.username,  tp:'input'},
+									{ref:avatarRef,  p:'avatar link',d:localUserData.photo_url, tp:'input'},
+									{ref:bioRef,     p:'about you',  d:localUserData.bio, tp:'card'}
 								]} />
 	
 							<HStack p={'0px 10px'} m={0} w={'100%'} mb={'-15px'}>
@@ -410,10 +430,15 @@ export function Profile(props:any){
 										const newUserData = JSON.parse(JSON.stringify(localUserData))
 										newUserData.username = usernameRef.current?.value||'';
 										newUserData.photo_url = avatarRef.current?.value||'';
-										newUserData.bio = bioRef.current?.value||'';
+										newUserData.bio = (bioRef.current as any).getContent()||'';
+
 										await uReq.update(
-											user,
-											newUserData,
+											newUserData.$id,
+											{
+												username:  newUserData.username,
+												photo_url: newUserData.photo_url,
+												bio:       newUserData.bio,
+											},
 										)
 										setLocalUserData(newUserData);
 									}}

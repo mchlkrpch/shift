@@ -48,9 +48,12 @@ export const Header=React.forwardRef((props:any,ref:any)=>{
             onClick={()=>{
                 History.push('/')
             }}
+            h={'30px'}
+            w={'30px'}
+            alignItems={'center'}
         >
             <GrHomeRounded
-                size={'22px'}
+                size={'12px'}
             />
         </Box>,
         <Spacer key={2}/>,

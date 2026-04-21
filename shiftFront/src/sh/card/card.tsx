@@ -194,7 +194,6 @@ export const contentCSS = css`
   width: 100%;
   gap: 0;
 }
-
 `;
 
 
@@ -211,7 +210,7 @@ const CardPath:any=({path}:any)=>{
             setPath(path.slice(0,i+1));
             setC(ns[t])
           }}>
-          <Card id={t} content={ns[t]} options={{stats:false,inner:true}}/>
+          <Card id={t} content={ns[t]} options={{stats:false,inner:true}} focus={false}/>
           {i!==path.length-1&&(<BreadcrumbSeparator key={'sep'+t}>/</BreadcrumbSeparator>)}
         </BreadcrumbLink>))}
     </BreadcrumbList>
@@ -240,12 +239,14 @@ export declare type shCardProps = {
   id: string,      // id to edit content in backend
   content: string, // content itself
   options: any,    // how to preview group type
+  focus?: boolean,
 }
 
 export const Card = forwardRef(({
   id,
   content,
   options,
+  focus=false,
 }: shCardProps, ref: any) => {
   // Card to display content either as code or visual card
   if (content === undefined) return <></>;
@@ -258,7 +259,7 @@ export const Card = forwardRef(({
   // if hovered - display upper tools
   const [hovered,setHovered]=useState(false);
   // if edit mode - editable div
-  const [isEdit,setIsEdit]=useState(false);
+  const [isEdit,setIsEdit]=useState(focus?true:false);
   // cur displayed option among all possiblilities 
   const [option,setOption]=useState(0) as any;
   // path of inner term (within parent term)
@@ -277,9 +278,6 @@ export const Card = forwardRef(({
     path:path,setPath:setPath,
     c:c,setC:setC,
   }),[path,c,setPath,setC]);
-  useImperativeHandle(ref,()=>({
-    focus: async()=>await setIsEdit(true),
-  }));
 
 
   // list[str]: of forward sides of card-group
@@ -323,7 +321,7 @@ export const Card = forwardRef(({
   const isHTML_set = useRef(false);
 
   useEffect(()=>{
-    if ((isEdit||options?.textEdit === true) && !isHTML_set.current) {
+    if ((isEdit||options?.textEdit === true) && !isHTML_set.current||focus) {
       isHTML_set.current = true; 
       const mergedTxt = `${c.split('\n').map((t:any)=>{
         return t === ''
@@ -344,9 +342,13 @@ export const Card = forwardRef(({
         ))
         .join('');
       setTimeout(() => {
+        console.log("focus:",focus)
         if (inputRef.current) {
+          console.log('1')
           inputRef.current.innerHTML = html;
-          if (isEdit) {
+          if (isEdit||focus) {
+            console.log('2')
+            focus=false
             inputRef.current.focus();
             if (typeof window.getSelection !== "undefined" && typeof document.createRange !== "undefined") {
                 const range = document.createRange();
@@ -364,7 +366,24 @@ export const Card = forwardRef(({
     }
 
     if (!isEdit && options?.textEdit !== true) {isHTML_set.current = false;}
-  }, [isEdit, c, options?.textEdit]);
+  }, [isEdit, c, options?.textEdit, focus]);
+
+  useEffect(()=>{
+    console.log('di')
+    if (focus) {
+      console.log('1', isEdit)
+      const tryFocus = (attempts = 0) => {
+        console.log('inputRef',inputRef)
+        if (inputRef.current) {
+          inputRef.current.focus();
+        } else if (attempts < 15) {
+          // Если ref еще null, пробуем снова через 10мс (до 15 попыток)
+          setTimeout(() => tryFocus(attempts + 1), 10);
+        }
+      }
+      tryFocus();
+    }
+  },[inputRef])
 
 
   const onBlurCb=async()=>{
@@ -406,7 +425,7 @@ export const Card = forwardRef(({
                 e.preventDefault()
                 setHide((h:any)=>!h)
               }}
-              onDoubleClick={(e:any)=>(
+              onDoubleClick={()=>(
                 setIsEdit(true)
               )}
               >
@@ -543,6 +562,11 @@ export const Card = forwardRef(({
   if (options?.inner===true) {
     return (<span className='card_inline_link'>{fwdParts[0]}</span>)
   }
+
+  useImperativeHandle(ref,()=>({
+    focus: async()=>await setIsEdit(true),
+    getContent: ()=>c,
+  }));
 
   return (
     <CardCtx.Provider value={cardCtx}>

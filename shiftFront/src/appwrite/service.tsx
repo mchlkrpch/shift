@@ -11,7 +11,8 @@ export const APPWRITE_CONFIG = {
         NODES: 'nodes',
         CARDS: 'cards',
         GRAPHS_ID: 'graphs',
-    }
+    },
+    BASE_URL:'localhost:5173',
 };
 
 
