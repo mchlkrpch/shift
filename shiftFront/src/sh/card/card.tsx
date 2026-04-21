@@ -21,6 +21,7 @@ import {
   IconButton,
   Separator,
   Spacer,
+  Text,
   VStack,
 } from "@chakra-ui/react";
 import {
@@ -41,6 +42,7 @@ import { Cell } from "./cell";
 import '@xyflow/react/dist/style.css';
 import { IoMdHeart, IoMdHeartEmpty } from "react-icons/io";
 import { FaRegCommentAlt } from "react-icons/fa";
+import { createPortal } from 'react-dom';
 
 
 export const contentCSS = css`
@@ -278,6 +280,99 @@ export const Card = forwardRef(({
     path:path,setPath:setPath,
     c:c,setC:setC,
   }),[path,c,setPath,setC]);
+  const [mentionMenu, setMentionMenu] = useState<{isOpen:boolean,query:string,
+    x:number, y:number, range:Range|null}>({isOpen:false,query:'', x:0,y:0, range:null});
+  const[mentionIndex, setMentionIndex] = useState(0);
+  const mentionOptions = Object.keys(ns)
+    .filter(nid => ns[nid]?.toLowerCase().includes(mentionMenu.query.toLowerCase()))
+    .map(nid => ({ id: nid, text: ns[nid].split('\n')[0] || 'empty' }));
+  
+  const insertMention=(item: {id: string, text: string})=>{
+    const sel = window.getSelection();
+    if (!sel || !mentionMenu.range) return;
+    sel.removeAllRanges();
+    sel.addRange(mentionMenu.range);
+    // delete '/', request text
+    const r = mentionMenu.range;
+    r.setStart(r.startContainer, Math.max(0, r.startOffset - mentionMenu.query.length - 1));
+    r.deleteContents();
+
+    const el = document.createElement('span');
+    el.className = 'inlineCell';
+    el.contentEditable = 'false';
+    el.id = item.id;
+    el.innerText = item.text.length > 20 ? item.text.substring(0, 20) + '...' : item.text;
+    r.insertNode(el);
+
+    const space = document.createTextNode('\u00A0');
+    el.after(space);
+    r.setStartAfter(space);
+    r.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(r);
+    setMentionMenu({ isOpen: false, query: '', x: 0, y: 0, range: null });
+  };
+
+  const localOnKeyDown = (e: React.KeyboardEvent) => {
+    // 1. Перемещение карточки
+    if (e.altKey && e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (options.onMove) options.onMove(-1);
+      return;
+    }
+    if (e.altKey && e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (options.onMove) options.onMove(1);
+      return;
+    }
+    // 2. Логика выпадающего меню '/'
+    if (mentionMenu.isOpen) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setMentionIndex(i => Math.min(i + 1, mentionOptions.length - 1));
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setMentionIndex(i => Math.max(i - 1, 0));
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (mentionOptions.length > 0) insertMention(mentionOptions[mentionIndex]);
+      } else if (e.key === 'Escape') {
+        setMentionMenu(prev => ({ ...prev, isOpen: false }));
+      } else if (e.key === 'Backspace') {
+        if (mentionMenu.query.length === 0) {
+          setMentionMenu(prev => ({ ...prev, isOpen: false }));
+        } else {
+          setMentionMenu(prev => ({ ...prev, query: prev.query.slice(0, -1) }));
+        }
+      } else if (e.key.length === 1) { // Если введена буква/символ
+        setMentionMenu(prev => ({ ...prev, query: prev.query + e.key }));
+      }
+    } else if (e.key === '/') {
+      setTimeout(() => {
+        const sel = window.getSelection();
+        if (sel && sel.rangeCount > 0) {
+          const range = sel.getRangeAt(0).cloneRange();
+          const rect = range.getBoundingClientRect();
+          const wrapperRect = inputRef.current.getBoundingClientRect();
+          // setMentionMenu({
+          //   isOpen: true,
+          //   query: '',
+          //   x: rect.left - wrapperRect.left,
+          //   y: (rect.bottom - wrapperRect.top) + 5,
+          //   range: range 
+          // });
+          setMentionMenu({
+            isOpen: true,
+            query: '',
+            x: rect.left,
+            y: rect.bottom+5,
+            range: range 
+          });
+          setMentionIndex(0);
+        }
+      }, 10);
+    }
+  };
 
 
   // list[str]: of forward sides of card-group
@@ -342,12 +437,9 @@ export const Card = forwardRef(({
         ))
         .join('');
       setTimeout(() => {
-        console.log("focus:",focus)
         if (inputRef.current) {
-          console.log('1')
           inputRef.current.innerHTML = html;
           if (isEdit||focus) {
-            console.log('2')
             focus=false
             inputRef.current.focus();
             if (typeof window.getSelection !== "undefined" && typeof document.createRange !== "undefined") {
@@ -369,11 +461,8 @@ export const Card = forwardRef(({
   }, [isEdit, c, options?.textEdit, focus]);
 
   useEffect(()=>{
-    console.log('di')
     if (focus) {
-      console.log('1', isEdit)
       const tryFocus = (attempts = 0) => {
-        console.log('inputRef',inputRef)
         if (inputRef.current) {
           inputRef.current.focus();
         } else if (attempts < 15) {
@@ -460,13 +549,31 @@ export const Card = forwardRef(({
 
   
   const CardBody = <div className={'editor'}
-    style={{fontSize:`${fontSize}px`}}
+    style={{fontSize:`${fontSize}px`, position: 'relative'}}
     onClick={async ()=>setIsEdit(true)}>
+
+    {mentionMenu.isOpen && createPortal(
+      <Box position="fixed" left={mentionMenu.x} top={mentionMenu.y} zIndex={99999}
+          bg="gray.900" border="1px solid" borderColor="#2D3748" borderRadius="md" p={1} shadow="dark-lg" maxH="200px" overflowY="auto" minW="150px">
+        {mentionOptions.length === 0 ? <Box p={2} fontSize="sm" color="gray.400">no cards to mention</Box>:
+        <Text opacity={.3} fontWeight={400} fontSize={'11px'} mb={'3px'}>
+          cards to mention
+        </Text>}
+        {mentionOptions.map((opt, i) => (
+          <Box key={opt.id} p={'2px 5px'} borderRadius="sm" fontSize="sm"
+               bg={i === mentionIndex ? 'blue.600' : 'transparent'}
+               cursor="pointer" 
+               onMouseDown={(e) => { e.preventDefault(); insertMention(opt); }}> 
+            {opt.text}
+          </Box>
+        ))}
+      </Box>,
+      document.body
+    )}
+
     {options?.textEdit===true?(
       <HStack justifyContent={'stretch'} alignItems={'stretch'} w={'100%'} gap={0}>
-        <Box flex={1} maxW={'50%'} w={'50%'} minW={0} pl={'10px'} pr={'10px'}
-          // backgroundColor={'color-mix(in srgb, #666 10%, transparent)'}
-          >
+        <Box flex={1} maxW={'50%'} w={'50%'} minW={0} pl={'10px'} pr={'10px'}>
           <div
             ref={inputRef}
             role='textbox'
@@ -474,7 +581,7 @@ export const Card = forwardRef(({
             suppressContentEditableWarning={true}
             defaultValue={c}
             onBlur={onBlurCb}
-            onKeyDown={onKeyDownCb}
+            onKeyDown={localOnKeyDown}
             style={{
               width: '100%',
               marginTop: options.textEdit===true?'50px':0,

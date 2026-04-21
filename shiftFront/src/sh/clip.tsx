@@ -6,7 +6,6 @@ export function Clip({
   props,
   copyIcon=<LuCopy style={{width:'13px',height:'13px'}}/>
 }:any) {
-  console.log('props',props)
   return (
     <Clipboard.Root value={value} p={0} w={props.width||'fit-content'} display={'flex'}>
       <Clipboard.Trigger asChild>

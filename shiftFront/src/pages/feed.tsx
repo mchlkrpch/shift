@@ -6,6 +6,7 @@ import { Box, Button, HStack, Input, Separator, VStack } from '@chakra-ui/react'
 import { Profile } from './profile';
 import { FaBook } from "react-icons/fa6";
 import { ID } from 'appwrite';
+import { History } from './utils';
 
 const feedStyle=css`
 display: flex;
@@ -31,7 +32,6 @@ export const Feed=()=>{
                 overflowY={'auto'}
                 scrollbarWidth={'none'}
             >
-                {/* <Profile preview={true}/> */}
                 {/* continue study */}
                 <HStack w={'100%'}>
                     <Input w={'100%'} placeholder="search" />
@@ -39,10 +39,7 @@ export const Feed=()=>{
                         fontWeight={600} p={'10px 4px'}
                         gap={'3px'}
                         onClick={()=>{
-                            console.log('create new graph')
                             const id: string = ID.unique();
-                            console.log('id',id)
-                            
                             History.push('/')
                         }}
                     >

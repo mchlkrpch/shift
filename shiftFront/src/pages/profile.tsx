@@ -28,7 +28,7 @@ import {
 import { logOut } from './auth';
 import { GraphCtx } from '../App';
 import { Header } from '../components/header';
-import { Graph } from '../sh/graph/graph';
+import { Graph } from '../sh/graph/graphEditor';
 import { Card } from '../sh/card/card';
 import { History } from './utils';
 import { ID, Query } from 'appwrite';
@@ -224,11 +224,8 @@ export const MyGraphs=()=>{
 
 				const myDocuments = await gReq.search(filters);
 				if (myDocuments) {
-					console.log('your docs:', myDocuments);
 					setGraphData(myDocuments)
 					setLoading(false)
-				} else {
-					console.log('you have no docs');
 				}
 			} catch (err) {
 				setError("err");
@@ -238,7 +235,6 @@ export const MyGraphs=()=>{
 		};
 		fetchGraphData();
 	},[]);
-	console.log(graphData)
 	return (
 		<div css={inputStackCSS}>
 			<VStack w={'100%'} alignItems={'stretch'} className={'block'} p={'10px'} gap={'5px'}>
@@ -407,17 +403,6 @@ export function Profile(props:any){
 								</Button>
 							</HStack>
 							<MyGraphs/>
-
-							<Box mt={'-15px'} w={'100%'} maxW={'600px'} className={'block'}>
-								<GraphCtx.Provider value={{
-									ns:curNs,setNs:setNs,
-									ref:gRef,
-									id:'',
-									name:'',
-								}}>
-									<Graph ref={gRef}/>
-								</GraphCtx.Provider>
-							</Box>
 
 							<HStack w={'100%'}
 								alignItems={'stretch'}

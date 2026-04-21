@@ -35,6 +35,7 @@ import {
   CardRoot,
   HStack,
   IconButton,
+  Separator,
   Spacer,
   Tabs,
   VStack
@@ -43,129 +44,209 @@ import { calcG, OPTION_SPLIT_SYM, Sh, SIDE_SPLIT_SYM, topSort } from '../card/ut
 import { Card } from '../card/card';
 import { FaParagraph } from "react-icons/fa6";
 import { BsDiagram2Fill } from "react-icons/bs";
-import { gReq, spaced_account } from "../../appwrite/service";
+import { APPWRITE_CONFIG, gReq, spaced_account } from "../../appwrite/service";
 import { Panel } from '@xyflow/react';
 import { MdFilterCenterFocus } from "react-icons/md";
+import { Clip } from "../clip";
+import { FaShare } from "react-icons/fa";
+import { RiSaveFill } from "react-icons/ri";
 
 export const graphCSS = css`
 display:flex;
 flex:1;
+position: relative;
 margin: 0;
+width: 100%;
+min-height: 0;
+overflow-y: hidden;
 
-.graphStack{
-  overflow-y: hidden;
+.thinButton {
+  height: 20px;
+  gap: 3px;
+  padding:0px 10px;
 }
 
 //////////////////////////////////////////////////////
-// graph tabs
+// graph headertabs
 //////////////////////////////////////////////////////
+
+.headerTabs {
+  display: flex;
+  flex-direction: row;
+  width: 100%;
+  align-items: center;
+  gap: 5px;
+}
 
 .graphTabs {
   width: 100%;
+  display: flex
+  flex-direction:column;
+  gap:0;
+  min-height:0;
+  flex:1;
 }
 
 .tabsTrigger {
   border-radius: 2px;
   height: 20px;
-  padding: 2px 4px;
+  padding: 2px 5px;
   gap: 2px;
 }
 
-.GraphEditorStack {
-  align-items: stretch;
-  gap: 20px;
-  display: flex;
-  flex: 1;
-  min-height:0;
-  min-width: 50%;
-  max-width: 50%;
-  overflow-y: auto;
-  scrollbar-width: none;
-  overflow-x: auto;
+
+// for selected mode(graph/text) in header
+[aria-selected="true"] {
+  background-color: color-mix(in srgb, #666 20%, transparent);
+  // border: 1px solid color-mix(in srgb, #666 20%, transparent);
 }
 
-.TextEditorStack {
-  align-items: stretch;
+
+//////////////////////////////////////////////////////
+// Graph root with editor stack
+//////////////////////////////////////////////////////
+
+
+.GraphmodeSides {
+  width: 100%;
+  height: 100%;
+  flex:1;
+  min-height:0;
+  align-items:stretch;
   gap: 0;
+}
+
+.GraphmodeStack {
   display: flex;
   flex: 1;
   min-height:0;
+  align-items: stretch;
+
   overflow-y: auto;
+  overflow-x: auto;
   scrollbar-width: none;
+
+  gap: 20px;
+  min-width: 50%;
+  max-width: 50%;
+}
+
+.TextmodeStack {
+  display: flex;
+  flex: 1;
+  min-height:0;
+  align-items: stretch;
+  
+  overflow-y: auto;
+  overflow-x: auto;
+  scrollbar-width: none;
+  
+  gap: 0;
+  height: 100%;
+}
+
+.textmodeToolsPanel {
+  display:flex;
+  position: sticky;
+  align-items:center;
+  justify-content:start;
+
+  top: 0;
+  z-index: 10;  
+  width: 100%;
+  padding: 10px 15px;
+
+  background-color: color-mix(in srgb, var(--chakra-colors-bg) 80%, transparent);
+  backdrop-filter:blur(10px);
+  border-bottom: 1px solid color-mix(in srgb, #666 20%, transparent);
 }
 
 //////////////////////////////////////////////////////
-// graph frame
+// reactflow Flow of graph
 //////////////////////////////////////////////////////
 
 .graphFrame {
   flex: 1;
   position: relative;
   min-height: 500px;
-  // border-radius: 20px;
   overflow: hidden;
-  background-color: color-mix(in srgb, #666 10%, transparent);
+  // background-color: color-mix(in srgb, #666 10%, transparent);
 }
 
 .defNode {
 }
 `;
 
-export const SpDefinition = (card: any) => {
-  const {data} = card;
-  if (!data.tp) {
-    data.tp = 'Def';
-  }
 
-  const { colorMode } = useColorMode();
-  const firstLine = data.forward[0];
 
-  const content = (
-    <Box className='defNode'>
-      <Handle
-        type='target'
-        position={Position.Top}
-        style={{ top:'100%', left: '50%', opacity: '0%' }}
-        isConnectable={false}
-      />
-      <Handle
-        type="source"
-        style={{ top: '100%', left: '50%', opacity: '0%' }}
-        position={Position.Top}
-        isConnectable={false}
-      />
-      <CardRoot
-        className={`SpDef-frame feed-block-${data.tp}`}
-        borderRadius={'5px'}
-        w={'fit-content'}
-        maxW={'250px'}
-        minH={'30px'}>
-        <Sh value={firstLine} isInner={true}/>
-      </CardRoot>
-    </Box>
-  );
+function getContent(data:any) {
+  return data.forward.map((f_s:string,i:number)=>(
+    f_s
+    + `\n${SIDE_SPLIT_SYM}\n`
+    + data.backward[i]
+  )).join(`\n${OPTION_SPLIT_SYM}\n`)
+}
 
-  if (colorMode == 'light') {
+
+
+
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+// ReactFlow part
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+const Colored=({content}:any)=>{
+  const {colorMode} = useColorMode();
+  if (colorMode==='light') {
     return <LightMode>{content}</LightMode>;
   }
   return <DarkMode>{content}</DarkMode>;
+}
+
+export const SpDef=({data}:any)=>{
+  return (
+    <Colored content={(
+      <Box className='defNode'>
+        <Handle
+          type='target'
+          position={Position.Top}
+          style={{ top:'100%', left: '50%', opacity: '0%' }}
+          isConnectable={false}
+        />
+        <Handle
+          type="source"
+          style={{ top: '100%', left: '50%', opacity: '0%' }}
+          position={Position.Top}
+          isConnectable={false}
+        />
+        <CardRoot
+          className={`SpDef-frame feed-block-${data.tp}`}
+          borderRadius={'5px'}
+          w={'fit-content'}
+          maxW={'250px'}
+          minH={'30px'}>
+          <Sh value={data.forward[0]} isInner={true}/>
+        </CardRoot>
+      </Box>
+    )}/>
+  )
 };
 
-export const TempDefinition = ({ data, id }: any) => {
+export const TempDef = ({data,id}: any) => {
   const fakeGCtx = {
-    ns: { [id]: data.content },
-    setNs: (newNs: any) => data.setContent(newNs[id]),
-    name:'',
-    id:'',
+    ns:{[id]:data.content},
+    setNs:(newNs:any)=>data.setContent(newNs[id]),
+    name:'', id:'',
     ref:null,
   };
-  const { colorMode } = useColorMode();
-  const content= (
-    <Box 
-      className='defNode'
-      onClick={(e) => e.stopPropagation()} 
-      onDoubleClick={(e) => e.stopPropagation()}
-    >
+  return (
+    <Colored content={(
+      <Box 
+        className='defNode'
+        onClick={(e)=>e.stopPropagation()} 
+        onDoubleClick={(e)=>e.stopPropagation()}
+      >
       <CardRoot
         className={`SpDef-frame feed-block-Def`}
         borderRadius={'5px'}
@@ -183,28 +264,17 @@ export const TempDefinition = ({ data, id }: any) => {
         </GraphCtx.Provider>
       </CardRoot>
     </Box>
-  );
-  if (colorMode == 'light') {
-    return <LightMode>{content}</LightMode>;
-  }
-  return <DarkMode>{content}</DarkMode>;
+    )}/>
+  )
 };
 
 
 export function SpEdge({
   id,
-  sourceX,
-  sourceY,
-  targetX,
-  targetY,
-  sourcePosition,
-  targetPosition,
-  // @ts-expect-error: expected style parameter by default
-  // eslint-disable-next-line
-  style = {},
-  markerEnd,
-  selected,
-  borderRadius = 15,
+  sourceX,sourceY,
+  targetX,targetY,
+  sourcePosition,targetPosition,
+  markerEnd,selected,borderRadius = 15,
 }: any) {
   const [edgePath] = getSmoothStepPath({
     sourceX, sourceY,
@@ -233,41 +303,30 @@ export function SpEdge({
 }
 
 
-const nodeTypes = {SpDef:SpDefinition, TempDef:TempDefinition}
+const nodeTypes = {SpDef:SpDef, TempDef:TempDef}
 const edgeTypes = {SpEdge: SpEdge}
 
 
-function getContent(data:any) {
-  console.log('data:',data);
-  return data.forward.map((f_s:string,i:number)=>(
-    f_s
-    + `\n${SIDE_SPLIT_SYM}\n`
-    + data.backward[i]
-  )).join(`\n${OPTION_SPLIT_SYM}\n`)
-}
-
-const Flow=React.forwardRef((props:any,r:any)=>{
+// to user useReactFlow() inside
+const Flow=React.forwardRef((props:any,ref:any)=>{
   const gCtx=useGraphCtx()as any;
-  const{ns,setNs,ref}=gCtx;
-  const [react_ns,react_es] = calcG(ns);
-  const tempSelRef = useRef(new Set());
+  const{ns,setNs,gRef}=gCtx;
+  const [reactflowNs,reactflowEs] = calcG(ns); // calculates dagre graph with connections between cards
   const flowRef = useRef(null) as any;
+  const selectedNodesIds = useRef(new Set());
 
   const[tempNode, setTempNode] = useState<any>(null);
   const tempContentRef = useRef('');
   const[nodeToZoomId, setNodeToZoomId] = useState<string | null>(null);
 
   const {
-    setViewport,
-    getViewport,
-    getZoom,
-    fitView,
+    setViewport,getViewport,
+    getZoom,fitView,
     screenToFlowPosition,
-    setCenter,
-    getNodes
+    setCenter,getNodes,
   }=useReactFlow();
 
-  const handleWheel = useCallback((event:any) => {
+  const handleWheel=useCallback((event:any) => {
     if (event.ctrlKey) {
       const zoomSensitivity = 0.005;
       const currentZoom = getZoom();
@@ -287,10 +346,10 @@ const Flow=React.forwardRef((props:any,r:any)=>{
     }
   }, [getZoom, getViewport, setViewport]);
 
-  const onSelectionEnd = () => {
-    const finalSelectionArray = Array.from(tempSelRef.current);
-    ref.current.select(finalSelectionArray);
-    tempSelRef.current=new Set()
+  const onSelectionEnd=()=>{
+    const finalSelectionArray = Array.from(selectedNodesIds.current);
+    gRef.current.select(finalSelectionArray);
+    selectedNodesIds.current=new Set()
   };
 
   const onNodesChange = (changes: any) => {
@@ -298,9 +357,9 @@ const Flow=React.forwardRef((props:any,r:any)=>{
     for (const ch of changes) {
       if (ch.type === 'select') {
         if (ch.selected === true) {
-          tempSelRef.current.add(ch.id);
+          selectedNodesIds.current.add(ch.id);
         } else {
-          tempSelRef.current.delete(ch.id);
+          selectedNodesIds.current.delete(ch.id);
         }
       }
     }
@@ -323,7 +382,7 @@ const Flow=React.forwardRef((props:any,r:any)=>{
       }, 150);
       return () => clearTimeout(timer);
     }
-  },[react_ns, nodeToZoomId, getNodes, setCenter]);
+  },[reactflowNs, nodeToZoomId, getNodes, setCenter]);
 
 
   const displayNodes = useMemo(() => {
@@ -341,10 +400,10 @@ const Flow=React.forwardRef((props:any,r:any)=>{
           }
         }
       };
-      return [...react_ns, tNode];
+      return [...reactflowNs, tNode];
     }
-    return react_ns;
-  }, [react_ns, tempNode]);
+    return reactflowNs;
+  }, [reactflowNs, tempNode]);
 
 
   const handleWrapperDoubleClick = useCallback((e: React.MouseEvent)=>{
@@ -379,11 +438,8 @@ const Flow=React.forwardRef((props:any,r:any)=>{
   }, [tempNode, setNs]);
 
 
-
-  // //////////////////////////////////////////////////////////////////////////////////////////////
-  useImperativeHandle(r,()=>({
+  useImperativeHandle(ref,()=>({
     getNodes:()=>displayNodes.reduce((acc:any,n:any)=>{
-      // console.log('N',n);
       acc[n.id]=getContent(n.data);
       return acc;
     }, {} as Record<string,any>),
@@ -417,24 +473,22 @@ const Flow=React.forwardRef((props:any,r:any)=>{
         onWheel           = {(e:any)=>{
           handleWheel(e)
         }}
-        // nodes     = {react_ns}
+        // nodes     = {reactflowNs}
         nodes={displayNodes}
-        edges     = {react_es}
+        edges     = {reactflowEs}
         nodeTypes = {nodeTypes}
         edgeTypes = {edgeTypes}
       >
         <Panel position="top-right">
           <IconButton
-            aria-label="Центрировать граф"
+            aria-label="center graph"
             variant="subtle"
             size="sm"
             bg="rgba(150, 150, 150, 0.1)" 
             backdropFilter="blur(5px)"
             borderRadius="md"
-            onClick={() => {
-              fitView({ padding: 0.2, duration: 800 });
-            }}
-          >
+            onClick={()=>fitView({padding:0.3, duration:200})}
+            >
             <MdFilterCenterFocus size="20px" />
           </IconButton>
         </Panel>
@@ -444,13 +498,152 @@ const Flow=React.forwardRef((props:any,r:any)=>{
 })
 
 
-export const Graph = forwardRef(({headerRef}:any,ref:any)=>{
-  const gCtx=useGraphCtx()as any;
-  const{ns,id,name}=gCtx;
+export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
+  const{ns,id,name}=useGraphCtx()as any;
   const [sel,setSel]=useState(Object.keys(ns));
+  // graphmode / textmode
   const [mode,setMode]=useState('eg') as any;
+  // name of the graph
   const [curName,setCurName]=useState({'0':name}) as any;
+  // reactflow component with editable ns content forward ref
   const flowRef=useRef(null) as any;
+
+  // const sorted_ns = topSort(
+  //   Object.keys(ns)
+  //     .filter(key => sel.includes(key)) 
+  //     .reduce((obj:any,key:any) => {obj[key] = ns[key]; return obj;}, {}) as any);
+
+  const [orderedIds, setOrderedIds] = useState<string[]>(Object.keys(ns).filter(k => sel.includes(k)));
+  useEffect(() => {
+    setOrderedIds(prev => {
+      const newIds = sel.filter((id: string) => !prev.includes(id));
+      return[...prev.filter((id: string) => sel.includes(id)), ...newIds];
+    });
+  }, [sel]);
+
+  const handleMoveCard = (cardId: string, direction: -1 | 1) => {
+    setOrderedIds(prev => {
+      const idx = prev.indexOf(cardId);
+      if (idx === -1) return prev;
+      const newIdx = idx + direction;
+      if (newIdx < 0 || newIdx >= prev.length) return prev;
+      const next = [...prev];
+      [next[idx], next[newIdx]] = [next[newIdx], next[idx]];
+      return next;
+    });
+  };
+
+  const handleTopSort = () => {
+    const sorted = topSort(ns, orderedIds);
+    setOrderedIds(sorted.map(s => s.id));
+  };
+
+  const graphNodes = orderedIds.map(id => ({ id, content: ns[id] }));
+
+  const HeaderTabs = (
+    // css wrapper
+    <span css={graphCSS} key={'header_tabs'}>
+      <Tabs.Root className='headerTabs' value={mode} onValueChange={(e)=>setMode(e.value)} variant="plain">
+        <Tabs.Trigger className='tabsTrigger' value="eg">
+          <BsDiagram2Fill /> graph
+        </Tabs.Trigger>
+        <Tabs.Trigger className='tabsTrigger' value="tr" ml={'-6px'}>
+          <FaParagraph /> text
+        </Tabs.Trigger>
+
+        <GraphCtx.Provider value={{ns:curName, setNs:setCurName}}>
+            <Card id={'0'} content={name} options={{}}/>
+        </GraphCtx.Provider>
+        <Spacer />
+
+        <Button h={'20px'} gap={'3px'} fontWeight={500} p={'0px 4px'} variant={'subtle'} colorPalette={'green'}
+          onClick={async()=>{
+            // get user id to autorize; get current node from curstom
+            // hook of fwdRef of flow and push to appwrite
+            const user = await spaced_account.get();
+            const currentUserId = user.$id;
+            gReq.update(id,{
+              content:JSON.stringify(ns),
+              name:curName['0'],
+              collaborators:[],
+              owner:currentUserId,
+            })
+          }}
+        >
+          <RiSaveFill style={{height:'13px',width:'13px'}}/>
+          save</Button>
+        <Clip
+          props={{
+            h:'20px',
+            variant:'subtle',
+            p:'0',
+            w:'20px',
+            minW:'20px'}}
+          copyIcon={<FaShare style={{width:'13px',height:'13px'}}/>}
+          value={APPWRITE_CONFIG.BASE_URL+'/'+id}
+          />
+      </Tabs.Root>
+    </span>
+  );
+
+  useEffect(()=>{
+    // update header when mode is changed
+    if (headerRef&&headerRef.current) {
+      const f=async()=>{
+        await headerRef.current.resetContent();
+        const dc=headerRef.current.getContent();
+        headerRef.current.setContent([dc[0], HeaderTabs, dc[2]]);
+      }
+      f();
+    }
+  },[mode])
+
+  const Editor = (
+  <Tabs.Root defaultValue="GraphEditor" variant="plain" className={'graphTabs'}>
+    {mode==='eg'&&(
+      <HStack className='GraphmodeSides'>
+        <VStack className='GraphmodeStack'>
+        {graphNodes.map((item:any)=>{
+          return <Card
+            key={item.id}
+            id={item.id}
+            content={item.content}
+            options={{stats: false}}
+          />
+        })}
+        </VStack>
+        <Separator orientation={'vertical'} w={'1px'} h={'100%'}/>
+        <ReactFlowProvider> {/* to user useReactFlow() inside */}
+          <Flow ref={flowRef}/>
+        </ReactFlowProvider>
+      </HStack>
+    )}
+
+    {mode==='tr'&&(
+      <>
+        <VStack className='TextmodeStack'>
+          <Box className='textmodeToolsPanel'>
+            <Button className='thinButton' variant="subtle" onClick={handleTopSort}>
+              <BsDiagram2Fill style={{height:'13px',width:'13px',marginRight: '5px'}}/>
+              top sort
+            </Button>
+          </Box>
+          {orderedIds.map((curId:any)=>{
+            return <Card
+              key={curId}
+              id={curId}
+              content={ns[curId]}
+              options={{ 
+                stats: false, 
+                textEdit: true, 
+                onMove: (dir: number) => handleMoveCard(curId, dir as -1|1)
+              }}
+            />
+          })}
+        </VStack>
+      </>
+    )}
+  </Tabs.Root>)
 
   useImperativeHandle(ref,()=>({
     select: (ids:any)=>{
@@ -461,127 +654,9 @@ export const Graph = forwardRef(({headerRef}:any,ref:any)=>{
     }
   }))
 
-  const sorted_ns = topSort(
-    Object.keys(ns)
-      .filter(key => sel.includes(key)) 
-      .reduce((obj: any, key: any) => {obj[key] = ns[key]; return obj;}, {}) as any);
-
-  const TabsHeader = (
-    <Tabs.Root css={graphCSS} value={mode} onValueChange={(e) => setMode(e.value)} variant="plain"
-      display={'flex'}
-      flexDirection={'row'}
-      w={'100%'}
-      alignItems={'center'}
-      gap={'10px'}
-    >
-      <GraphCtx.Provider value={{
-        ns:curName, setNs:setCurName,
-        ref:null, id:'',
-        name: '',
-      }}>
-          <Card id={'0'} content={name} options={{}}/>
-      </GraphCtx.Provider>
-      
-      <Tabs.List bg="bg.muted" rounded="4px" p="3px" minH="fit-content" alignItems={'center'} justifyContent={'center'}>
-        <Tabs.Trigger className='tabsTrigger' value="eg">
-          <BsDiagram2Fill /> graph
-        </Tabs.Trigger>
-        <Tabs.Trigger className='tabsTrigger' value="tr">
-          <FaParagraph /> text
-        </Tabs.Trigger>
-        <Tabs.Indicator />
-      </Tabs.List>
-      <Spacer />
-      <Button h={'20px'} variant={'subtle'} colorPalette={'green'}
-        onClick={async()=>{
-          const user = await spaced_account.get();
-          const currentUserId = user.$id;
-          const newNs = flowRef.current.getNodes();
-
-          gReq.update(id,{
-            content:JSON.stringify(newNs),
-            name:curName['0'],
-            collaborators:[],
-            owner:currentUserId,
-          })
-        }}
-      >
-        commit
-      </Button>
-    </Tabs.Root>
-  );
-
-  useEffect(()=>{
-    if (headerRef&&headerRef.current) {
-      const f=async()=>{
-        await headerRef.current.resetContent();
-        const dc=headerRef.current.getContent();
-        console.log(dc)
-        headerRef.current.setContent([
-          dc[0],
-          TabsHeader,
-          dc[2],
-        ]);
-  
-        console.log(headerRef.current.getContent())
-      }
-      f();
-    }
-  },[mode])
-
-  const GraphTabs = (
-  <Tabs.Root defaultValue="GraphEditor" variant="plain" className={'graphTabs'}
-      w={'100%'}
-      display="flex" flexDirection="column" gap={0}
-      minH={0}
-      flex={1}
-      >
-    {mode==='eg'&&(
-      <HStack w={'100%'}
-        flex={1}
-        minH={0}
-        alignItems={'stretch'} gap={0}>
-        <VStack className='GraphEditorStack' flex={1} minH={0}>
-        {sorted_ns.map((item:any)=>{
-          return <Card
-            key={item.id}
-            id={item.id}
-            content={item.content}
-            options={{stats: false}}
-          />
-        })}
-        </VStack>
-        <ReactFlowProvider>
-          <Flow ref={flowRef}/>
-        </ReactFlowProvider>
-      </HStack>
-    )}
-    {mode==='tr'&&(
-      <VStack className='TextEditorStack'
-        flex={1}
-        minH={0}
-        overflowY={'auto'}
-        >
-      {sorted_ns.map((item:any)=>{
-        return <Card
-          key={item.id}
-          id={item.id}
-          content={item.content}
-          options={{stats: false, textEdit:mode==='eg'?false:true}}
-        />
-      })}
-      </VStack>
-    )}
-  </Tabs.Root>)
-
   return (
-    <div css={graphCSS}
-      style={{ position: 'relative', flex: 1, width: '100%', minHeight: 0 }}>
-      <Box position="absolute" inset={0} display="flex" flexDirection="column">
-        <VStack className={'graphStack'} flex={1} minH={0} gap={0}>
-          {GraphTabs}
-        </VStack>
-      </Box>
+    <div css={graphCSS}>
+      {Editor}
     </div>
   )
 });

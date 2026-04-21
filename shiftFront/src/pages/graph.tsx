@@ -3,7 +3,7 @@ import { Header } from "../components/header";
 import { Spinner, Box, Text } from '@chakra-ui/react';
 import { gReq } from '../appwrite/service'; 
 import { GraphCtx } from '../App';
-import { Graph } from '../sh/graph/graph';
+import { Graph } from '../sh/graph/graphEditor';
 import { History } from './utils';
 import { Sh } from '../sh/card/utility';
 // import store from '../storage';
@@ -79,7 +79,6 @@ export const GraphPage = ({mode,id,name}: any) => {
             if (mode === 'brief') {
                 try {
                     const data = await gReq.read(id) as any;
-                    console.log('get data:',data)
                     // name=data.name;
                     if (data) {
                         setName(data.name)
@@ -98,7 +97,6 @@ export const GraphPage = ({mode,id,name}: any) => {
                     const pathParts = window.location.pathname.split('/');
                     id = pathParts[pathParts.length-1]||pathParts[1];
                     const data = await gReq.read(id) as any;
-                    console.log('get data:',data)
                     if (data) {
                         setName(data.name)
                         setGraphData(data);

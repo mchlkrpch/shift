@@ -10,7 +10,7 @@ import store from "../storage";
 import { Profile } from "./profile";
 import { Header } from "../components/header";
 import { Feed } from "./feed";
-import { Graph } from "../sh/graph/graph";
+import { Graph } from "../sh/graph/graphEditor";
 import { GraphPage } from "./graph";
 
 export async function loginGoogle(){
@@ -275,7 +275,6 @@ class SpaceRouter extends React.Component<any,any> {
 				}
       } catch (e:any) {
 				console.error('e',e)
-                console.log('h',History)
 				History.push('/auth')
       }
     };

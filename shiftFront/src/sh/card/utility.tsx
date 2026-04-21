@@ -305,7 +305,9 @@ const insertBlock=async(
 	el.dataset.id='';
 	await range.insertNode(el);
 	const root = createRoot(el);
-	await root.render(<Cell id={'val'}/>)
+	await root.render(<>
+    <Cell id={'val'}/>
+  </>)
 };
 
 export const onKeyDownCb:any=async(
@@ -543,6 +545,7 @@ export const buildG = (rawNs: Record<string, string>) => {
 
 // dagre импорты и настройки (без изменений)
 import dagre from '@dagrejs/dagre';
+import { GraphCtx } from '../../App';
 const dagreGraph = new dagre.graphlib.Graph().setDefaultEdgeLabel(() => ({}));
 export const NodeWidth = 258;
 export const NodeHeight = 40;

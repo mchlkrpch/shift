@@ -14,9 +14,7 @@ display: flex;
 width: 100%;
 justify-content: center;
 align-items: center;
-// background-color: color-mix(in srgb, #ccc 5%, transparent);
 border-bottom: 1px solid color-mix(in srgb, #ccc 10%, transparent);
-// gap: 10px;
 
 .panel{
     margin: 10px 10px;
@@ -31,7 +29,7 @@ border-bottom: 1px solid color-mix(in srgb, #ccc 10%, transparent);
     height: 30px;
     align-items:center;
     justify-content: center;
-    border: 1px solid color-mix(in srgb, #ccc 10%, transparent)
+    // border: 1px solid color-mix(in srgb, #ccc 10%, transparent)
 }
 .hItem:hover{
     background-color: color-mix(in srgb, #ccc 5%, transparent)
@@ -44,7 +42,7 @@ export const Header=React.forwardRef((props:any,ref:any)=>{
         <Box
             key={1}
             className={'hItem'}
-            rounded={'full'}
+            rounded={'2px'}
             onClick={()=>{
                 History.push('/')
             }}
@@ -80,7 +78,6 @@ export const Header=React.forwardRef((props:any,ref:any)=>{
 
     useImperativeHandle(ref,()=>({
         setContent:(cnt:any[])=>{
-            console.log('setCnt',cnt);
             setLocalContent(cnt);
         },
         resetContent:async()=>setLocalContent(defaultContent),
