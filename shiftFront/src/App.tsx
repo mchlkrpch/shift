@@ -2,10 +2,12 @@ import { createContext, useContext } from "react";
 import 'katex/dist/katex.min.css';
 
 interface SpEditorI {
-	ns?:any;setNs?:any;
-	gRef?:any,
-	id?:string,
-	name?:string,
+	ns?:any;setNs?:any;       // nodes with content
+	groups?:any,setGroups?:any, // inner hierarchy in graph
+
+	gRef?:any,    // Graph's-forwardRef reference
+	id?:string,   // Appwrite ID of the graph
+	name?:string, // name of the graph
 }
 
 export const GraphCtx = createContext<SpEditorI|null>(null);

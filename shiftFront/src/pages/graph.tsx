@@ -71,6 +71,7 @@ export const GraphPage = ({mode,id,name}: any) => {
     const [loading,setLoading] = useState<boolean>(true);
     const [error,setError] = useState<string | null>(null);
     const [curNs,setNs] = useState({}) as any;
+    const [curGroups,setCurGroups] = useState({}) as any;
     const [nm,setName]=useState(name) as any;
     const gRef=useRef(null)as any;
     const headerRef=useRef(null) as any;
@@ -101,6 +102,7 @@ export const GraphPage = ({mode,id,name}: any) => {
                         setName(data.name)
                         setGraphData(data);
                         setNs(JSON.parse(data.content))
+                        setCurGroups(JSON.parse(data.groups))
                     } else {
                         setError("no such graph");
                     }
@@ -131,7 +133,8 @@ export const GraphPage = ({mode,id,name}: any) => {
                         <Text color="red.500" mt={10}>{error}</Text>
                     ) : (
                         <GraphCtx.Provider value={{
-                        ns: curNs, setNs: setNs,
+                        ns:curNs, setNs:setNs,
+                        groups:curGroups,setGroups:setCurGroups,
                         gRef: gRef,
                         id: window.location.pathname.split('/')[1],
                         name: nm,
