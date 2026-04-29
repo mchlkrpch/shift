@@ -28,7 +28,6 @@ import {
 } from '../clip';
 import {
   getGroupTp,
-  onKeyDownCb,
   OPTION_SPLIT_SYM,
   Sh,
   SIDE_SPLIT_SYM,
@@ -292,7 +291,8 @@ export const Card = forwardRef(({
   // if not hide - display opposite side of card
   const [hide,setHide]=useState(true) as any;
   // current zoom of card's content (sz in px)
-  const [fontSize,setFontSize]=useState(12) as any;
+  console.log('options',options)
+  const [fontSize,setFontSize]=useState(options.fontSize?options.fontSize:12) as any;
   // const [visualize,setVisualize]=useState(false) as any;
   const [like,setLike]=useState(12) as any;
   // ref of editable div
@@ -431,6 +431,7 @@ export const Card = forwardRef(({
 
 
   const onBlurCb=async()=>{
+    console.log("on blur")
     const newC:string=[...inputRef.current.children]
       .map((ch: any)=>(
         (ch.children.length>=1)
@@ -474,6 +475,7 @@ export const Card = forwardRef(({
               onDoubleClick={()=>(
                 setIsEdit(true)
               )}
+              fontSize={`${fontSize}px`}
               >
               {path.length>1&&(
                 <Box pl={'4px'} m={0}>
@@ -492,7 +494,7 @@ export const Card = forwardRef(({
             .map((f:any,i:number)=>(
             (i === option)
               ? (<span key={i}></span>)
-              : (<Box key={i} p={0} onClick={()=>setOption(i)}>
+              : (<Box key={i} p={0} onClick={()=>setOption(i)} fontSize={`${fontSize}px`}>
                 <Accordion.ItemBody key={i} p={0}>
                   <Sh value={f}/>
                 </Accordion.ItemBody>
@@ -570,7 +572,7 @@ export const Card = forwardRef(({
           </>)}
 
           {/* Preview: card option switcher + backward preveiw if opened */}
-          <Box flex={1} w={'50%'} minW={0} pl={'10px'}>
+          <Box flex={1} w={'50%'} minW={0} pl={'10px'} fontSize={`${fontSize}px`}>
             {OptionSwitcher}
             <Sh value={bwd_content} />
           </Box>

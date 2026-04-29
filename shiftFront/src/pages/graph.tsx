@@ -124,7 +124,7 @@ export const GraphPage = ({mode,id,name}: any) => {
         return (
             <Box display="flex" flexDirection="column" h="100vh">
                 <Header ref={headerRef}/>
-                <Box flex={1} minH={0} p={0} m={0} display="flex" flexDirection="column" alignItems="center">
+                {/* <Box flex={1} minH={0} p={0} m={0} display="flex" flexDirection="column" alignItems="center"> */}
                     {loading ? (
                         <Spinner size="xl" mt={10} />
                     ) : error ? (
@@ -132,14 +132,14 @@ export const GraphPage = ({mode,id,name}: any) => {
                     ) : (
                         <GraphCtx.Provider value={{
                         ns: curNs, setNs: setNs,
-                        ref: gRef,
+                        gRef: gRef,
                         id: window.location.pathname.split('/')[1],
                         name: nm,
                         }}>
                             <Graph ref={gRef} headerRef={headerRef}/>
                         </GraphCtx.Provider>
                     )}
-                </Box>
+                {/* </Box> */}
             </Box>
         );
     }

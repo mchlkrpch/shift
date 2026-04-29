@@ -14,10 +14,10 @@ display: flex;
 width: 100%;
 justify-content: center;
 align-items: center;
-border-bottom: 1px solid color-mix(in srgb, #ccc 10%, transparent);
+// border-bottom: 1px solid color-mix(in srgb, #ccc 10%, transparent);
 
 .panel{
-    margin: 10px 10px;
+    margin: 0px 20px;
     gap: 10px;
     display:flex;
     flex-direction: row;
@@ -26,7 +26,7 @@ border-bottom: 1px solid color-mix(in srgb, #ccc 10%, transparent);
 .hItem{
     display: flex;
     padding: 2px 5px;
-    height: 30px;
+    height: 20px;
     align-items:center;
     justify-content: center;
     // border: 1px solid color-mix(in srgb, #ccc 10%, transparent)
@@ -46,8 +46,9 @@ export const Header=React.forwardRef((props:any,ref:any)=>{
             onClick={()=>{
                 History.push('/')
             }}
-            h={'30px'}
-            w={'30px'}
+            m={'5px 0px'}
+            h={'20px'}
+            w={'20px'}
             alignItems={'center'}
         >
             <GrHomeRounded
@@ -62,14 +63,16 @@ export const Header=React.forwardRef((props:any,ref:any)=>{
                 History.push('/profile')
             }}
             p={0}
-            
+            display={'flex'}
+            alignItems={'center'}
+            justifyContent={'center'}
         >
             <SpAvatar
                 src={userData.photo_url}
                 username={userData.username}
                 backgroundColor={'white'}
-                h={'30px'}
-                w={'30px'}/>
+                h={'20px'}
+                w={'20px'}/>
         </Box>
     ]
     const [localContent,setLocalContent]=useState(defaultContent) as any;

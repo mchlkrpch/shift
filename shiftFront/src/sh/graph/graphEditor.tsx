@@ -50,6 +50,7 @@ import { MdFilterCenterFocus } from "react-icons/md";
 import { Clip } from "../clip";
 import { FaShare } from "react-icons/fa";
 import { RiSaveFill } from "react-icons/ri";
+import { RiRepeat2Line } from "react-icons/ri";
 
 export const graphCSS = css`
 display:flex;
@@ -85,20 +86,33 @@ overflow-y: hidden;
   gap:0;
   min-height:0;
   flex:1;
+  
+  // update
+  margin: 0px 10px 20px 10px;
+  // box-shadow: 0px 0px 10px 1px rgb(255 255 255 / 7%);
+  border-radius: 10px;
+  background-color: color-mix(in srgb, #556 20%, transparent);
+  overflow: hidden;
+  border: 1.2px solid color-mix(in srgb, #666 14%, transparent);
 }
 
 .tabsTrigger {
+  display: flex;
   border-radius: 2px;
   height: 20px;
   padding: 2px 5px;
   gap: 2px;
+  min-width: fit-content;
+  align-content: center;
+  justify-content: center;
 }
 
 
 // for selected mode(graph/text) in header
 [aria-selected="true"] {
-  background-color: color-mix(in srgb, #666 20%, transparent);
-  // border: 1px solid color-mix(in srgb, #666 20%, transparent);
+  background-color: color-mix(in srgb, #666 40%, transparent);
+  border-radius: 5px;
+  border: 1px solid color-mix(in srgb, #666 20%, transparent);
 }
 
 
@@ -157,9 +171,9 @@ overflow-y: hidden;
   width: 100%;
   padding: 10px 15px;
 
-  background-color: color-mix(in srgb, var(--chakra-colors-bg) 80%, transparent);
-  backdrop-filter:blur(10px);
-  border-bottom: 1px solid color-mix(in srgb, #666 20%, transparent);
+  background-color: color-mix(in srgb, #888 10%, transparent);
+  backdrop-filter:blur(60px);
+  border-bottom: 1.2px solid color-mix(in srgb, #666 14%, transparent);
 }
 
 //////////////////////////////////////////////////////
@@ -542,18 +556,22 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
     <span css={graphCSS} key={'header_tabs'}>
       <Tabs.Root className='headerTabs' value={mode} onValueChange={(e)=>setMode(e.value)} variant="plain">
         <Tabs.Trigger className='tabsTrigger' value="eg">
-          <BsDiagram2Fill /> graph
+          <BsDiagram2Fill />
         </Tabs.Trigger>
         <Tabs.Trigger className='tabsTrigger' value="tr" ml={'-6px'}>
-          <FaParagraph /> text
+          <FaParagraph />
+        </Tabs.Trigger>
+
+        <Tabs.Trigger className='tabsTrigger' value="repeat" ml={'-6px'}>
+          <RiRepeat2Line />
         </Tabs.Trigger>
 
         <GraphCtx.Provider value={{ns:curName, setNs:setCurName}}>
-            <Card id={'0'} content={name} options={{}}/>
+            <Card id={'0'} content={name} options={{twoSides:false, fontSize:12}}/>
         </GraphCtx.Provider>
         <Spacer />
 
-        <Button h={'20px'} gap={'3px'} fontWeight={500} p={'0px 4px'} variant={'subtle'} colorPalette={'green'}
+        <Button h={'20px'} gap={'3px'} fontWeight={500} p={'0px 4px'} variant={'ghost'} colorPalette={'green'}
           onClick={async()=>{
             // get user id to autorize; get current node from curstom
             // hook of fwdRef of flow and push to appwrite
@@ -572,7 +590,7 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
         <Clip
           props={{
             h:'20px',
-            variant:'subtle',
+            variant:'ghost',
             p:'0',
             w:'20px',
             minW:'20px'}}
@@ -596,7 +614,7 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
   },[mode])
 
   const Editor = (
-  <Tabs.Root defaultValue="tr" variant="plain" className={'graphTabs'}>
+  <Tabs.Root css={graphCSS} defaultValue="tr" variant="plain" className={'graphTabs'}>
     {mode==='eg'&&(
       <HStack className='GraphmodeSides'>
         <VStack className='GraphmodeStack'>
