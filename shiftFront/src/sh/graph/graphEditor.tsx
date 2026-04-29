@@ -51,6 +51,7 @@ import { Clip } from "../clip";
 import { FaShare } from "react-icons/fa";
 import { RiSaveFill } from "react-icons/ri";
 import { RiRepeat2Line } from "react-icons/ri";
+import { Feed } from "./feed";
 
 export const graphCSS = css`
 display:flex;
@@ -76,7 +77,7 @@ overflow-y: hidden;
   flex-direction: row;
   width: 100%;
   align-items: center;
-  gap: 5px;
+  gap: 8px;
 }
 
 .graphTabs {
@@ -89,7 +90,6 @@ overflow-y: hidden;
   
   // update
   margin: 0px 10px 20px 10px;
-  // box-shadow: 0px 0px 10px 1px rgb(255 255 255 / 7%);
   border-radius: 10px;
   background-color: color-mix(in srgb, #556 20%, transparent);
   overflow: hidden;
@@ -105,14 +105,15 @@ overflow-y: hidden;
   min-width: fit-content;
   align-content: center;
   justify-content: center;
+  border: 1.2px solid transparent;
 }
 
 
 // for selected mode(graph/text) in header
 [aria-selected="true"] {
-  background-color: color-mix(in srgb, #666 40%, transparent);
+  background-color: color-mix(in srgb, #556 40%, transparent);
   border-radius: 5px;
-  border: 1px solid color-mix(in srgb, #666 20%, transparent);
+  border: 1.2px solid color-mix(in srgb, #666 20%, transparent);
 }
 
 
@@ -139,9 +140,9 @@ overflow-y: hidden;
   overflow-y: auto;
   overflow-x: auto;
   scrollbar-width: none;
-  padding: 0px 10px;
+  // padding: 0px 10px;
 
-  gap: 20px;
+  gap: 0px;
   min-width: 50%;
   max-width: 50%;
 }
@@ -559,7 +560,7 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
           <BsDiagram2Fill />
         </Tabs.Trigger>
         <Tabs.Trigger className='tabsTrigger' value="tr" ml={'-6px'}>
-          <FaParagraph />
+          <FaParagraph style={{marginLeft:'-1.5px'}}/>
         </Tabs.Trigger>
 
         <Tabs.Trigger className='tabsTrigger' value="repeat" ml={'-6px'}>
@@ -618,13 +619,18 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
     {mode==='eg'&&(
       <HStack className='GraphmodeSides'>
         <VStack className='GraphmodeStack'>
-        {graphNodes.map((item:any)=>{
-          return <Card
-            key={item.id}
-            id={item.id}
-            content={item.content}
-            options={{stats:false, twoSides:false}}
-          />
+        {graphNodes.map((item:any,i:number)=>{
+          return (
+            <>
+              {i!==0&&<Separator h={'1.4px'} bg={'color-mix(in srgb, #666 14%, transparent)'} />}
+              <Card
+                key={item.id}
+                id={item.id}
+                content={item.content}
+                options={{stats:false, twoSides:false, padding:'8px 0px'}}
+              />
+            </>
+          )
         })}
         </VStack>
         <Separator orientation={'vertical'} w={'1px'} h={'100%'}/>
@@ -657,6 +663,10 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
           })}
         </VStack>
       </>
+    )}
+
+    {mode==='repeat'&&(
+      <Feed/>
     )}
   </Tabs.Root>)
 

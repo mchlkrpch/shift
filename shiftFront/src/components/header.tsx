@@ -1,7 +1,7 @@
 /** @jsxImportSource @emotion/react */
 import { css } from '@emotion/react';
 
-import { Box, Spacer } from '@chakra-ui/react';
+import { Box, Button, Spacer } from '@chakra-ui/react';
 // import React from 'react';
 import { GrHomeRounded } from "react-icons/gr";
 import { History } from '../pages/utils';
@@ -39,26 +39,33 @@ align-items: center;
 export const Header=React.forwardRef((props:any,ref:any)=>{
     const userData=store.getState().userData;
     const defaultContent=[
-        <Box
+        <Button
             key={1}
             className={'hItem'}
-            rounded={'2px'}
+            rounded={'full'}
             onClick={()=>{
                 History.push('/')
             }}
             m={'5px 0px'}
             h={'20px'}
+            minW={'20px'}
             w={'20px'}
+            variant={'subtle'}
             alignItems={'center'}
+            bg={'color-mix(in srgb, #556 20%, transparent)'}
+            border={'1.2px solid color-mix(in srgb, #666 14%, transparent)'}
         >
             <GrHomeRounded
+                style={{
+                    height:'12px',
+                    width:'12px',
+                }}
                 size={'12px'}
             />
-        </Box>,
+        </Button>,
         <Spacer key={2}/>,
         <Box
             key={3}
-            rounded={'full'}
             onClick={()=>{
                 History.push('/profile')
             }}
@@ -70,7 +77,8 @@ export const Header=React.forwardRef((props:any,ref:any)=>{
             <SpAvatar
                 src={userData.photo_url}
                 username={userData.username}
-                backgroundColor={'white'}
+                // backgroundColor={'white'}
+                border={'1.2px solid color-mix(in srgb, #666 14%, transparent)'}
                 h={'20px'}
                 w={'20px'}/>
         </Box>
