@@ -495,7 +495,7 @@ export const buildG = (rawNs: Record<string, string>) => {
 		}
 	});
 	
-    const levelMap: { [key: number]: string[] } = {};
+  const levelMap: { [key: number]: string[] } = {};
 	let level = 0;
 	while (queue.length > 0) {
 		const levelSize = queue.length;
@@ -519,7 +519,7 @@ export const buildG = (rawNs: Record<string, string>) => {
 		level++;
 	}
 	
-    const ySpacing = 150;
+  const ySpacing = 150;
 	const xSpacing = 30;
 	Object.keys(levelMap).forEach(lvlStr => {
 		const currentLevel = parseInt(lvlStr, 10);
@@ -543,63 +543,144 @@ export const buildG = (rawNs: Record<string, string>) => {
 	return [positions, edges];
 }
 
-// dagre импорты и настройки (без изменений)
 import dagre from '@dagrejs/dagre';
-import { GraphCtx } from '../../App';
-const dagreGraph = new dagre.graphlib.Graph().setDefaultEdgeLabel(() => ({}));
-export const NodeWidth = 258;
-export const NodeHeight = 40;
 
-const getLayoutedElements = (nodes:any, edges:any, direction:string='TB') => {
-	const isHorizontal = direction === 'LR';
-	dagreGraph.setGraph({ rankdir: direction });
-	nodes.forEach((node:any) => {
-		dagreGraph.setNode(node.id, { width: NodeWidth-40, height: NodeHeight });
-	});
-	edges.forEach((edge:any) => {
-		dagreGraph.setEdge(edge.source, edge.target);
-	});
-	dagre.layout(dagreGraph);
-	const newNodes = nodes.map((node:any) => {
-		const nodeWithPosition = dagreGraph.node(node.id);
-		const newNode = {
-			...node,
-			targetPosition: isHorizontal ? 'left' : 'top',
-			sourcePosition: isHorizontal ? 'right' : 'bottom',
-			position: {
-				x: nodeWithPosition.x - NodeWidth / 2,
-				y: nodeWithPosition.y - 80,
-			},
-		};
-		return newNode;
-	});
- 
-	return {nodes: newNodes, edges};
+export const NodeWidth = 258;
+export const NodeHeight = 30;
+
+export function calculateHierarchy(groups: Record<string, {color: string, nodes: string[]}>) {
+  const sortedGroups = Object.entries(groups || {}).sort((a,b) => a[1].nodes.length - b[1].nodes.length);
+  const nodeToGroup: Record<string, string> = {};
+  const groupToGroup: Record<string, string> = {};
+
+  sortedGroups.forEach(([gName, gData]) => {
+    gData.nodes.forEach(nodeId => {
+      if (nodeToGroup[nodeId]) {
+        const smallerGroup = nodeToGroup[nodeId];
+        let current = smallerGroup;
+        while(groupToGroup[current] && groupToGroup[current] !== gName) {
+          current = groupToGroup[current];
+        }
+        if (current !== gName) {
+          groupToGroup[current] = gName;
+        }
+      } else {
+        nodeToGroup[nodeId] = gName;
+      }
+    });
+  });
+  return { nodeToGroup, groupToGroup };
+}
+
+
+const getLayoutedElements=(nodes:any,edges:any,groups:any={}, direction:string='TB')=>{
+  const dagreGraph = new dagre.graphlib.Graph({ compound: true }).setDefaultEdgeLabel(() => ({}));
+  const isHorizontal = direction === 'LR';
+  const PADDING = 2;
+  dagreGraph.setGraph({ 
+    rankdir: direction, 
+    ranksep: 15,
+    nodesep: 50,
+  });
+  const {
+    nodeToGroup,
+    groupToGroup
+  }=calculateHierarchy(groups);
+  
+  Object.keys(groups).forEach(gId => {
+    dagreGraph.setNode(gId, { label: gId });
+  });
+  nodes.forEach((node:any) => {
+    dagreGraph.setNode(node.id, { width: NodeWidth-40, height: NodeHeight });
+  });
+  Object.entries(nodeToGroup).forEach(([nId, pId]) => {
+    if (dagreGraph.hasNode(nId) && dagreGraph.hasNode(pId)) {
+      dagreGraph.setParent(nId, pId);
+    }
+  });
+  Object.entries(groupToGroup).forEach(([cId, pId]) => {
+    if (dagreGraph.hasNode(cId) && dagreGraph.hasNode(pId)) {
+      dagreGraph.setParent(cId, pId);
+    }
+  });
+  edges.forEach((edge:any) => {
+    dagreGraph.setEdge(edge.source, edge.target);
+  });
+
+  dagre.layout(dagreGraph);
+  const newNodes: any[] =[];
+  Object.keys(groups).forEach(gId => {
+    const pos = dagreGraph.node(gId);
+    if (!pos) return;
+    newNodes.push({
+      id: gId,
+      type: 'SpGroup',
+      position: {
+        x: pos.x - (pos.width || 0) / 2 - PADDING,
+        y: pos.y - (pos.height || 0) / 2 - PADDING,
+      },
+      style: {
+        width: (pos.width || 200) + PADDING * 2,
+        height: (pos.height || 100) + PADDING * 2,
+        zIndex: -1,
+        pointerEvents: 'none',
+      },
+      selectable: false,
+      draggable: false,
+      data: { label: gId, color: groups[gId].color },
+      parentId: groupToGroup[gId] || undefined,
+    });
+  });
+
+  nodes.forEach((node:any)=>{
+    const pos = dagreGraph.node(node.id);
+    const pId = nodeToGroup[node.id];
+    let relX = pos.x - (NodeWidth - 40) / 2;
+    let relY = pos.y - NodeHeight / 2;
+    if (pId) {
+      const pNode = dagreGraph.node(pId);
+      if (pNode) {
+        relX = (pos.x - (NodeWidth - 40) / 2) - (pNode.x - pNode.width / 2) + PADDING;
+        relY = (pos.y - NodeHeight / 2) - (pNode.y - pNode.height / 2) + PADDING;
+      }
+    }
+    newNodes.push({
+      ...node,
+      targetPosition: isHorizontal ? 'left' : 'top',
+      sourcePosition: isHorizontal ? 'right' : 'bottom',
+      parentId: pId || undefined,
+      position: { x: relX, y: relY },
+    });
+  });
+  return {nodes: newNodes, edges};
 };
 
-// 4. Обновленный calcG (принимает сырой объект ns)
-export const calcG = (rawNs: Record<string, string>) => {
-    // Сначала парсим данные
-    const parsedDatas = parseRawCards(rawNs);
-    
+
+export const calcG=(rawNs:Record<string,string>, groups:any={})=>{
+  const cleanNs = { ...rawNs };
+  delete cleanNs['__groups__'];
+  const parsedDatas = parseRawCards(cleanNs);
 	const newEdges = calcEs(parsedDatas);
 	const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(
-		parsedDatas, // передаем уже распарсенные DataTp[]
+		parsedDatas, 
 		newEdges,
+        groups,
 		'TB',
 	);
-    
-	const newNs = layoutedNodes.map((n:any) => ({
-		id: n.id,
-		type: 'SpDef',
-		position: n.position,
-		data: {
-			forward: n.forward,
-			backward: n.backward,
-			id: n.id,
-			tp: n.tp,
-		}
-	}));
-    
-	return [newNs, layoutedEdges];
+	const newNs = layoutedNodes.map((n:any) => {
+    if (n.type === 'SpGroup') return n;
+    return {
+      id: n.id,
+      type: 'SpDef',
+      position: n.position,
+      parentId: n.parentId,
+      data: {
+        forward: n.forward,
+        backward: n.backward,
+        id: n.id,
+        tp: n.tp,
+      }
+    };
+  });
+	return[newNs, layoutedEdges];
 }

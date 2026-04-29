@@ -4,12 +4,14 @@ import '@xyflow/react/dist/style.css';
 
 import {
   getSmoothStepPath,
+  getStraightPath,
   Handle,
   Position,
   ReactFlow,
   ReactFlowProvider,
   SelectionMode,
-  useReactFlow
+  useReactFlow,
+  useStore,
 } from '@xyflow/react'
 import React, {
   forwardRef,
@@ -38,10 +40,11 @@ import {
   Separator,
   Spacer,
   Tabs,
+  Text,
   VStack
 } from '@chakra-ui/react';
-import { calcG, OPTION_SPLIT_SYM, Sh, SIDE_SPLIT_SYM, topSort } from '../card/utility';
-import { Card } from '../card/card';
+import { calcG, calculateHierarchy, OPTION_SPLIT_SYM, Sh, SIDE_SPLIT_SYM, topSort } from '../card/utility';
+import { Card, dropMenuCSS } from '../card/card';
 import { FaParagraph } from "react-icons/fa6";
 import { BsDiagram2Fill } from "react-icons/bs";
 import { APPWRITE_CONFIG, gReq, spaced_account } from "../../appwrite/service";
@@ -52,6 +55,8 @@ import { FaShare } from "react-icons/fa";
 import { RiSaveFill } from "react-icons/ri";
 import { RiRepeat2Line } from "react-icons/ri";
 import { Feed } from "./feed";
+import { LuChevronDown, LuChevronRight } from "react-icons/lu";
+import { createPortal } from "react-dom";
 
 export const graphCSS = css`
 display:flex;
@@ -147,6 +152,11 @@ overflow-y: hidden;
   max-width: 50%;
 }
 
+.smIcon {
+  width: 12px;
+  height: 12px;
+}
+
 .TextmodeStack {
   display: flex;
   flex: 1;
@@ -190,6 +200,7 @@ overflow-y: hidden;
 }
 
 .defNode {
+  // background-color: black;
 }
 `;
 
@@ -285,12 +296,63 @@ export const TempDef = ({data,id}: any) => {
 };
 
 
+export const SpGroup = ({data}: any) => {
+  const isHex = data.color.startsWith('#');
+  const bg = isHex ? `${data.color}26` : data.color;
+  const border = isHex ? `0px solid ${data.color}99` : `2px solid ${data.color.replace('0.1','0.6')}`;
+  return (
+    <Box w="100%" h="100%" bg={bg} border={border} borderRadius="12px" position="relative" pointerEvents="none" >
+      <Box 
+        position="absolute" top="-24px" left="10px" 
+        fontSize="14px" fontWeight="bold" color="gray.400"
+        maxWidth="calc(100% - 20px)" whiteSpace="nowrap" overflow="hidden" textOverflow="ellipsis"
+      >
+        {data.label}
+      </Box>
+    </Box>
+  );
+};
+
+// export const SpGroup = ({data}: any) => {
+//   const zoom = useStore((s: any) => s.transform[2]);
+//   const inverseZoom = 1 / (zoom || 1);
+//   const isHex = data.color.startsWith('#');
+//   const bg = isHex ? `${data.color}26` : data.color;
+//   const border = isHex ? `2px solid ${data.color}99` : `2px solid ${data.color.replace('0.1','0.6')}`;
+//   const baseFontSize = 12;
+//   const baseTopOffset = 28;
+//   const baseLeftOffset = 10;
+//   const fontSize = baseFontSize * inverseZoom;
+//   const topOffset = (baseTopOffset-baseFontSize) * inverseZoom;
+//   const leftOffset = baseLeftOffset * inverseZoom;
+//   return (
+//     <Box w="100%" h="100%" bg={bg} border={border} borderRadius="12px" position="relative" pointerEvents="none" >
+//       <Box 
+//         position="absolute" 
+//         top={`-${topOffset}px`} 
+//         left={`${leftOffset}px`} 
+//         fontSize={`${fontSize}px`} 
+//         lineHeight={1}
+//         fontWeight="semi-bold" 
+//         color="gray.400"
+//         maxWidth={`calc(100% - ${leftOffset * 2}px)`} 
+//         whiteSpace="nowrap" 
+//         overflow="hidden" 
+//         textOverflow="ellipsis"
+//       >
+//         {data.label}
+//       </Box>
+//     </Box>
+//   );
+// };
+
+
 export function SpEdge({
   id,
   sourceX,sourceY,
   targetX,targetY,
   sourcePosition,targetPosition,
-  markerEnd,selected,borderRadius = 15,
+  markerEnd,selected,borderRadius = 1,
 }: any) {
   const [edgePath] = getSmoothStepPath({
     sourceX, sourceY,
@@ -298,6 +360,10 @@ export function SpEdge({
     targetX, targetY,
     targetPosition, borderRadius,
   });
+  // const [edgePath] = getStraightPath({
+  //   sourceX, sourceY,
+  //   targetX, targetY,
+  // });
   return (
     <>
       <path
@@ -305,7 +371,7 @@ export function SpEdge({
         fill="none"
         stroke="color-mix(in srgb, white 10%, transparent)"
         d={edgePath}
-        strokeWidth={selected ? 2 : 1.5}
+        strokeWidth={3}
         markerEnd={markerEnd}
       />
       <path
@@ -319,17 +385,189 @@ export function SpEdge({
 }
 
 
-const nodeTypes = {SpDef:SpDef, TempDef:TempDef}
+const nodeTypes = {SpDef:SpDef, TempDef:TempDef, SpGroup:SpGroup}
 const edgeTypes = {SpEdge: SpEdge}
+
+
+const GraphTreeNode = ({ itemId, ns, depth, orderedIds }: any) => {
+  if (!orderedIds.includes(itemId)) return null;
+  return (
+    <Box ml={`${depth * 10}px`}
+      minW={0} flexShrink={0}
+    >
+      <Card
+        id={itemId}content={ns[itemId]}
+        options={{stats:false,twoSides:false,padding:'0px'}}
+        />
+    </Box>
+  );
+};
+
+const GraphTreeGroup = ({ itemId, depth, groups, groupToGroup, nodeToGroup, ns, orderedIds, prevSelectCb, handleRenameGroup, handleChangeGroupColor, handleUngroup }: any) => {
+  const gData = groups[itemId];
+  const childGroups = Object.keys(groups).filter(g => groupToGroup[g] === itemId);
+  const childNodes = gData.nodes.filter((n: string) => nodeToGroup[n] === itemId);
+  const[groupHide, setGroupHide] = useState(false);
+  const [groupSelect, setGroupSelect] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const[editName, setEditName] = useState(itemId);
+
+  const [contextMenu, setContextMenu] = useState<{x:number, y:number}|null>(null);
+  const hexColor = gData.color.startsWith('#') ? gData.color : '#555555';
+  const [localColor, setLocalColor] = useState(hexColor);
+
+  // useEffect(() => {
+  //   setLocalColor(hexColor);
+  // },[hexColor]);
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      if (localColor !== hexColor) {
+        handleChangeGroupColor(itemId, localColor);
+      }
+    }, 200);
+    return () => clearTimeout(handler);
+  },[localColor, hexColor, itemId, handleChangeGroupColor]);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const hideMenu = () => setContextMenu(null);
+    window.addEventListener('click', hideMenu);
+    return () => window.removeEventListener('click', hideMenu);
+  }, [contextMenu]);
+
+  const onRenameSubmit = () => {
+    setIsEditing(false);
+    if (!editName || editName === itemId || groups[editName]) {
+      setEditName(itemId);
+      return;
+    }
+    handleRenameGroup(itemId, editName);
+  };
+  return (
+    <Box 
+      flexShrink={0}
+      m={0} ml={`${depth * 10}px`} overflow={'hidden'}
+      bg={groupSelect ? `${hexColor}14` : 'transparent'}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (prevSelectCb.current && prevSelectCb.current !== setGroupSelect) {
+          prevSelectCb.current(false);
+        }
+        setGroupSelect(true);
+        prevSelectCb.current = setGroupSelect;
+      }}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setContextMenu({ x: e.clientX, y: e.clientY });
+      }}
+    >
+      <Box
+        fontSize="11px" fontWeight="bold" p={'4px'} w={'100%'} bg={groupSelect ? `${hexColor}33` : 'transparent'} display={'flex'} flexDirection={'row'} alignItems="center" gap={2}>
+        <IconButton variant={'plain'} h={'20px'} w={'20px'} minW={'20px'} p={0} onClick={(e: any) => { setGroupHide(!groupHide); e.stopPropagation(); }}>
+          {groupHide ? <LuChevronRight className={'smIcon'} /> : <LuChevronDown className={'smIcon'} />}
+        </IconButton>
+
+        {isEditing ? (
+          <input 
+            autoFocus value={editName} onChange={e => setEditName(e.target.value)}
+            onBlur={onRenameSubmit} onClick={e => e.stopPropagation()}
+            onKeyDown={e => {
+              e.stopPropagation();
+              if (e.key === 'Enter') onRenameSubmit();
+              if (e.key === 'Escape') { setIsEditing(false); setEditName(itemId); }
+            }}
+            style={{ flex: 1, background: 'rgba(0,0,0,0.3)', color: 'white', outline: 'none', border: '1px solid gray', borderRadius: '3px', padding: '0 4px' }}
+          />
+        ) : (
+          <Box flex={1} onDoubleClick={() => setIsEditing(true)} cursor="text">
+            {itemId}
+          </Box>
+        )}
+        <Box
+          // @ts-ignore
+          as="input" type="color" value={hexColor} 
+          onChange={(e:any)=>{
+            e.stopPropagation();
+            setLocalColor(e.target.value);
+          }}
+          onClick={(e:any)=>{
+            e.stopPropagation()
+            console.log('e.target.value',e.target.value)
+          }}
+          style={{ width: '16px', height: '16px', padding: 0, border: 'none', background: 'none', cursor: 'pointer', borderRadius: '50%' }}
+        />
+      </Box>
+      {contextMenu&&(
+        <Box 
+          position="fixed" top={contextMenu.y} left={contextMenu.x} zIndex={9999} 
+          bg="color-mix(in srgb, #445 90%, transparent)" p="4px" borderRadius="8px" boxShadow="dark-lg" minW="150px"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <VStack align="stretch" gap={1}>
+            <Button size="sm" variant="ghost" colorScheme="red" onClick={() => { handleUngroup(itemId); setContextMenu(null); }}>
+              Разгруппировать
+            </Button>
+          </VStack>
+        </Box>
+      )}
+
+      {!groupHide && (
+        <>
+          {childGroups.map((cg: any) => <GraphTreeGroup key={cg} itemId={cg} depth={depth + 1} groups={groups} groupToGroup={groupToGroup} nodeToGroup={nodeToGroup} ns={ns} orderedIds={orderedIds} prevSelectCb={prevSelectCb} handleRenameGroup={handleRenameGroup} handleChangeGroupColor={handleChangeGroupColor} />)}
+          {childNodes.map((cn: any) => <GraphTreeNode key={cn} itemId={cn} depth={depth + 1} ns={ns} orderedIds={orderedIds} />)}
+        </>
+      )}
+    </Box>
+  );
+};
+
+const TextTreeNode = ({ itemId, ns, depth, orderedIds, handleMoveCard }: any) => {
+  if (!orderedIds.includes(itemId)) return null;
+  return (
+    <Box ml={`${depth * 15}px`} w={`calc(100% - ${depth * 15}px)`}>
+      <Card
+        id={itemId}content={ns[itemId]}
+        options={{ stats: false, twoSides: true, onMove: (dir: number) => handleMoveCard(itemId, dir as -1|1)}} />
+    </Box>
+  );
+};
+
+const TextTreeGroup = ({ itemId, depth, groups, groupToGroup, nodeToGroup, ns, orderedIds, handleMoveCard }: any) => {
+  const gData = groups[itemId];
+  const childGroups = Object.keys(groups).filter(g => groupToGroup[g] === itemId);
+  const childNodes = gData.nodes.filter((n: string) => nodeToGroup[n] === itemId);
+  const hexColor = gData.color.startsWith('#') ? gData.color : '#555555';
+
+  return (
+    <Box ml={`${depth * 10}px`} w={`calc(100% - ${depth * 10}px)`} bg={`${hexColor}1A`} p="10px" my="10px" borderRadius="10px" border={`1px solid ${hexColor}4D`}>
+      <Box fontSize="14px" fontWeight="bold" mb={3}>{itemId}</Box>
+      {childGroups.map((cg: any) => <TextTreeGroup key={cg} itemId={cg} depth={depth + 1} groups={groups} groupToGroup={groupToGroup} nodeToGroup={nodeToGroup} ns={ns} orderedIds={orderedIds} handleMoveCard={handleMoveCard} />)}
+      {childNodes.map((cn: any) => <TextTreeNode key={cn} itemId={cn} depth={depth + 1} ns={ns} orderedIds={orderedIds} handleMoveCard={handleMoveCard} />)}
+    </Box>
+  );
+};
 
 
 // to user useReactFlow() inside
 const Flow=React.forwardRef((props:any,ref:any)=>{
   const gCtx=useGraphCtx()as any;
-  const{ns,setNs,gRef}=gCtx;
-  const [reactflowNs,reactflowEs] = calcG(ns); // calculates dagre graph with connections between cards
+  const{ns,setNs,gRef,groups,setGroups}=gCtx;
+  const [reactflowNs,reactflowEs] = useMemo(()=>calcG(ns, groups), [ns, groups]);
+  // const [reactflowNs,reactflowEs] = calcG(ns); // calculates dagre graph with connections between cards
+  
   const flowRef = useRef(null) as any;
   const selectedNodesIds = useRef(new Set());
+  const curSelected = useRef(new Set());
+  
+  const [menu,setMenu] = useState<{isOpen:boolean,x:number,y:number,mode:'idle'|'naming',name:string,idx:number}>({
+    isOpen:false,x:0,y:0,mode:'idle',name:'',idx:0});
+  const onContextMenu = useCallback((e:React.MouseEvent) => {
+    e.preventDefault();
+    if (curSelected.current.size > 0) {
+      setMenu({isOpen:true,x:e.clientX, y:e.clientY, mode:'idle', name:'',idx:0});
+    }
+  },[]);
 
   const[tempNode, setTempNode] = useState<any>(null);
   const tempContentRef = useRef('');
@@ -341,6 +579,14 @@ const Flow=React.forwardRef((props:any,ref:any)=>{
     screenToFlowPosition,
     setCenter,getNodes,
   }=useReactFlow();
+
+  const handleCreateGroup = (name: string, ids: string[]) => {
+    const r = Math.floor(Math.random() * 150 + 50);
+    const g = Math.floor(Math.random() * 150 + 50);
+    const b = Math.floor(Math.random() * 150 + 50);
+    const color = `rgba(${r},${g},${b},0.15)`;
+    setGroups((prev:any) => ({...prev, [name]: {color, nodes:ids}}));
+  };
 
   const handleWheel=useCallback((event:any) => {
     if (event.ctrlKey) {
@@ -365,6 +611,7 @@ const Flow=React.forwardRef((props:any,ref:any)=>{
   const onSelectionEnd=()=>{
     const finalSelectionArray = Array.from(selectedNodesIds.current);
     gRef.current.select(finalSelectionArray);
+    curSelected.current = selectedNodesIds.current;
     selectedNodesIds.current=new Set()
   };
 
@@ -380,7 +627,6 @@ const Flow=React.forwardRef((props:any,ref:any)=>{
       }
     }
   };
-
 
   useEffect(() => {
     if (nodeToZoomId) {
@@ -440,6 +686,10 @@ const Flow=React.forwardRef((props:any,ref:any)=>{
 
 
   const onPaneClick = useCallback(() => {
+    if (gRef&&gRef.current) {
+      gRef.current.unselectGroupStack();
+    }
+
     if (tempNode) {
       const finalContent = tempContentRef.current;
       if (finalContent.trim() !== '') {
@@ -451,6 +701,7 @@ const Flow=React.forwardRef((props:any,ref:any)=>{
       }
       setTempNode(null);
     }
+    setMenu({isOpen:false,x:0,y:0,mode:'idle',name:'',idx:0});
   }, [tempNode, setNs]);
 
 
@@ -461,17 +712,58 @@ const Flow=React.forwardRef((props:any,ref:any)=>{
     }, {} as Record<string,any>),
   }))
 
+  const idle_cb = [
+    ()=>setMenu({...menu, mode:'naming'}),
+    ()=>{},
+  ]
+
+  const rename_cb=(e:any)=>setMenu({...menu, name: e.target.value})
+
+  const localOnKeyDown=(e:React.KeyboardEvent) => {
+    if (menu.isOpen) {
+      if (e.key === 'ArrowDown') {
+        setMenu((prev:any)=>({...prev, idx:Math.min(prev.idx+1,1) }))
+      } else if (e.key === 'ArrowUp') {
+        setMenu((prev:any)=>({...prev, idx:Math.max(prev.idx-1,0) }))
+      } else if (e.key === 'Enter') {
+        console.log('enter',e.target)
+        if (menu.mode==='idle'){
+          idle_cb[menu.idx]();
+        }
+      } else if (e.key === 'Escape') {
+        setMenu((prev:any)=>({...prev,isOpen:false}));
+      }
+    }
+
+    if (e.key==='Delete') {
+      const filtered = Object.keys(ns)
+        .filter((k:any) => !(Array.from(curSelected.current).includes(k)))
+        .reduce((obj:any,k) => {
+          obj[k] = ns[k];
+          return obj;
+        }, {});
+      setNs(filtered)
+    }
+  };
+
   return (
     <Box
       className='graphFrame'
       ref={flowRef}
       onDoubleClick={handleWrapperDoubleClick}
+      onKeyDown={(e:any)=>{
+        e.stopPropagation();
+        e.preventDefault();
+        localOnKeyDown(e);
+      }}
     >
       <ReactFlow
         onNodesChange  = {(e)=>onNodesChange(e)}
         onSelectionEnd = {onSelectionEnd}
         zoomOnDoubleClick={false}
         onPaneClick={onPaneClick}
+        onContextMenu={onContextMenu}
+        nodesDraggable={false}
 
         snapGrid   = {[20, 20]}
         snapToGrid = {true}
@@ -509,20 +801,82 @@ const Flow=React.forwardRef((props:any,ref:any)=>{
           </IconButton>
         </Panel>
       </ReactFlow>
+
+      {menu.isOpen&&createPortal(
+        <span css={[dropMenuCSS]}>
+          <Box top={menu.y} left={menu.x} className='menuFrame'>
+            {menu.mode==='idle'&&(
+              <>
+                <Text className='tip'>cards action</Text>
+                <Button
+                  w={'100%'}
+                  p={'2px 5px'} borderRadius="sm" fontSize="12px"
+                  bg={0===menu.idx? 'blue.600':'transparent'}
+                  h={'30px'}
+                  variant="ghost"
+                  colorPalette={'blue'}
+                  onClick={idle_cb[0]}>
+                  group
+                </Button>
+                <Button
+                  p={'2px 5px'} borderRadius="sm" fontSize="12px"
+                  w={'100%'}
+                  h={'30px'}
+                  bg={1===menu.idx? 'blue.600':'transparent'}
+                  variant="ghost"
+                  colorPalette={'red'}
+                  onClick={idle_cb[1]}
+                  >
+                  delete
+                </Button>
+              </>
+            )}
+            {menu.mode!=='idle'&&(
+              <>
+                <Text className='tip'>Name new group</Text>
+                <input 
+                  autoFocus
+                  placeholder="enter the name..."
+                  value={menu.name}
+                  style={{
+                    background: 'transparent',
+                    color: 'white',
+                    padding: '4px 8px',
+                    border: '0',
+                    outline: 0,
+                  }}
+                  onChange={rename_cb}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => {
+                      e.stopPropagation();
+                      if (e.key === 'Enter' && menu.name) {
+                          handleCreateGroup(menu.name, Array.from(curSelected.current as any));
+                          setMenu({isOpen:false,x:0,y:0,mode:'idle',name:'',idx:0});
+                      }
+                      if (e.key === 'Escape') setMenu({isOpen:false,x:0,y:0,mode:'idle',name:'',idx:0});
+                  }}
+                />
+              </>
+            )}
+          </Box>
+        </span>
+    , document.body)}
     </Box>
   )
 })
 
 
 export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
-  const{ns,id,name}=useGraphCtx()as any;
+  const{ns,id,name,groups,setGroups}=useGraphCtx()as any;
   const [sel,setSel]=useState(Object.keys(ns));
   // graphmode / textmode
-  const [mode,setMode]=useState('tr') as any;
+  const [mode,setMode]=useState('eg') as any;
   // name of the graph
   const [curName,setCurName]=useState({'0':name}) as any;
   // reactflow component with editable ns content forward ref
   const flowRef=useRef(null) as any;
+
+  const { nodeToGroup, groupToGroup } = calculateHierarchy(groups);
 
 
   const [orderedIds, setOrderedIds] = useState<string[]>(Object.keys(ns).filter(k => sel.includes(k)));
@@ -550,7 +904,114 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
     setOrderedIds(sorted.map(s => s.id));
   };
 
-  const graphNodes = orderedIds.map(id => ({ id, content: ns[id] }));
+  const prevSelectCb = useRef(null) as any;
+
+  const handleRenameGroup = useCallback((oldName: string, newName: string) => {
+    setGroups((prev: any) => {
+      const updated = { ...prev };
+      updated[newName] = updated[oldName];
+      delete updated[oldName];
+      return updated;
+    });
+  },[setGroups]);
+
+  const handleChangeGroupColor = useCallback((groupName: string, newColor: string) => {
+    setGroups((prev: any) => ({
+      ...prev,
+      [groupName]: { ...prev[groupName], color: newColor }
+    }));
+  }, [setGroups]);
+
+  const renderGraphTreeItem = (type:'group'|'node',itemId:string,depth:number):any=>{
+    if (type==='node') {
+      if (!orderedIds.includes(itemId)) return null;
+      return (
+        <Box ml={`${depth*10}px`} key={itemId}>
+          <Card id={itemId} content={ns[itemId]} options={{stats:false, twoSides:false, padding:'8px 0px'}} />
+        </Box>
+      );
+    } else {
+      const gData = groups[itemId];
+      const childGroups = Object.keys(groups).filter(g => groupToGroup[g] === itemId);
+      const childNodes = gData.nodes.filter((n: string) => nodeToGroup[n] === itemId);
+      const [groupHide,setGroupHide]=useState(false);
+      const [groupSelect,setGroupSelect]=useState(false);
+      return (
+        <Box 
+          key={`g_${itemId}`} 
+          m={0}
+          ml={`${depth*10}px`}
+          bg={groupSelect?gData.color.replace('0.1', '0.08'):'transparent'}
+          overflow={'hidden'}
+          onClick={()=>{
+            if (prevSelectCb.current) {
+              prevSelectCb.current(false);
+            }
+            setGroupSelect(true);
+            prevSelectCb.current=setGroupSelect
+          }}
+        >
+          <Box
+            fontSize="11px"
+            fontWeight="bold"
+            p={'4px'}
+            w={'100%'}
+            bg={groupSelect?gData.color:'transparent'}
+            display={'flex'}
+            flexDirection={'row'}
+            >
+
+            <IconButton className={'statButton'} variant={'plain'}
+              h={'20px'}
+              onClick={(e:any)=>{
+                setGroupHide((h:any)=>!h)
+                e.stopPropagation();
+              }}>
+              {groupHide?(<LuChevronRight className={'smIcon'} />):(<LuChevronDown className={'smIcon'} />)}
+            </IconButton>
+            {itemId}
+          </Box>
+          {!groupHide&&(
+            <>
+              {childGroups.map((cg:any) => renderGraphTreeItem('group', cg, depth + 1))}
+              {childNodes.map((cn:any) => renderGraphTreeItem('node', cn, depth + 1))}
+            </>
+          )}
+        </Box>
+      );
+    }
+  };
+
+  const renderTextTreeItem = (type: 'group' | 'node', itemId: string, depth: number): any => {
+    if (type === 'node') {
+      if (!orderedIds.includes(itemId)) return null;
+      return (
+        <Box ml={`${depth * 15}px`} key={itemId} w={`calc(100% - ${depth * 15}px)`}>
+          <Card id={itemId} content={ns[itemId]} options={{ stats: false, twoSides: true, onMove: (dir: number) => handleMoveCard(itemId, dir as -1|1) }} />
+        </Box>
+      );
+    } else {
+      const gData = groups[itemId];
+      const childGroups = Object.keys(groups).filter(g => groupToGroup[g] === itemId);
+      const childNodes = gData.nodes.filter((n: string) => nodeToGroup[n] === itemId);
+      return (
+        <Box 
+          key={`g_${itemId}`} ml={`${depth*10}px`} w={`calc(100% - ${depth*10}px)`}
+          bg={gData.color} p="10px" my="10px" borderRadius="10px"
+        >
+          <Box
+            fontSize="14px"
+            fontWeight="bold"
+            mb={3}
+            >
+            {itemId}
+          </Box>
+          {childGroups.map((cg:any) => renderTextTreeItem('group', cg, depth + 1))}
+          {childNodes.map((cn:any) => renderTextTreeItem('node', cn, depth + 1))}
+        </Box>
+      );
+    }
+  };
 
   const HeaderTabs = (
     // css wrapper
@@ -578,8 +1039,10 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
             // hook of fwdRef of flow and push to appwrite
             const user = await spaced_account.get();
             const currentUserId = user.$id;
+            console.log('JSON.stringify(groups)', JSON.stringify(groups))
             gReq.update(id,{
               content:JSON.stringify(ns),
+              groups:JSON.stringify(groups),
               name:curName['0'],
               collaborators:[],
               owner:currentUserId,
@@ -587,7 +1050,9 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
           }}
         >
           <RiSaveFill style={{height:'13px',width:'13px'}}/>
-          save</Button>
+          save
+        </Button>
+
         <Clip
           props={{
             h:'20px',
@@ -612,26 +1077,39 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
       }
       f();
     }
-  },[mode])
+  },[mode,groups,curName])
+
+  const handleUngroup = useCallback((groupName: string) => {
+    setGroups((prev: any) => {
+      const updated = { ...prev };
+      delete updated[groupName];
+      return updated;
+    });
+  }, [setGroups]);
 
   const Editor = (
   <Tabs.Root css={graphCSS} defaultValue="tr" variant="plain" className={'graphTabs'}>
     {mode==='eg'&&(
       <HStack className='GraphmodeSides'>
         <VStack className='GraphmodeStack'>
-        {graphNodes.map((item:any,i:number)=>{
-          return (
-            <>
-              {i!==0&&<Separator h={'1.4px'} bg={'color-mix(in srgb, #666 14%, transparent)'} />}
-              <Card
-                key={item.id}
-                id={item.id}
-                content={item.content}
-                options={{stats:false, twoSides:false, padding:'8px 0px'}}
-              />
-            </>
-          )
-        })}
+        {Object.keys(groups).filter(g=>!groupToGroup[g]).map(g=>(
+          <GraphTreeGroup
+            key={g}itemId={g}depth={0}
+            groups={groups} groupToGroup={groupToGroup}
+            nodeToGroup={nodeToGroup} ns={ns}
+            orderedIds={orderedIds}
+            prevSelectCb={prevSelectCb}
+            handleRenameGroup={handleRenameGroup}
+            handleChangeGroupColor={handleChangeGroupColor}
+            handleUngroup={handleUngroup}
+            />
+        ))}
+        {orderedIds.filter(id=>!nodeToGroup[id]).map(n=>(
+          <GraphTreeNode
+            key={n}itemId={n}depth={0}
+            ns={ns}orderedIds={orderedIds}
+            />
+        ))}
         </VStack>
         <Separator orientation={'vertical'} w={'1px'} h={'100%'}/>
         <ReactFlowProvider> {/* to user useReactFlow() inside */}
@@ -676,7 +1154,13 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
     },
     selected:()=>{
       return sel;
-    }
+    },
+    unselectGroupStack:()=>{
+      if (prevSelectCb.current) {
+        prevSelectCb.current(false);
+      }
+      prevSelectCb.current = null;
+    },
   }))
 
   return (

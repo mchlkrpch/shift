@@ -43,19 +43,17 @@ import { FaRegCommentAlt } from "react-icons/fa";
 import { createPortal } from 'react-dom';
 
 
-export const contentCSS = css`
-position: relative;
-
+export const dropMenuCSS=css`
 //////////////////////////////////////////////////////
 // Special sym dropped menu style
 // when you press special key in textbox you will see
 // options to insert inside your's card code
 //////////////////////////////////////////////////////
 
-.menuFrame {
+.menuFrame{
   position: fixed;
-  backdrop-filter:blur(10px);
-  background-color: color-mix(in srgb, #333 60%, transparent);
+  backdrop-filter:blur(20px);
+  background-color: color-mix(in srgb, #223 60%, transparent);
   border: 1px solid color-mix(in srgb, #666 60%, transparent);
   border-radius: 5px;
   padding: 5px;
@@ -64,13 +62,16 @@ position: relative;
   min-width: 150px;
 }
 
-.menuFrame tip{
- opacity: .3;
- font-weight: 400;
- font-size: 11px;
+.menuFrame .tip{
+  font-size: 11px;
+  opacity: 0.3;
+  font-weight: 400;
 }
+`
 
 
+export const contentCSS = css`
+position: relative;
 
 
 .chakra-stack{
@@ -291,7 +292,6 @@ export const Card = forwardRef(({
   // if not hide - display opposite side of card
   const [hide,setHide]=useState(true) as any;
   // current zoom of card's content (sz in px)
-  console.log('options',options)
   const [fontSize,setFontSize]=useState(options.fontSize?options.fontSize:12) as any;
   // const [visualize,setVisualize]=useState(false) as any;
   const [like,setLike]=useState(12) as any;
@@ -467,7 +467,7 @@ export const Card = forwardRef(({
       >
         <Accordion.Item value={fwdParts[option]}>
           <Accordion.ItemTrigger className='optionsTrigger'>
-            <Box w={'100%'} onClick={(e:any)=>{
+            <Box w={'100%'} fontWeight={600} onClick={(e:any)=>{
                 e.stopPropagation()
                 e.preventDefault()
                 setHide((h:any)=>!h)
@@ -495,7 +495,7 @@ export const Card = forwardRef(({
             (i === option)
               ? (<span key={i}></span>)
               : (<Box key={i} p={0} onClick={()=>setOption(i)} fontSize={`${fontSize}px`}>
-                <Accordion.ItemBody key={i} p={0}>
+                <Accordion.ItemBody key={i} p={0} fontWeight={600}>
                   <Sh value={f}/>
                 </Accordion.ItemBody>
               </Box>)
@@ -536,10 +536,13 @@ export const Card = forwardRef(({
           setIsEdit(true)
         }
       }}
-      style={{fontSize:`${fontSize}px`}}>
+      style={{
+        fontSize:`${fontSize}px`,
+        padding:options.padding||'0px',
+      }}>
       {/* menu with auxilary menu of insertion */}
       {mentionMenu.isOpen&&createPortal(
-        <span css={contentCSS}>
+        <span css={[dropMenuCSS]}>
           <Box className='menuFrame' left={mentionMenu.x} top={mentionMenu.y}>
             {/* Show all options if options.length > 0
             otherwise show 'no cards...' message */}
@@ -572,7 +575,7 @@ export const Card = forwardRef(({
           </>)}
 
           {/* Preview: card option switcher + backward preveiw if opened */}
-          <Box flex={1} w={'50%'} minW={0} pl={'10px'} fontSize={`${fontSize}px`}>
+          <Box flex={1} w={'50%'} minW={0} fontWeight={300} p={'0px 4px'} fontSize={`${fontSize}px`}>
             {OptionSwitcher}
             <Sh value={bwd_content} />
           </Box>
