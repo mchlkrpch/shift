@@ -3,7 +3,7 @@ import { css } from '@emotion/react';
 
 import { Box, Button, Spacer } from '@chakra-ui/react';
 // import React from 'react';
-import { GrHomeRounded } from "react-icons/gr";
+import { GoHomeFill } from "react-icons/go";
 import { History } from '../pages/utils';
 import React, { useEffect, useImperativeHandle, useState } from 'react';
 import store from '../storage';
@@ -55,7 +55,7 @@ export const Header=React.forwardRef((props:any,ref:any)=>{
             bg={'color-mix(in srgb, #556 20%, transparent)'}
             border={'1.2px solid color-mix(in srgb, #666 14%, transparent)'}
         >
-            <GrHomeRounded
+            <GoHomeFill
                 style={{
                     height:'12px',
                     width:'12px',
@@ -77,7 +77,6 @@ export const Header=React.forwardRef((props:any,ref:any)=>{
             <SpAvatar
                 src={userData.photo_url}
                 username={userData.username}
-                // backgroundColor={'white'}
                 border={'1.2px solid color-mix(in srgb, #666 14%, transparent)'}
                 h={'20px'}
                 w={'20px'}/>
