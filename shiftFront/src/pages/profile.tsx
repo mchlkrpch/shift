@@ -12,7 +12,6 @@ import {
 	Button,
 	Separator,
 	Spacer,
-	IconButton,
 	SkeletonText,
 	Dialog,
 } from '@chakra-ui/react'
@@ -25,18 +24,38 @@ import {
 	spaced_account,
 	uReq,
 } from '../appwrite/service';
-import { logOut } from './auth';
-import { GraphCtx } from '../App';
-import { Header } from '../components/header';
-import { Graph } from '../sh/graph/graphEditor';
-import { Card } from '../sh/card/card';
-import { History } from './utils';
-import { ID, Query } from 'appwrite';
-import { GraphPage } from './graph';
-import { FaRegTrashAlt, FaShare } from 'react-icons/fa';
-import { HiDocumentAdd } from "react-icons/hi";
-import { FiShare } from "react-icons/fi";
-import { Clip } from '../sh/clip';
+import {
+	logOut
+} from './auth';
+import {
+	GraphCtx
+} from '../App';
+import {
+	Header
+} from '../components/header';
+import {
+	Card
+} from '../sh/card/card';
+import {
+	History
+} from './utils';
+import {
+	ID,
+	Query
+} from 'appwrite';
+import {
+	GraphPage
+} from './graph';
+import {
+	FaRegTrashAlt,
+	FaShare
+} from 'react-icons/fa';
+import {
+	HiDocumentAdd
+} from "react-icons/hi";
+import {
+	Clip
+} from '../sh/clip';
 
 export const unknownPhotoUrl: string = "https://i.postimg.cc/MKZzBCG2/spaced-gray.png";
 
@@ -152,7 +171,8 @@ align-items: stretch;
 	display: flex;
 	flex-direction: column;
 	border-radius: 10px;
-	background-color: color-mix(in srgb, #999 10%, transparent);
+	// background-color: color-mix(in srgb, #999 10%, transparent);
+	background-color: color-mix(in srgb, #556 20%, transparent);
 	align-items: center;
 }
 
@@ -183,7 +203,7 @@ export const InputStack=(props:any)=>{
 								<Box m={0} alignItems={'start'} w={'100%'} p={'5px 10px'}>
 									<GraphCtx.Provider value={{
 										ns:localNs,setNs:setLocalNs,
-										ref:el.ref,
+										gRef:el.ref,
 										id:'',
 										name:'',
 									}}>
@@ -191,7 +211,7 @@ export const InputStack=(props:any)=>{
 											ref={el.ref}
 											id={'0'}
 											content={localNs['0']}
-											options={{stats:false,textEdit:false}}
+											options={{stats:false,textEdit:false,twoSides:false}}
 											focus={false}
 											/>
 									</GraphCtx.Provider>
@@ -256,7 +276,7 @@ export const MyGraphs=()=>{
 								>
 								<GraphCtx.Provider value={{
 									ns:null,setNs:null,
-									ref:null,
+									gRef:null,
 									id:g.$id,
 									name:'',
 								}}>
