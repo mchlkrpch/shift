@@ -367,20 +367,22 @@ export const SpDef = ({ data }: any) => {
           </CardCtx.Provider>
         </CardRoot>
         {!status.isLocked&&(
-          <Box 
+          <HStack 
             position="absolute" 
             top="-10px" right="-10px" 
-            bg="color-mix(in srgb, black 85%, transparent)" 
-            backdropFilter="blur(5px)"
+            bg="black" 
             px="6px" py="3px" borderRadius="6px" fontSize="10px" 
+            width={'fit-content'}
             color="white" fontWeight="bold"
             display="flex" alignItems="center" gap="5px" 
             zIndex={10} 
             border="1px solid rgba(255,255,255,0.1)"
           >
             <Box w="6px" h="6px" borderRadius="50%" bg={dotColor} />
-            Lvl {status.level} • {statusText}
-          </Box>
+            <Text textWrap={'nowrap'}>
+              Lvl {status.level}•{statusText}
+            </Text>
+          </HStack>
         )}
       </Box>
     )}/>
@@ -562,6 +564,23 @@ const GraphTreeNode = ({ itemId, ns, depth, orderedIds, onDragStart, onDragOver,
   );
 };
 
+function rgba2hex(orig:any) {
+  var a, isPercent, rgb = orig.replace(/\s/g, '').match(/^rgba?\((\d+),(\d+),(\d+),?([^,\s)]+)?/i),
+  alpha = (rgb && rgb[4] || "").trim(),
+  hex = rgb ?
+    (rgb[1] | 1 << 8).toString(16).slice(1) +
+    (rgb[2] | 1 << 8).toString(16).slice(1) +
+    (rgb[3] | 1 << 8).toString(16).slice(1) : orig;
+  if (alpha !== "") {
+    a = alpha;
+  } else {
+    a = 1;
+  }
+  a = ((a * 255) | 1 << 8).toString(16).slice(1)
+  hex = hex + a;
+  return '#'+hex;
+}
+
 const GraphTreeGroup = ({ itemId, depth, groups, groupToGroup, nodeToGroup, ns, orderedIds, prevSelectCb, handleRenameGroup, handleChangeGroupColor, handleUngroup, onDragStart, onDragOver, onDropOnGroup, onDropOnNode }: any) => {
   const gData = groups[itemId];
   const childGroups = Object.keys(groups).filter(g => groupToGroup[g] === itemId);
@@ -572,7 +591,8 @@ const GraphTreeGroup = ({ itemId, depth, groups, groupToGroup, nodeToGroup, ns, 
   const[editName, setEditName] = useState(itemId);
 
   const [contextMenu, setContextMenu] = useState<{x:number, y:number}|null>(null);
-  const hexColor = gData.color.startsWith('#') ? gData.color : '#555555';
+  console.log('gData.color',gData.color)
+  const hexColor = gData.color.startsWith('#')? gData.color : gData.color.startsWith('rgba')? rgba2hex(gData.color): '#555555';
   const [localColor, setLocalColor] = useState(hexColor);
 
   useEffect(() => {
