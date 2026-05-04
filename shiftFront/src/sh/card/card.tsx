@@ -3,6 +3,7 @@ import { css } from "@emotion/react";
 import {
   createContext,
   forwardRef,
+  useCallback,
   useContext,
   useEffect,
   useImperativeHandle,
@@ -27,6 +28,7 @@ import {
   Clip
 } from '../clip';
 import {
+  CARD_SPLIT_SYM,
   getGroupTp,
   OPTION_SPLIT_SYM,
   Sh,
@@ -284,13 +286,13 @@ export const Card = forwardRef(({
   // if hovered - display upper tools
   const [hovered,setHovered]=useState(false);
   // if edit mode - editable div
-  const [isEdit,setIsEdit]=useState(focus?true:false);
+  const [isEdit,setIsEdit]=useState(focus);
   // cur displayed option among all possiblilities 
   const [option,setOption]=useState(0) as any;
   // path of inner term (within parent term)
   const [path,setPath]=useState([id]) as any;
   // if not hide - display opposite side of card
-  const [hide,setHide]=useState(true) as any;
+  const [hide,setHide]=useState(options.open?false:true) as any;
   // current zoom of card's content (sz in px)
   const [fontSize,setFontSize]=useState(options.fontSize?options.fontSize:12) as any;
   // const [visualize,setVisualize]=useState(false) as any;
@@ -336,7 +338,7 @@ export const Card = forwardRef(({
     setMentionMenu({ isOpen: false, query: '', x: 0, y: 0, range: null });
   };
 
-  const localOnKeyDown = (e: React.KeyboardEvent) => {
+  const localOnKeyDown = (e:React.KeyboardEvent) => {
     if (e.altKey && e.key === 'ArrowUp') {
       e.preventDefault();
       if (options.onMove) options.onMove(-1);
@@ -430,30 +432,92 @@ export const Card = forwardRef(({
   const isHTML_set = useRef(false);
 
 
-  const onBlurCb=async()=>{
-    console.log("on blur")
-    const newC:string=[...inputRef.current.children]
-      .map((ch: any)=>(
-        (ch.children.length>=1)
-          ? [...ch.childNodes]
-              .map((n:any)=>(
-                n.nodeType === Node.TEXT_NODE?(
+  // const onBlurCb=async()=>{
+  //   console.log('ns',ns)
+  //   const newC:string=[...inputRef.current.children]
+  //     .map((ch: any)=>(
+  //       (ch.children.length>=1)
+  //         ? [...ch.childNodes]
+  //             .map((n:any)=>(
+  //               n.nodeType === Node.TEXT_NODE?(
+  //                 n.textContent
+  //               ):(n.className==='inlineCell')?(
+  //                 `<id=${ch.children[0]?.id}>`
+  //               ):n.textContent
+  //             ))
+  //             .join('')
+  //         : ch.innerText
+  //     ))
+  //     .join('\n');
+  //   const chunks = newC.split('~~~');
+  //   let lastContent = ''
+  //   for (const chunk of chunks) {
+  //     const newlineIndex = chunk.indexOf('\n');
+  //     const id = (newlineIndex === -1 ? chunk : chunk.substring(0, newlineIndex)).trim();
+  //     const content = newlineIndex === -1 ? '' : chunk.substring(newlineIndex + 1).trim();
+  //     // console.log('id:',id, 'cnt:',content)
+  //     if (id) {
+  //       ns[id] = content;
+  //     }
+  //     lastContent=content
+  //   }
+  //   console.log('lastContent',lastContent)
+  //   await setC(lastContent)
+  //   // console.log('cnt:', newC.split(CARD_SPLIT_SYM))
+  //   console.log('ns',ns)
+  //   ns[path[path.length-1]]=lastContent;
+  //   await setNs(ns);
+  //   if (options.twoSides===false) {
+  //     await setIsEdit(v=>!v);
+  //   }
+  // };
+
+  const onBlurCb = async () => {
+    const newC: string =[...inputRef.current.children]
+      .map((ch: any) => (
+        (ch.children.length >= 1)
+          ?[...ch.childNodes]
+              .map((n: any) => (
+                n.nodeType === Node.TEXT_NODE ? (
                   n.textContent
-                ):(n.className==='inlineCell')?(
+                ) : (n.className === 'inlineCell') ? (
                   `<id=${ch.children[0]?.id}>`
-                ):n.textContent
+                ) : n.textContent
               ))
               .join('')
           : ch.innerText
       ))
       .join('\n');
-    await setC(newC)
-    ns[path[path.length-1]]=newC;
-    await setNs(ns);
-    if (options.twoSides===false) {
-      await setIsEdit(v=>!v);
+    const chunks = newC.split('~~~');
+    const currentCardContent = chunks[0].trim();
+    const currentCardId = path[path.length - 1];
+    const newCardsUpdates: Record<string, string> = {};
+    newCardsUpdates[currentCardId] = currentCardContent;
+    for (let i = 1; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      const newlineIndex = chunk.indexOf('\n');
+      let id = '';
+      let content = '';
+      if (newlineIndex === -1) {
+        id = chunk.trim();
+      } else {
+        id = chunk.substring(0, newlineIndex).trim();
+        content = chunk.substring(newlineIndex + 1).trim();
+      }
+      if (id) {
+        newCardsUpdates[id] = content;
+      }
     }
-  }
+    setC(currentCardContent);
+    const updatedNs = {
+      ...ns,
+      ...newCardsUpdates
+    };
+    setNs(updatedNs);
+    if (options.twoSides === false) {
+      setIsEdit(false);
+    }
+  };
 
 
   const OptionSwitcher:any=(<>
@@ -679,6 +743,7 @@ export const Card = forwardRef(({
     if (focus) {
       const tryFocus = (attempts = 0) => {
         if (inputRef.current) {
+          // setIsEdit(true);
           inputRef.current.focus();
         } else if (attempts < 15) {
           // Если ref еще null, пробуем снова через 10мс (до 15 попыток)

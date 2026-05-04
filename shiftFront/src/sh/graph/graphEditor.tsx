@@ -4,14 +4,13 @@ import '@xyflow/react/dist/style.css';
 
 import {
   getSmoothStepPath,
-  getStraightPath,
+  // getStraightPath,
   Handle,
   Position,
   ReactFlow,
   ReactFlowProvider,
   SelectionMode,
   useReactFlow,
-  useStore,
 } from '@xyflow/react'
 import React, {
   forwardRef,
@@ -44,17 +43,27 @@ import {
   VStack
 } from '@chakra-ui/react';
 import { calcG, calculateHierarchy, OPTION_SPLIT_SYM, Sh, SIDE_SPLIT_SYM, topSort } from '../card/utility';
-import { Card, dropMenuCSS } from '../card/card';
+import { Card, CardCtx, dropMenuCSS } from '../card/card';
 import { FaParagraph } from "react-icons/fa6";
 import { BsDiagram2Fill } from "react-icons/bs";
 import { APPWRITE_CONFIG, gReq, spaced_account } from "../../appwrite/service";
 import { Panel } from '@xyflow/react';
 import { MdFilterCenterFocus } from "react-icons/md";
 import { Clip } from "../clip";
-import { FaShare } from "react-icons/fa";
+import {
+  FaShare,
+} from "react-icons/fa";
+import { PiExport } from "react-icons/pi";
 import { RiSaveFill } from "react-icons/ri";
 import { RiRepeat2Line } from "react-icons/ri";
-import { Feed } from "./feed";
+// import { Feed } from "./feed";
+// import { LuChevronDown, LuChevronRight } from "react-icons/lu";
+// import { createPortal } from "react-dom";
+
+// -----------------------------------------------------------------
+// ОБНОВЛЕННЫЙ ИМПОРТ: забираем getCardState из Feed
+// -----------------------------------------------------------------
+import { Feed, getCardState } from "./feed"; 
 import { LuChevronDown, LuChevronRight } from "react-icons/lu";
 import { createPortal } from "react-dom";
 
@@ -231,10 +240,107 @@ const Colored=({content}:any)=>{
   return <DarkMode>{content}</DarkMode>;
 }
 
-export const SpDef=({data}:any)=>{
+// export const SpDef=({data}:any)=>{
+//   return (
+//     <Colored content={(
+//       <Box className='defNode'>
+//         <Handle
+//           type='target'
+//           position={Position.Top}
+//           style={{ top:'100%', left: '50%', opacity: '0%' }}
+//           isConnectable={false}
+//         />
+//         <Handle
+//           type="source"
+//           style={{ top: '100%', left: '50%', opacity: '0%' }}
+//           position={Position.Top}
+//           isConnectable={false}
+//         />
+//         <CardRoot
+//           // className={`SpDef-frame feed-block-${data.tp}`}
+//           borderRadius={'5px'}
+//           bg={'color-mix(in srgb, black 90%, transparent)'}
+//           w={'fit-content'}
+//           maxW={'250px'}
+//           minH={'30px'}
+//           // zIndex={'9999'}
+//           >
+//           <Sh value={data.forward[0]} isInner={true}/>
+//         </CardRoot>
+//       </Box>
+//     )}/>
+//   )
+// };
+
+
+// export const SpDef = ({ data }: any) => {
+//   const dummyCardCtx = useMemo(() => ({
+//     path: [data.id],
+//     setPath: () =>[],
+//     c: data.forward && data.forward.length > 0 ? data.forward[0] : '',
+//     setC: () => {},
+//   }), [data]);
+//   return (
+//     <Colored content={(
+//       <Box className='defNode'>
+//         <Handle
+//           type='target'
+//           position={Position.Top}
+//           style={{ top:'100%', left: '50%', opacity: '0%' }}
+//           isConnectable={false}
+//         />
+//         <Handle
+//           type="source"
+//           style={{ top: '100%', left: '50%', opacity: '0%' }}
+//           position={Position.Top}
+//           isConnectable={false}
+//         />
+//         <CardRoot
+//           borderRadius={'5px'}
+//           bg={'color-mix(in srgb, black 50%, transparent)'}
+//           backdropFilter={'saturate(200%) blur(10px);'}
+//           w={'fit-content'}
+//           border={0}
+//           maxW={'250px'}
+//           minH={'30px'}
+//           >
+//           {/* Оборачиваем Sh в наш фейковый провайдер */}
+//           <CardCtx.Provider value={dummyCardCtx}>
+//             <Sh value={data.forward[0]} isInner={true}/>
+//           </CardCtx.Provider>
+//         </CardRoot>
+//       </Box>
+//     )}/>
+//   )
+// };
+
+export const SpDef = ({ data }: any) => {
+  const gCtx = useGraphCtx() as any;
+  const dummyCardCtx = useMemo(() => ({
+    path:[data.id],
+    setPath: () =>[],
+    c: data.forward && data.forward.length > 0 ? data.forward[0] : '',
+    setC: () => {},
+  }),[data]);
+  const ns = gCtx?.ns || {};
+  const repeats = gCtx?.repeats || {};
+  const status = getCardState(data.id, ns, repeats);
+  let dotColor = "gray.500";
+  let statusText = "";
+  if (!status.isLocked) {
+      if (status.isNew) { dotColor = "#3182ce"; statusText = "New"; }
+      else if (status.isDue) { dotColor = "#e53e3e"; statusText = "Due"; }
+      else if (status.isLearned) { dotColor = "#38a169"; statusText = "Done"; }
+  }
   return (
     <Colored content={(
-      <Box className='defNode'>
+      <Box 
+        className='defNode' 
+        position="relative" 
+        opacity={status.isLocked ? 0.35 : 1} 
+        filter={status.isLocked ? 'grayscale(80%) blur(0.5px)' : 'none'}
+        transition="all 0.3s ease"
+      >
         <Handle
           type='target'
           position={Position.Top}
@@ -248,25 +354,63 @@ export const SpDef=({data}:any)=>{
           isConnectable={false}
         />
         <CardRoot
-          className={`SpDef-frame feed-block-${data.tp}`}
           borderRadius={'5px'}
+          bg={'color-mix(in srgb, black 50%, transparent)'}
+          backdropFilter={'saturate(200%) blur(10px);'}
           w={'fit-content'}
+          border={0}
           maxW={'250px'}
-          minH={'30px'}>
-          <Sh value={data.forward[0]} isInner={true}/>
+          minH={'30px'}
+          >
+          <CardCtx.Provider value={dummyCardCtx}>
+            <Sh value={data.forward[0]} isInner={true}/>
+          </CardCtx.Provider>
         </CardRoot>
+        {!status.isLocked&&(
+          <Box 
+            position="absolute" 
+            top="-10px" right="-10px" 
+            bg="color-mix(in srgb, black 85%, transparent)" 
+            backdropFilter="blur(5px)"
+            px="6px" py="3px" borderRadius="6px" fontSize="10px" 
+            color="white" fontWeight="bold"
+            display="flex" alignItems="center" gap="5px" 
+            zIndex={10} 
+            border="1px solid rgba(255,255,255,0.1)"
+          >
+            <Box w="6px" h="6px" borderRadius="50%" bg={dotColor} />
+            Lvl {status.level} • {statusText}
+          </Box>
+        )}
       </Box>
     )}/>
   )
 };
 
-export const TempDef = ({data,id}: any) => {
-  const fakeGCtx = {
-    ns:{[id]:data.content},
-    setNs:(newNs:any)=>data.setContent(newNs[id]),
-    name:'', id:'',
-    ref:null,
+export const TempDef = ({data, id}: any) => {
+  const extendedGCtx = {
+    ...data.gCtx, 
+    ns: { 
+      ...(data.gCtx?.ns || {}), 
+      [id]: data.content        
+    },
+    setNs: (newNsOrCb: any) => {
+      const currentNs = { ...(data.gCtx?.ns || {}),[id]: data.content };
+      const newNs = typeof newNsOrCb === 'function' ? newNsOrCb(currentNs) : newNsOrCb;
+      // 1. Сохраняем текст самой TempDef (пока пользователь еще пишет)
+      if (newNs[id] !== undefined) {
+        data.setContent(newNs[id]);
+      }
+      // 2. Самое важное: отправляем ОСТАЛЬНЫЕ новые карточки (через ~~~) в глобальный граф!
+      if (data.gCtx && data.gCtx.setNs) {
+        // Деструктуризируем: достаем временный id, а все остальные карточки кладем в restCards
+        const { [id]: tempCardContent, ...restCards } = newNs;
+        // Отправляем остаток (который содержит все прошлые узлы + новые из ~~~) в реальный граф
+        data.gCtx.setNs(restCards);
+      }
+    },
   };
+
   return (
     <Colored content={(
       <Box 
@@ -281,7 +425,7 @@ export const TempDef = ({data,id}: any) => {
         minH={'30px'}
         boxShadow={'0px 0px 20px rgba(0, 0, 0, 0.4)'}
       >
-        <GraphCtx.Provider value={fakeGCtx}>
+        <GraphCtx.Provider value={extendedGCtx}>
           <Card 
             id={id} 
             content={data.content}
@@ -301,11 +445,25 @@ export const SpGroup = ({data}: any) => {
   const bg = isHex ? `${data.color}26` : data.color;
   const border = isHex ? `0px solid ${data.color}99` : `2px solid ${data.color.replace('0.1','0.6')}`;
   return (
-    <Box w="100%" h="100%" bg={bg} border={border} borderRadius="12px" position="relative" pointerEvents="none" >
+    <Box
+      w="100%"
+      h="100%"
+      bg={bg}
+      // border={border}
+      borderRadius="2px"
+      position="relative"
+      pointerEvents="none" >
       <Box 
-        position="absolute" top="-24px" left="10px" 
-        fontSize="14px" fontWeight="bold" color="gray.400"
-        maxWidth="calc(100% - 20px)" whiteSpace="nowrap" overflow="hidden" textOverflow="ellipsis"
+        position="absolute"
+        top="-24px" left="10px" 
+        fontSize="14px"
+        fontWeight="bold"
+        color="gray.400"
+        maxWidth="calc(100% - 20px)"
+        whiteSpace="nowrap"
+        overflow="hidden"
+        textOverflow="ellipsis"
+        zIndex={'-999'}
       >
         {data.label}
       </Box>
@@ -360,10 +518,6 @@ export function SpEdge({
     targetX, targetY,
     targetPosition, borderRadius,
   });
-  // const [edgePath] = getStraightPath({
-  //   sourceX, sourceY,
-  //   targetX, targetY,
-  // });
   return (
     <>
       <path
@@ -373,9 +527,11 @@ export function SpEdge({
         d={edgePath}
         strokeWidth={3}
         markerEnd={markerEnd}
+        z={'-1'}
       />
       <path
         d={edgePath}
+        z={'-1'}
         fill="transparent"
         stroke="transparent"
         strokeWidth={18}
@@ -389,11 +545,14 @@ const nodeTypes = {SpDef:SpDef, TempDef:TempDef, SpGroup:SpGroup}
 const edgeTypes = {SpEdge: SpEdge}
 
 
-const GraphTreeNode = ({ itemId, ns, depth, orderedIds }: any) => {
+const GraphTreeNode = ({ itemId, ns, depth, orderedIds, onDragStart, onDragOver, onDropOnNode }: any) => {
   if (!orderedIds.includes(itemId)) return null;
   return (
     <Box ml={`${depth * 10}px`}
       minW={0} flexShrink={0}
+      draggable
+      onDragStart={(e) => onDragStart(e, itemId, 'node')}
+      onDragOver={onDragOver} onDrop={(e) => onDropOnNode(e, itemId)}
     >
       <Card
         id={itemId}content={ns[itemId]}
@@ -403,7 +562,7 @@ const GraphTreeNode = ({ itemId, ns, depth, orderedIds }: any) => {
   );
 };
 
-const GraphTreeGroup = ({ itemId, depth, groups, groupToGroup, nodeToGroup, ns, orderedIds, prevSelectCb, handleRenameGroup, handleChangeGroupColor, handleUngroup }: any) => {
+const GraphTreeGroup = ({ itemId, depth, groups, groupToGroup, nodeToGroup, ns, orderedIds, prevSelectCb, handleRenameGroup, handleChangeGroupColor, handleUngroup, onDragStart, onDragOver, onDropOnGroup, onDropOnNode }: any) => {
   const gData = groups[itemId];
   const childGroups = Object.keys(groups).filter(g => groupToGroup[g] === itemId);
   const childNodes = gData.nodes.filter((n: string) => nodeToGroup[n] === itemId);
@@ -416,9 +575,6 @@ const GraphTreeGroup = ({ itemId, depth, groups, groupToGroup, nodeToGroup, ns, 
   const hexColor = gData.color.startsWith('#') ? gData.color : '#555555';
   const [localColor, setLocalColor] = useState(hexColor);
 
-  // useEffect(() => {
-  //   setLocalColor(hexColor);
-  // },[hexColor]);
   useEffect(() => {
     const handler = setTimeout(() => {
       if (localColor !== hexColor) {
@@ -448,6 +604,10 @@ const GraphTreeGroup = ({ itemId, depth, groups, groupToGroup, nodeToGroup, ns, 
       flexShrink={0}
       m={0} ml={`${depth * 10}px`} overflow={'hidden'}
       bg={groupSelect ? `${hexColor}14` : 'transparent'}
+      draggable
+      onDragStart={(e) => onDragStart(e, itemId, 'group')}
+      onDragOver={onDragOver}
+      onDrop={(e) => onDropOnGroup(e, itemId)}
       onClick={(e) => {
         e.stopPropagation();
         if (prevSelectCb.current && prevSelectCb.current !== setGroupSelect) {
@@ -560,7 +720,7 @@ const Flow=React.forwardRef((props:any,ref:any)=>{
   const selectedNodesIds = useRef(new Set());
   const curSelected = useRef(new Set());
   
-  const [menu,setMenu] = useState<{isOpen:boolean,x:number,y:number,mode:'idle'|'naming',name:string,idx:number}>({
+  const [menu,setMenu] = useState<{isOpen:boolean,x:number,y:number,mode:any,name:string,idx:number}>({
     isOpen:false,x:0,y:0,mode:'idle',name:'',idx:0});
   const onContextMenu = useCallback((e:React.MouseEvent) => {
     e.preventDefault();
@@ -586,6 +746,51 @@ const Flow=React.forwardRef((props:any,ref:any)=>{
     const b = Math.floor(Math.random() * 150 + 50);
     const color = `rgba(${r},${g},${b},0.15)`;
     setGroups((prev:any) => ({...prev, [name]: {color, nodes:ids}}));
+  };
+
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+const [exportName, setExportName] = useState('graph');
+
+const handleExport = useCallback(async (format: 'png' | 'svg') => {
+    try {
+      const { toPng, toSvg } = await import('html-to-image');
+      const el = document.querySelector('.react-flow') as HTMLElement;
+      if (!el) return;
+      const filter = (node: HTMLElement) => {
+        if (node?.classList?.contains('react-flow__panel')) {
+          return false;
+        }
+        return true;
+      };
+      const options = { filter, backgroundColor: '#1e1e1e' };
+      const dataUrl = format === 'png' 
+        ? await toPng(el, options) 
+        : await toSvg(el, options);
+      const a = document.createElement('a');
+      a.setAttribute('download', `${exportName || 'graph'}.${format}`);
+      a.setAttribute('href', dataUrl);
+      a.click();
+      setExportMenuOpen(false);
+    } catch (err) {
+      console.error('Export failed:', err);
+      alert('Ошибка экспорта. Убедитесь, что установлена библиотека: npm install html-to-image');
+    }
+  }, [exportName]);
+
+  const handleAddNodesToGroup = (targetGroupName: string) => {
+    const nodesToAdd = Array.from(curSelected.current as any) as string[];
+    setGroups((prev: any) => {
+      const updated = { ...prev };
+      Object.keys(updated).forEach(g => {
+        updated[g] = { ...updated[g], nodes: updated[g].nodes.filter(n => !nodesToAdd.includes(n)) };
+      });
+      updated[targetGroupName] = {
+        ...updated[targetGroupName],
+        nodes: [...new Set([...updated[targetGroupName].nodes, ...nodesToAdd])]
+      };
+      return updated;
+    });
+    setMenu({isOpen:false, x:0, y:0, mode:'idle', name:'', idx:0});
   };
 
   const handleWheel=useCallback((event:any) => {
@@ -659,13 +864,14 @@ const Flow=React.forwardRef((props:any,ref:any)=>{
           setContent: (val: string) => {
             tempContentRef.current = val;
             setTempNode((prev: any) => ({ ...prev, content: val }));
-          }
+          },
+          gCtx,
         }
       };
       return [...reactflowNs, tNode];
     }
     return reactflowNs;
-  }, [reactflowNs, tempNode]);
+  }, [reactflowNs, tempNode, gCtx, ns]);
 
 
   const handleWrapperDoubleClick = useCallback((e: React.MouseEvent)=>{
@@ -712,10 +918,20 @@ const Flow=React.forwardRef((props:any,ref:any)=>{
     }, {} as Record<string,any>),
   }))
 
-  const idle_cb = [
-    ()=>setMenu({...menu, mode:'naming'}),
-    ()=>{},
-  ]
+  const idle_cb =[
+    ()=>setMenu({...menu, mode:'naming', idx:0}),
+    ()=>setMenu({...menu, mode:'adding_to_group', idx:0}),
+    ()=>{
+      const filtered = Object.keys(ns)
+        .filter((k:any) => !(Array.from(curSelected.current).includes(k)))
+        .reduce((obj:any,k) => {
+          obj[k] = ns[k];
+          return obj;
+        }, {});
+      setNs(filtered);
+      setMenu({isOpen:false,x:0,y:0,mode:'idle',name:'',idx:0});
+    },
+  ];
 
   const rename_cb=(e:any)=>setMenu({...menu, name: e.target.value})
 
@@ -752,8 +968,6 @@ const Flow=React.forwardRef((props:any,ref:any)=>{
       ref={flowRef}
       onDoubleClick={handleWrapperDoubleClick}
       onKeyDown={(e:any)=>{
-        e.stopPropagation();
-        e.preventDefault();
         localOnKeyDown(e);
       }}
     >
@@ -781,13 +995,12 @@ const Flow=React.forwardRef((props:any,ref:any)=>{
         onWheel           = {(e:any)=>{
           handleWheel(e)
         }}
-        // nodes     = {reactflowNs}
-        nodes={displayNodes}
+        nodes     = {displayNodes}
         edges     = {reactflowEs}
         nodeTypes = {nodeTypes}
         edgeTypes = {edgeTypes}
       >
-        <Panel position="top-right">
+        {/* <Panel position="top-right">
           <IconButton
             aria-label="center graph"
             variant="subtle"
@@ -799,6 +1012,79 @@ const Flow=React.forwardRef((props:any,ref:any)=>{
             >
             <MdFilterCenterFocus size="20px" />
           </IconButton>
+        </Panel> */}
+        <Panel position="top-right">
+          <HStack gap="2">
+            {/* Кнопка и меню Экспорта */}
+            <Box position="relative">
+              <IconButton
+                aria-label="export graph"
+                variant="subtle"
+                size="sm"
+                bg="rgba(150, 150, 150, 0.1)"
+                backdropFilter="blur(5px)"
+                borderRadius="md"
+                onClick={() => setExportMenuOpen(!exportMenuOpen)}
+              >
+                <PiExport  size="14px" />
+              </IconButton>
+              
+              {exportMenuOpen && (
+                <Box
+                  position="absolute"
+                  top="100%"
+                  right={0}
+                  mt="8px"
+                  bg="color-mix(in srgb, #445 90%, transparent)"
+                  border="1px solid color-mix(in srgb, #666 60%, transparent)"
+                  backdropFilter="blur(20px)"
+                  p="8px"
+                  borderRadius="md"
+                  boxShadow="dark-lg"
+                  zIndex={1000}
+                  w="200px"
+                >
+                  <VStack align="stretch" gap={2}>
+                    <Text fontSize="12px" color="gray.400" mb="-4px">Имя файла</Text>
+                    <input 
+                      autoFocus
+                      value={exportName}
+                      onChange={(e) => setExportName(e.target.value)}
+                      placeholder="graph"
+                      style={{ 
+                        background: 'rgba(0,0,0,0.3)', color: 'white', padding: '4px 8px', 
+                        border: '1px solid gray', borderRadius: '3px', outline: 0, width: '100%', fontSize: '12px' 
+                      }}
+                      onKeyDown={(e) => {
+                        e.stopPropagation();
+                        if (e.key === 'Enter') handleExport('png'); // По дефолту при Enter - PNG
+                        if (e.key === 'Escape') setExportMenuOpen(false);
+                      }}
+                    />
+                    <HStack gap={1} mt={1}>
+                      <Button flex={1} size="sm" height="24px" fontSize="12px" variant="subtle" colorPalette="blue" onClick={() => handleExport('png')}>
+                        PNG
+                      </Button>
+                      <Button flex={1} size="sm" height="24px" fontSize="12px" variant="subtle" colorPalette="blue" onClick={() => handleExport('svg')}>
+                        SVG
+                      </Button>
+                    </HStack>
+                  </VStack>
+                </Box>
+              )}
+            </Box>
+            <IconButton
+              aria-label="center graph"
+              variant="subtle"
+              size="sm"
+              bg="rgba(150, 150, 150, 0.1)" 
+              backdropFilter="blur(5px)"
+              borderRadius="md"
+              onClick={() => fitView({padding:0.3, duration:200})}
+            >
+              <MdFilterCenterFocus size="20px" />
+            </IconButton>
+          </HStack>
         </Panel>
       </ReactFlow>
 
@@ -824,14 +1110,25 @@ const Flow=React.forwardRef((props:any,ref:any)=>{
                   h={'30px'}
                   bg={1===menu.idx? 'blue.600':'transparent'}
                   variant="ghost"
-                  colorPalette={'red'}
+                  colorPalette={'blue'}
                   onClick={idle_cb[1]}
+                  >
+                  add to group
+                </Button>
+                <Button
+                  p={'2px 5px'} borderRadius="sm" fontSize="12px"
+                  w={'100%'}
+                  h={'30px'}
+                  bg={2===menu.idx? 'blue.600':'transparent'}
+                  variant="ghost"
+                  colorPalette={'red'}
+                  onClick={idle_cb[2]}
                   >
                   delete
                 </Button>
               </>
             )}
-            {menu.mode!=='idle'&&(
+            {menu.mode==='naming'&&(
               <>
                 <Text className='tip'>Name new group</Text>
                 <input 
@@ -858,6 +1155,23 @@ const Flow=React.forwardRef((props:any,ref:any)=>{
                 />
               </>
             )}
+            {menu.mode==='adding_to_group'&&(
+              <>
+                <Text className='tip'>Select group</Text>
+                {Object.keys(groups).length === 0 && <Text fontSize="12px" color="gray.400" mt="3px">No groups available</Text>}
+                {Object.keys(groups).map((gName, i) => (
+                  <Box key={gName} p={'2px 5px'} borderRadius="sm" fontSize="12px" mt={'3px'}
+                        bg={i===menu.idx? 'blue.600':'transparent'}
+                        cursor="pointer"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          handleAddNodesToGroup(gName);
+                        }}>
+                    {gName}
+                  </Box>
+                ))}
+              </>
+            )}
           </Box>
         </span>
     , document.body)}
@@ -875,6 +1189,14 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
   const [curName,setCurName]=useState({'0':name}) as any;
   // reactflow component with editable ns content forward ref
   const flowRef=useRef(null) as any;
+
+  const latestNs = useRef(ns);
+  const latestGroups = useRef(groups);
+  const latestName = useRef(curName);
+
+  useEffect(() => { latestNs.current = ns; }, [ns]);
+  useEffect(() => { latestGroups.current = groups; }, [groups]);
+  useEffect(() => { latestName.current = curName; }, [curName]);
 
   const { nodeToGroup, groupToGroup } = calculateHierarchy(groups);
 
@@ -1013,6 +1335,22 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
     }
   };
 
+  const saveGraph = useCallback(async () => {
+    const user = await spaced_account.get();
+    const currentUserId = user.$id;
+    const currentNs = latestNs.current;
+    const currentGroups = latestGroups.current;
+    const currentGraphName = latestName.current['0'];
+    console.log('Актуальный ns перед сохранением:', currentNs);
+    gReq.update(id, {
+      content: JSON.stringify(currentNs),
+      groups: JSON.stringify(currentGroups),
+      name: currentGraphName,
+      collaborators: [],
+      owner: currentUserId,
+    });
+  }, [id]);
+
   const HeaderTabs = (
     // css wrapper
     <span css={graphCSS} key={'header_tabs'}>
@@ -1034,20 +1372,7 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
         <Spacer />
 
         <Button h={'20px'} gap={'3px'} fontWeight={500} p={'0px 4px'} variant={'ghost'} colorPalette={'green'}
-          onClick={async()=>{
-            // get user id to autorize; get current node from curstom
-            // hook of fwdRef of flow and push to appwrite
-            const user = await spaced_account.get();
-            const currentUserId = user.$id;
-            console.log('JSON.stringify(groups)', JSON.stringify(groups))
-            gReq.update(id,{
-              content:JSON.stringify(ns),
-              groups:JSON.stringify(groups),
-              name:curName['0'],
-              collaborators:[],
-              owner:currentUserId,
-            })
-          }}
+          onClick={saveGraph}
         >
           <RiSaveFill style={{height:'13px',width:'13px'}}/>
           save
@@ -1087,11 +1412,93 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
     });
   }, [setGroups]);
 
+
+  const handleDragStart = useCallback((e: React.DragEvent, dragId: string, type: 'node' | 'group') => {
+    e.dataTransfer.setData('application/json', JSON.stringify({ id: dragId, type }));
+    e.dataTransfer.effectAllowed = 'move';
+  },[]);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  },[]);
+
+  const handleDropOnGroup = useCallback((e: React.DragEvent, targetGroupId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      const data = JSON.parse(e.dataTransfer.getData('application/json'));
+      if (data.id === targetGroupId) return;
+      if (data.type === 'node') {
+        setGroups((prev: any) => {
+          const next = { ...prev };
+          Object.keys(next).forEach(g => {
+            next[g] = { ...next[g], nodes: next[g].nodes.filter((n: string) => n !== data.id) };
+          });
+          next[targetGroupId] = { ...next[targetGroupId], nodes: [...new Set([...next[targetGroupId].nodes, data.id])] };
+          return next;
+        });
+      }
+    } catch(err) {}
+  }, [setGroups]);
+
+  const handleDropOnNode = useCallback((e: React.DragEvent, targetNodeId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      const data = JSON.parse(e.dataTransfer.getData('application/json'));
+      if (data.id === targetNodeId) return;
+      if (data.type === 'node') {
+        // Change order
+        setOrderedIds((prev) => {
+          const next = [...prev];
+          const fromIdx = next.indexOf(data.id);
+          const toIdx = next.indexOf(targetNodeId);
+          if (fromIdx !== -1 && toIdx !== -1) {
+            next.splice(fromIdx, 1);
+            next.splice(toIdx, 0, data.id);
+          }
+          return next;
+        });
+        
+        // Adopt the group of the target node
+        const targetGroup = nodeToGroup[targetNodeId];
+        setGroups((prev: any) => {
+          const next = { ...prev };
+          Object.keys(next).forEach(g => {
+            next[g] = { ...next[g], nodes: next[g].nodes.filter((n: string) => n !== data.id) };
+          });
+          if (targetGroup && next[targetGroup]) {
+            next[targetGroup] = { ...next[targetGroup], nodes: [...new Set([...next[targetGroup].nodes, data.id])] };
+          }
+          return next;
+        });
+      }
+    } catch(err) {}
+  }, [nodeToGroup, setGroups]);
+
+  const handleDropOnRoot = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    try {
+      const data = JSON.parse(e.dataTransfer.getData('application/json'));
+      if (data.type === 'node') {
+        // Remove from groups to make it root
+        setGroups((prev: any) => {
+          const next = { ...prev };
+          Object.keys(next).forEach(g => {
+            next[g] = { ...next[g], nodes: next[g].nodes.filter((n: string) => n !== data.id) };
+          });
+          return next;
+        });
+      }
+    } catch(err) {}
+  }, [setGroups]);
+
   const Editor = (
   <Tabs.Root css={graphCSS} defaultValue="tr" variant="plain" className={'graphTabs'}>
     {mode==='eg'&&(
       <HStack className='GraphmodeSides'>
-        <VStack className='GraphmodeStack'>
+        <VStack className='GraphmodeStack' onDragOver={handleDragOver} onDrop={handleDropOnRoot}>
         {Object.keys(groups).filter(g=>!groupToGroup[g]).map(g=>(
           <GraphTreeGroup
             key={g}itemId={g}depth={0}
@@ -1102,12 +1509,16 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
             handleRenameGroup={handleRenameGroup}
             handleChangeGroupColor={handleChangeGroupColor}
             handleUngroup={handleUngroup}
+
+            onDragStart={handleDragStart} onDragOver={handleDragOver} onDropOnGroup={handleDropOnGroup} onDropOnNode={handleDropOnNode}
             />
         ))}
         {orderedIds.filter(id=>!nodeToGroup[id]).map(n=>(
           <GraphTreeNode
             key={n}itemId={n}depth={0}
             ns={ns}orderedIds={orderedIds}
+
+            onDragStart={handleDragStart} onDragOver={handleDragOver} onDropOnNode={handleDropOnNode}
             />
         ))}
         </VStack>

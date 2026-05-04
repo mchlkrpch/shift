@@ -20,7 +20,6 @@ import rehypeRaw from 'rehype-raw';
 import {
   createRoot
 } from 'react-dom/client';
-import { match } from '../../utility';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.css';
@@ -29,6 +28,7 @@ import { Clip } from '../clip';
 
 export const SIDE_SPLIT_SYM: string = '@@@'
 export const OPTION_SPLIT_SYM: string = '==='
+export const CARD_SPLIT_SYM: string = '~~~'
 
 export declare type GroupTp = 'single'|'multiple_fwd'|'multiple_bwd'|'multiple'|undefined;
 export function getGroupTp(cnt: string) {
@@ -546,7 +546,7 @@ export const buildG = (rawNs: Record<string, string>) => {
 import dagre from '@dagrejs/dagre';
 
 export const NodeWidth = 258;
-export const NodeHeight = 30;
+export const NodeHeight = 50;
 
 export function calculateHierarchy(groups: Record<string, {color: string, nodes: string[]}>) {
   const sortedGroups = Object.entries(groups || {}).sort((a,b) => a[1].nodes.length - b[1].nodes.length);

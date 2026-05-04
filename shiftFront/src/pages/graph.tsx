@@ -6,6 +6,7 @@ import { GraphCtx } from '../App';
 import { Graph } from '../sh/graph/graphEditor';
 import { History } from './utils';
 import { Sh } from '../sh/card/utility';
+import store from '../storage';
 // import store from '../storage';
 // 69e538c100181b0740ad
 
@@ -75,6 +76,10 @@ export const GraphPage = ({mode,id,name}: any) => {
     const [nm,setName]=useState(name) as any;
     const gRef=useRef(null)as any;
     const headerRef=useRef(null) as any;
+
+    const [curRepeats,setCurRepeats]=useState(
+        store.getState().userData.repeats[window.location.pathname.split('/')[1]],
+    )
     useEffect(() => {
         const fetchGraphData = async()=>{
             if (mode === 'brief') {
@@ -133,11 +138,12 @@ export const GraphPage = ({mode,id,name}: any) => {
                         <Text color="red.500" mt={10}>{error}</Text>
                     ) : (
                         <GraphCtx.Provider value={{
-                        ns:curNs, setNs:setNs,
-                        groups:curGroups,setGroups:setCurGroups,
-                        gRef: gRef,
-                        id: window.location.pathname.split('/')[1],
-                        name: nm,
+                            ns:curNs, setNs:setNs,
+                            groups:curGroups,setGroups:setCurGroups,
+                            gRef: gRef,
+                            id: window.location.pathname.split('/')[1],
+                            name: nm,
+                            repeats:curRepeats, setRepeats:setCurRepeats, 
                         }}>
                             <Graph ref={gRef} headerRef={headerRef}/>
                         </GraphCtx.Provider>

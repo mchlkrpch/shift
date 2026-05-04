@@ -196,7 +196,6 @@ export const InputStack=(props:any)=>{
 					}
 					if (el.tp === 'card') {
 						const [localNs,setLocalNs]=useState({'0':el.d})
-
 						return (
 							<Box p={0}m={0} key={i} w={'100%'} alignItems={'center'} display={'flex'} flexDirection={'column'}>
 								{i!==0&&<Separator w={'95%'}/>}
@@ -338,8 +337,9 @@ export function Profile(props:any){
 
 	if (props.id === undefined) {
 		user=store.getState().user;
-		userData=store.getState().userData;	
+		userData=store.getState().userData;
 	}
+	console.log('userData',userData)
 
 	const [localUserData,setLocalUserData] = useState(userData);
 	const usernameRef = useRef<HTMLInputElement>(null);

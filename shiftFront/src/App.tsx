@@ -8,6 +8,7 @@ interface SpEditorI {
 	gRef?:any,    // Graph's-forwardRef reference
 	id?:string,   // Appwrite ID of the graph
 	name?:string, // name of the graph
+	repeats?:any,setRepeats?:any,
 }
 
 export const GraphCtx = createContext<SpEditorI|null>(null);

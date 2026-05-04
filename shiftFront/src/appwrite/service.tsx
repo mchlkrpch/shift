@@ -126,7 +126,10 @@ export const spaced_client = new Client()
 export const spaced_account = new Account(spaced_client);
 const spaced_databases = new Databases(spaced_client);
 
-export const gReq = new Repo(spaced_databases, APPWRITE_CONFIG.DATABASE_ID, APPWRITE_CONFIG.COLLECTIONS.GRAPHS_ID);
+export const gReq = new Repo(
+    spaced_databases,
+    APPWRITE_CONFIG.DATABASE_ID,
+    APPWRITE_CONFIG.COLLECTIONS.GRAPHS_ID);
 
 class UserService extends Repo<any> {
     async create(u: any) {
@@ -171,9 +174,25 @@ class UserService extends Repo<any> {
         const ud = await this.create(u)
         return ud
     }
+
+    async updateRepeats(gId:string,gRepeats:any) {
+        const ud = store.getState().userData;
+        const repeats = ud.repeats;
+        repeats[gId] = gRepeats;
+        ud.repeats = repeats
+        await super.update(
+            ud.$id,
+            {
+                repeats: JSON.stringify(repeats),
+            },
+        )
+    }
 }
 
-export const uReq = new UserService(spaced_databases, APPWRITE_CONFIG.DATABASE_ID, APPWRITE_CONFIG.COLLECTIONS.USERS_ID);
+export const uReq = new UserService(
+    spaced_databases,
+    APPWRITE_CONFIG.DATABASE_ID,
+    APPWRITE_CONFIG.COLLECTIONS.USERS_ID);
 
 export async function fetch_user(acc: any) {
 	try {
