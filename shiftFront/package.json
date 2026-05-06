@@ -17,6 +17,7 @@
     "@emotion/react": "^11.14.0",
     "@xyflow/react": "^12.10.2",
     "appwrite": "^23.0.0",
+    "graphology": "^0.26.0",
     "highlight.js": "^11.11.1",
     "katex": "^0.16.38",
     "lucide-react": "^0.577.0",
@@ -33,7 +34,8 @@
     "rehype-katex": "^7.0.1",
     "rehype-raw": "^7.0.0",
     "remark-gfm": "^4.0.1",
-    "remark-math": "^6.0.0"
+    "remark-math": "^6.0.0",
+    "sigma": "^3.0.3"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",

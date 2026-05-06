@@ -62,12 +62,28 @@ export const dropMenuCSS=css`
   max-height: 200px;
   overflow-y: auto;
   min-width: 150px;
+
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+
+  font-weight: 400;
+  z-index 12000;
 }
 
 .menuFrame .tip{
   font-size: 11px;
   opacity: 0.3;
   font-weight: 400;
+}
+
+.item {
+  width: 100%;
+  font-size:12px;
+  display:flex;
+  align-items:center;
+  gap: 8px;
+  border-radius: 3px;
 }
 `
 

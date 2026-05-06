@@ -47,15 +47,17 @@ import {
 	GraphPage
 } from './graph';
 import {
-	FaRegTrashAlt,
 	FaShare
 } from 'react-icons/fa';
+import { HiMiniViewfinderCircle } from "react-icons/hi2";
+import { RiDeleteBin6Line } from "react-icons/ri";
 import {
 	HiDocumentAdd
 } from "react-icons/hi";
 import {
 	Clip
 } from '../sh/clip';
+import { ContextMenu, useContextMenu } from '../sh/menu';
 
 export const unknownPhotoUrl: string = "https://i.postimg.cc/MKZzBCG2/spaced-gray.png";
 
@@ -82,62 +84,6 @@ export function SpAvatar(props:any) {
 		</Box>
 	)
 }
-
-const cntStr=`first
-@@@
-second<id=2>third<id=2>fourth
-\`\`\`python
-import typing;
-def add_numbers(a, b)->typng.Any:
-	"""Function to return the sum of two numbers."""
-	return a + b
-\`\`\`
-this code provide strong power of wibe coding
-===
-second
-@@@
-segssges sgds
-`;
-
-
-const inner2:string=`inner
-@@@
-inner complex definition of something <id=3>`;
-
-
-const inner3:string=`inner second def
-@@@
-more simple definition`;
-
-
-const inner4:string=`Аффинные многообразия
-@@@
-Пусть k — алгебраически замкнутое поле (в классической алгебраической геометрии
-— поле комплексных чисел);
-$\{\\displaystyle \\mathbb \{A\}^\{n\}\}$ — n-мерное аффинное пространство над k.
-Существует теорема из классического анализа, утверждающая, что замкнутые подмножества
-
-$\{\\displaystyle \\mathbb {R} ^{n}} — это в точности множества нулей всевозможных
-бесконечно дифференцируемых функций.[4] Топология Зарисского в некотором смысле
-переносит это свойство на случай полиномиальных функций: при определении топологии
-Зарисского каждому множеству многочленов от n переменных сопоставляется множество точек
-аффинного пространства, на которых все эти многочлены равны нулю:
-
-\$\{\\displaystyle Z(S)=\\{x\\in \\mathbb {A}^{n}\\mid f(x)=0\;\\forall f\\in S\\}}$
-Замкнутые множества в топологии Зарисского на 
-\{\\displaystyle \\mathbb {A}^{n}}$
-— это все множества вида Z(S), также эти замкнутые множества называются
-алгебраическими множествами. Аффинное алгебраическое многообразие
-— это алгебраическое множество, которое нельзя представить в виде объединения
-двух меньших алгебраических множеств
-`;
-
-const ns: object={
-  '1': cntStr,
-  '2': inner2,
-  '3': inner3,
-  '4':inner4,
-};
 
 
 const profileStyle=css`
@@ -171,7 +117,7 @@ align-items: stretch;
 	display: flex;
 	flex-direction: column;
 	border-radius: 10px;
-	// background-color: color-mix(in srgb, #999 10%, transparent);
+
 	background-color: color-mix(in srgb, #556 20%, transparent);
 	align-items: center;
 }
@@ -179,6 +125,38 @@ align-items: stretch;
 input{
 	border: none;
 	outline: none;
+}
+
+.body {
+	display: flex;
+	flex-direction: column;
+
+	pdding:0;
+	margin:0;
+
+	width: 100%;
+	align-items: center;
+
+	gap: 0;
+}
+
+.item {
+	display: flex;
+	flex-direction: row;
+
+	width: 100%;
+	cursor: pointer;
+
+	padding: 6px;
+	align-items: center;
+
+	font-size: 22px;
+	font-weight: 500;
+	color: color-mix(in srgb, var(--chakra-colors-fg) 80%, transparent);
+}
+
+.item:hover {
+	color: color-mix(in srgb, var(--chakra-colors-fg) 100%, transparent);
 }
 `
 export const InputStack=(props:any)=>{
@@ -197,7 +175,7 @@ export const InputStack=(props:any)=>{
 					if (el.tp === 'card') {
 						const [localNs,setLocalNs]=useState({'0':el.d})
 						return (
-							<Box p={0}m={0} key={i} w={'100%'} alignItems={'center'} display={'flex'} flexDirection={'column'}>
+							<Box className={'body'} key={i}>
 								{i!==0&&<Separator w={'95%'}/>}
 								<Box m={0} alignItems={'start'} w={'100%'} p={'5px 10px'}>
 									<GraphCtx.Provider value={{
@@ -226,108 +204,258 @@ export const InputStack=(props:any)=>{
 }
 
 
-export const MyGraphs=()=>{
-	const [graphData,setGraphData] = useState<any>(null);
-	const [loading,setLoading] = useState<boolean>(true);
-	const [error,setError] = useState<string | null>(null);
-
-	useEffect(() => {
-		const fetchGraphData = async()=>{
-			try {
-				const user = await spaced_account.get();
-        		const currentUserId = user.$id;
-				const filters =[
-					Query.equal('owner', currentUserId),
-					Query.select(['$id', 'owner', 'name'])
-				];
-
-				const myDocuments = await gReq.search(filters);
-				if (myDocuments) {
-					setGraphData(myDocuments)
-					setLoading(false)
-				}
-			} catch (err) {
-				setError("err");
-			} finally {
-				setLoading(false);
-			}
-		};
-		fetchGraphData();
-	},[]);
+const DeleteConfirmDialog = ({ 
+	graphName, 
+	onConfirm, 
+	onCancel 
+}: { 
+	graphName: string; 
+	onConfirm: ()=>void; 
+	onCancel: ()=>void;
+}) => {
 	return (
-		<div css={inputStackCSS}>
-			<VStack w={'100%'} alignItems={'stretch'} className={'block'} p={'10px'} gap={'5px'}>
-				{loading&&(
-					<>
-						<SkeletonText noOfLines={1} h={'32px'} />
-						<SkeletonText noOfLines={1} h={'32px'} mt={'5px'}/>
-						<SkeletonText noOfLines={1} h={'32px'} mt={'5px'}/>
-						<SkeletonText noOfLines={1} h={'32px'} mt={'5px'}/>
-					</>
-				)}
-				{graphData&&graphData.map((g:any,i:number)=>{
-					return(
-						<Box m={0} p={0} w={'100%'} key={`g_${g.$id}_i`}>
-							{i!==0&&<Separator w={'100%'}/>}
-							<Box
-								w={'100%'} cursor={'pointer'} display={'flex'} flexDirection={'row'}
-								p={0} alignItems={'center'}
-								>
-								<GraphCtx.Provider value={{
-									ns:null,setNs:null,
-									gRef:null,
-									id:g.$id,
-									name:'',
-								}}>
-									<GraphPage mode={'brief'} name={g.name} id={g.$id}/>
-								</GraphCtx.Provider>
-								<Spacer/>
-								
-								<Dialog.Root>
-									<Dialog.Trigger>
-										<Box cursor={'pointer'} h={'30px'} colorPalette={'red'} w={'30px'} justifyItems={'center'} alignContent={'center'}>
-											<FaRegTrashAlt style={{width:'13px',height:'13px'}}/>
-										</Box>
-									</Dialog.Trigger>
-									<Dialog.Backdrop />
-									<Dialog.Positioner>
-										<Dialog.Content p={'20px'}>
-											<Dialog.CloseTrigger />
-											<Dialog.Header w={'100%'} p={'0px 20px'}>
-												<Dialog.Title>Delete graph "{g.name}"?</Dialog.Title>
-											</Dialog.Header>
-											<Dialog.Body
-												w={'100%'} alignItems={'start'} p={'0px 20px'}
-												textAlign={'start'}
-												fontSize={'12px'}
-												fontWeight={300}
-											>
-												Content will be deleted without ability to restore it.
-												<Button
-													mt={'20px'}
-													w={'100%'}
-													variant={'subtle'}
-													colorPalette={'red'}
-													h={'20px'}
-													onClick={async()=>{
-														await gReq.delete(g.$id);
-														setGraphData(graphData.filter((gr:any)=>gr.$id !== g.$id));
-													}}
-													>
-													Delete
-												</Button>
-											</Dialog.Body>
-										</Dialog.Content>
-									</Dialog.Positioner>
-								</Dialog.Root>
-							</Box>
-						</Box>
-					)
-				})}
-			</VStack>
-		</div>
-	)
-}
+		<Dialog.Root open={true}>
+			<Dialog.Backdrop />
+			<Dialog.Positioner>
+				<Dialog.Content p={'20px'} maxW={'320px'}>
+					<Dialog.CloseTrigger />
+					<Dialog.Header w={'100%'} p={'0px 20px'}>
+						<Dialog.Title fontSize={'16px'} fontWeight={600}>
+							Delete graph "{graphName}"?
+						</Dialog.Title>
+					</Dialog.Header>
+					<Dialog.Body 
+						w={'100%'} 
+						alignItems={'start'} 
+						p={'0px 20px'}
+						textAlign={'start'} 
+						fontSize={'12px'} 
+						fontWeight={300}
+						color={'color-mix(in srgb, var(--chakra-colors-fg) 70%, transparent)'}
+					>
+						Content will be deleted without ability to restore it.
+						<HStack mt={'20px'} gap={'10px'} w={'100%'}>
+							<Button 
+								flex={1} 
+								variant={'subtle'} 
+								onClick={onCancel}
+								h={'32px'}
+								fontSize={'12px'}
+							>
+								Cancel
+							</Button>
+							<Button 
+								flex={1} 
+								variant={'solid'} 
+								colorPalette={'red'} 
+								h={'32px'}
+								fontSize={'12px'}
+								onClick={onConfirm}
+							>
+								Delete
+							</Button>
+						</HStack>
+					</Dialog.Body>
+				</Dialog.Content>
+			</Dialog.Positioner>
+		</Dialog.Root>
+	);
+};
+
+const GraphItem = ({ 
+	g, 
+	onDelete, 
+	onGraphRenamed,
+}: { 
+	g: any; 
+	onDelete: (id: string) => void;
+	onGraphRenamed?: (id: string, newName: string) => void;
+}) => {
+    const [_,setHover] = useState(false);
+	const [renameVal,setRenameVal] = useState(g.name);
+	const [showDeleteDialog,setShowDeleteDialog] = useState(false);
+	const menuRef=useRef(null) as any;
+	
+	const { open, props: menuProps, close } = useContextMenu();
+
+    const handleRename = async (id: string, newName: string) => {
+		try {
+			await gReq.update(id, { name: newName });
+			if (onGraphRenamed) {
+				onGraphRenamed(id, newName);
+			}
+		} catch (err) {
+			console.error('Failed to rename graph:', err);
+		}
+	};
+    
+    const menuItems: any[] = [
+		{
+			el: <><HiMiniViewfinderCircle/> <span>View graph</span></>,
+			onClick: () => History.push(`/${g.$id}`)
+		},
+		{
+			el: <>rename</>,
+			children: [{
+				el: (
+					<input 
+						autoFocus
+						placeholder="New name..."
+						value={renameVal}
+						onChange={(e)=>setRenameVal(e.target.value)}
+						onKeyDown={(e) => {
+							if (e.key === 'Enter' && renameVal.trim()) {
+								handleRename(g.$id, renameVal.trim());
+								menuRef.current.setPath([])
+								close();
+							}
+						}}
+						onClick={(e) => e.stopPropagation()} // ⚠️ чтобы клик не закрывал меню
+						style={{ 
+							flex: 1, 
+							background: 'transparent', 
+							color: 'white', 
+							border: '1px solid #4a5568', 
+							borderRadius: '4px', 
+							padding: '4px 8px', 
+							fontSize: '12px', 
+							outline: 'none' 
+						}}
+					/>
+				)
+			}]
+		},
+		{
+			el: <Separator
+				borderColor={'color-mix(in srgb, var(--chakra-colors-fg) 10%, transparent)'}
+				w={'100%'}
+				h={'1px'}
+			/>,
+			disabled: true,
+		},
+		{
+			el: <><RiDeleteBin6Line/> delete</>,
+			danger:true,
+			onClick: () => {
+				close();
+				setShowDeleteDialog(true);
+			}
+		},
+	];
+
+    return (
+        <>
+            <Box 
+                className={'item'}
+                onContextMenu={(e) => {
+					e.preventDefault();
+					e.stopPropagation();
+					open(e);
+				}}
+                onMouseEnter={() => setHover(true)}
+                onMouseLeave={() => setHover(false)}
+            >
+                <GraphCtx.Provider value={{ 
+					ns: null, 
+					setNs: null, 
+					gRef: null, 
+					id: g.$id, 
+					name: g.name 
+				}}>
+                    <GraphPage mode={'brief'} name={g.name} id={g.$id}/>
+                </GraphCtx.Provider>
+            </Box>
+			<ContextMenu
+				ref={menuRef}
+				{...menuProps}
+				items={menuItems}
+				/>
+
+			{showDeleteDialog && (
+				<DeleteConfirmDialog 
+					graphName={g.name}
+					onCancel={() => setShowDeleteDialog(false)}
+					onConfirm={async () => {
+						await onDelete(g.$id);
+						setShowDeleteDialog(false);
+					}}
+				/>
+			)}
+        </>
+    );
+};
+
+export const MyGraphs = ({ 
+	onGraphUpdated 
+}: { 
+	onGraphUpdated?: (id: string, updates: Partial<any>) => void 
+} = {}) => {
+    const [graphData, setGraphData] = useState<any>(null);
+    const [loading, setLoading] = useState<boolean>(true);
+    const [_, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        const fetchGraphData = async () => {
+            try {
+                const user = await spaced_account.get();
+                const currentUserId = user.$id;
+                const filters = [
+                    Query.equal('owner', currentUserId),
+                    Query.select(['$id', 'owner', 'name'])
+                ];
+                const myDocuments = await gReq.search(filters);
+                if (myDocuments) {
+                    setGraphData(myDocuments);
+                }
+            } catch (err) {
+                setError("err");
+            } finally {
+                setLoading(false);
+            }
+        };
+        fetchGraphData();
+    }, []);
+
+    const handleDelete = async(id:string)=>{
+        await gReq.delete(id);
+        setGraphData((prev: any[]) => prev.filter((gr: any) => gr.$id !== id));
+    };
+
+	const handleGraphRenamed = (id: string, newName: string) => {
+		setGraphData((prev: any[]) => 
+			prev.map((gr: any) => 
+				gr.$id === id ? { ...gr, name: newName } : gr
+			)
+		);
+		if (onGraphUpdated) {
+			onGraphUpdated(id, { name: newName });
+		}
+	};
+
+    return (
+        <div css={inputStackCSS}>
+            <VStack className={'body block'}>
+                {loading && (
+                    <>
+                        <SkeletonText noOfLines={1} h={'32px'} />
+                        <SkeletonText noOfLines={1} h={'32px'} mt={'5px'}/>
+                        <SkeletonText noOfLines={1} h={'32px'} mt={'5px'}/>
+                        <SkeletonText noOfLines={1} h={'32px'} mt={'5px'}/>
+                    </>
+                )}
+
+                {graphData&&graphData.map((g: any) => (
+                    <GraphItem
+						key={g.$id}
+						g={g}
+						onDelete={handleDelete}
+						onGraphRenamed={handleGraphRenamed}
+						/>
+                ))}
+            </VStack>
+        </div>
+    );
+};
 
 export function Profile(props:any){
 	let userData=undefined;
@@ -345,8 +473,6 @@ export function Profile(props:any){
 	const usernameRef = useRef<HTMLInputElement>(null);
 	const avatarRef = useRef<HTMLInputElement>(null);
 	const bioRef = useRef<HTMLInputElement>(null);
-	const [curNs,setNs]=useState(ns) as any;
-	const gRef=React.createRef() as any;
 	const headerRef=useRef(null) as any;
 
 	const f = async()=>{
@@ -398,7 +524,7 @@ export function Profile(props:any){
 								]} />
 	
 							<HStack p={'0px 10px'} m={0} w={'100%'} mb={'-15px'}>
-								<Text opacity={0.4} fontSize={'12px'}>my graphs</Text>
+								<Text opacity={0.4} fontSize={'12px'}>My courses</Text>
 								<Spacer/>
 								<Button
 									gap={'3px'}

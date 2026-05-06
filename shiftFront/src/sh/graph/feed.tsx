@@ -82,6 +82,7 @@ overflow: hidden;
 	position: relative;
 	margin-bottom: 16px;
 	width: 100%;
+	gap: 5px;
 }
 
 .history-card:hover {
@@ -568,7 +569,12 @@ export const Feed = React.forwardRef((props: any, ref: any) => {
               key={queue[0]}
               id={queue[0]}
               content={ns[queue[0]]}
-              options={{ twoSides: false, open: activeLevel > 0, showStats: false }}
+              options={{
+                twoSides:false,
+                open:activeLevel===0,
+                showStats:false,
+                fontSize:18,
+              }}
             />
           </Box>
         )}

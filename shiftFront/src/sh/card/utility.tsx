@@ -1,4 +1,3 @@
-import React from 'react';
 import ReactMarkdown, {
   type Components
 } from 'react-markdown';
@@ -23,12 +22,73 @@ import {
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.css';
-import { Box } from '@chakra-ui/react';
-import { Clip } from '../clip';
+import dagre from '@dagrejs/dagre';
+import { Box } from '@chakra-ui/react'
+import { Clip } from '../clip'
 
 export const SIDE_SPLIT_SYM: string = '@@@'
 export const OPTION_SPLIT_SYM: string = '==='
 export const CARD_SPLIT_SYM: string = '~~~'
+
+export const Sh=({value}:any)=>{
+  // @ts-expect-error
+  shComponents.cell = (props: any)=>{
+    const {id}=props
+    return <Cell id={id}/>;
+  }
+  return (
+    <ReactMarkdown
+      remarkPlugins={[shRemark,remarkGfm]}
+      rehypePlugins={[rehypeRaw,rehypeKatex,rehypeHighlight]}
+      components={shComponents}
+    >
+      {value}
+    </ReactMarkdown>
+  )
+}
+
+export function topSort(ns: Record<string, string>, preferredOrder:string[]=[]) {
+  const used = new Set<string>();
+  const visiting = new Set<string>();
+  const res: { id: string; content: string }[] = [];
+  const getDependencies = (str: string): string[] => {
+    const deps = new Set<string>();
+    const regex = /<id=([^>]+)>/g;
+    let match;
+    while ((match = regex.exec(str)) !== null) {
+      deps.add(match[1]);
+    }
+    return Array.from(deps);
+  };
+
+  const dfs = (id: string) => {
+    if (visiting.has(id)) return;
+    if (used.has(id)) return;
+    
+    visiting.add(id);
+    const content = ns[id];
+    
+    if (content !== undefined) {
+      const dependencies = getDependencies(content);
+      for (const depId of dependencies) {
+        if (ns[depId] !== undefined) {
+          dfs(depId);
+        }
+      }
+    }
+    visiting.delete(id);
+    used.add(id);
+    res.push({ id, content });
+  };
+
+  const initialKeys = preferredOrder.length > 0 ? preferredOrder : Object.keys(ns);
+  for (const id of initialKeys) {
+    if (ns[id] !== undefined) dfs(id);
+  }
+  
+  return res;
+}
+
 
 export declare type GroupTp = 'single'|'multiple_fwd'|'multiple_bwd'|'multiple'|undefined;
 export function getGroupTp(cnt: string) {
@@ -123,7 +183,6 @@ const headingStyles: React.CSSProperties = {
   fontWeight: 600,
 };
 export const shComponents:Components={
-  // Заголовки h1, h2, ... h6
   h1: ({ node, ...props }:any) => <h1 style={{ ...headingStyles, fontSize: '2em', borderBottom: '1px solid #ddd' }} {...props} />,
 	h2: ({ node, ...props }) => <h2 style={{ ...headingStyles, fontSize: '1.5em', borderBottom: '1px solid #eee' }} {...props} />,
 	h3: ({ node, ...props }) => <h3 style={{ ...headingStyles, fontSize: '1.25em' }} {...props} />,
@@ -149,7 +208,7 @@ const splitPattern = (
 )=>{
   let pI = 0;
   let m: any;
-  const ans = [] as any
+  const ans =[] as any
   while ((m = p.exec(s)) !== null) {
     const group = m[0]; const fst = m[1]; const scd = m[2]; const sI = m.index;
     const eI = sI + group.length;
@@ -169,7 +228,7 @@ const splitPattern = (
 export const shRemark: Plugin<[], Root> = () => {
   return (tree: any) => {
     // custom visitor for detecting math and custom inner blocks
-    visit(tree, ['text', 'html'], (node: Text, index: any, p: any) => {
+    visit(tree,['text', 'html'], (node: Text, index: any, p: any) => {
       if (!p || index === null ) return;
       const newChildren = splitPattern(
         node.value,
@@ -198,7 +257,7 @@ export const shRemark: Plugin<[], Root> = () => {
           (ans:any,data:string) => {
             ans.push({
               data: {
-                hChildren: [{type:'text',value:data}],
+                hChildren:[{type:'text',value:data}],
                 hName: 'code',
                 hProperties: {
                   className: ['lambuage-math', 'math-inline']
@@ -218,25 +277,7 @@ export const shRemark: Plugin<[], Root> = () => {
   };
 };
 
-// export declare type PreviewTp = 'embed'|'free'|'ghost'|undefined;
-export function getPreviewStyle(tp: any) {
-  // return match(tp,{
-  //   'embed':{
-  //     width:'100%',
-  //     padding:'0px',
-  //   },
-  //   'free':{
-  //     width:'100%',
-  //     padding: '0px',
-  //     borderRadius: '0px',
-  //     border: '1px solid color-mix(in srgb, #eee 15%, transparent)',
-  //   },
-  //   'ghost':{
-  //     width:'100%',
-  //     padding: '0px',
-  //     // borderRadius: '7px 7px 0px 0px',
-  //   },
-  // })
+export function getPreviewStyle(_tp:any) {
   return {
     width:'100%',
     padding: '0px',
@@ -249,7 +290,7 @@ export const md2sh=(
   const w = c.split(/(<id=[^>]*>)/)
     .map((t:string)=>{
       if (t.match(/<id=[^>]*>/g)) {
-        return [
+        return[
           '',
           <Cell
             key={t+t.slice(4, t.length - 1)}
@@ -272,28 +313,7 @@ export const md2sh=(
   return res;
 }
 
-
-
-export const Sh = (
-  {value}: any,
-)=>{
-  // @ts-expect-error
-  shComponents.cell = (props: any)=>{
-    const {id}=props
-    return <Cell id={id}/>;
-  }
-  return (
-    <ReactMarkdown
-      remarkPlugins={[shRemark,remarkGfm]}
-      rehypePlugins={[rehypeRaw,rehypeKatex,rehypeHighlight]}
-      components={shComponents}
-    >
-      {value}
-    </ReactMarkdown>
-  )
-}
-
-const insertBlock=async(
+export const insertBlock=async(
 ) => {
 	const selection = window.getSelection()!;
 	const range = selection.getRangeAt(0);
@@ -326,66 +346,9 @@ export const onKeyDownCb:any=async(
 	}
 }
 
-export function topSort(ns: Record<string, string>, preferredOrder: string[] =[]) {
-  const used = new Set<string>();
-  const visiting = new Set<string>();
-  const res: { id: string; content: string }[] = [];
-
-  const getDependencies = (str: string): string[] => {
-    const deps = new Set<string>();
-    const regex = /<id=([^>]+)>/g;
-    let match;
-    while ((match = regex.exec(str)) !== null) {
-      deps.add(match[1]);
-    }
-    return Array.from(deps);
-  };
-
-  const dfs = (id: string) => {
-    if (visiting.has(id)) return;
-    if (used.has(id)) return;
-    
-    visiting.add(id);
-    const content = ns[id];
-    
-    if (content !== undefined) {
-      const dependencies = getDependencies(content);
-      for (const depId of dependencies) {
-        if (ns[depId] !== undefined) {
-          dfs(depId);
-        }
-      }
-    }
-    visiting.delete(id);
-    used.add(id);
-    res.push({ id, content });
-  };
-
-  const initialKeys = preferredOrder.length > 0 ? preferredOrder : Object.keys(ns);
-  for (const id of initialKeys) {
-    if (ns[id] !== undefined) dfs(id);
-  }
-  
-  return res;
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+// -----------------------------------------------------------
+// ПОДГОТОВКА ГРАФА И DAGRE
+// -----------------------------------------------------------
 
 type DataTp = {
 	forward: string[],
@@ -418,10 +381,10 @@ export const calcEs = (datas: DataTp[]) => {
 	const edgesSet = new Set() as Set<string>;
 	const allNodeIds = new Set(datas.map(d => d.id));
 	const nodeContent: { [key: string]: string } = {};
-	const edges = [] as any;
+	const edges =[] as any;
 
 	datas.forEach(card => {
-		const concatenatedString = [...card.forward, ...card.backward].join(' ');
+		const concatenatedString =[...card.forward, ...card.backward].join(' ');
 		nodeContent[card.id] = concatenatedString;
 		const regex = /<id=(.*?)>/g;
 		let match;
@@ -443,107 +406,6 @@ export const calcEs = (datas: DataTp[]) => {
 	});
 	return edges;
 }
-
-export const buildG = (rawNs: Record<string, string>) => {
-	const datas = parseRawCards(rawNs); 
-	const edges: {id:string;source:string;target:string,type:string}[] = [];
-	const nodeContent: { [key: string]: string } = {};
-	const allNodeIds = new Set(datas.map(d => d.id));
-	const edgesSet = new Set() as Set<string>;
-	datas.forEach(card => {
-		const concatenatedString = [...card.forward, ...card.backward].join(' ');
-		nodeContent[card.id] = concatenatedString;
-		const regex = /<id=(.*?)>/g;
-		let match;
-		while ((match = regex.exec(concatenatedString)) !== null) {
-			const sourceId = match[1];
-			if (sourceId) {
-				if (!edgesSet.has(`e-${sourceId}-${card.id}`)) {
-					edgesSet.add(`e-${sourceId}-${card.id}`)
-					allNodeIds.add(sourceId);
-					edges.push({
-							id: `e-${sourceId}-${card.id}`,
-							source: sourceId,
-							target: card.id,
-							type:'SpEdge',
-					});
-				}
-			}
-		}
-	});
-  const positions: { [key: string]: { x: number; y: number } } = {};
-	const inDegree: { [key: string]: number } = {};
-	const adj: { [key: string]: string[] } = {};
-    allNodeIds.forEach(id => {
-		inDegree[id] = 0;
-		adj[id] = [];
-	});
-	
-    edges.forEach(edge => {
-		if (inDegree[edge.target] !== undefined) {
-			inDegree[edge.target]++;
-		}
-		if (adj[edge.source]) {
-			adj[edge.source].push(edge.target);
-		}
-	});
-	
-    const queue: string[] = [];
-	allNodeIds.forEach(id => {
-		if (inDegree[id] === 0) {
-			queue.push(id);
-		}
-	});
-	
-  const levelMap: { [key: number]: string[] } = {};
-	let level = 0;
-	while (queue.length > 0) {
-		const levelSize = queue.length;
-		if (!levelMap[level]) {
-			levelMap[level] = [];
-		}
-		for (let i = 0; i < levelSize; i++) {
-			const u = queue.shift()!;
-			levelMap[level].push(u);
-			if (adj[u]) {
-				adj[u].forEach(v => {
-					if (inDegree[v] !== undefined) {
-						inDegree[v]--;
-						if (inDegree[v] === 0) {
-							queue.push(v);
-						}
-					}
-				});
-			}
-		}
-		level++;
-	}
-	
-  const ySpacing = 150;
-	const xSpacing = 30;
-	Object.keys(levelMap).forEach(lvlStr => {
-		const currentLevel = parseInt(lvlStr, 10);
-		const nodesAtLevel = levelMap[currentLevel];
-		const levelWidth = nodesAtLevel.length * xSpacing;
-		const startX = -levelWidth / 2;
-		nodesAtLevel.forEach((nodeId, index) => {
-			positions[nodeId] = {
-				x: startX + index * xSpacing,
-				y: currentLevel * ySpacing,
-			};
-		});
-	});
-	
-    allNodeIds.forEach(id => {
-		if (!positions[id]) {
-			positions[id] = { x: Math.random() * 400, y: Math.random() * 400 };
-		}
-	});
-    
-	return [positions, edges];
-}
-
-import dagre from '@dagrejs/dagre';
 
 export const NodeWidth = 258;
 export const NodeHeight = 50;
@@ -569,105 +431,208 @@ export function calculateHierarchy(groups: Record<string, {color: string, nodes:
       }
     });
   });
+  
   return { nodeToGroup, groupToGroup };
 }
 
-
-const getLayoutedElements=(nodes:any,edges:any,groups:any={}, direction:string='TB')=>{
-  const dagreGraph = new dagre.graphlib.Graph({ compound: true }).setDefaultEdgeLabel(() => ({}));
-  const isHorizontal = direction === 'LR';
-  const PADDING = 2;
-  dagreGraph.setGraph({ 
-    rankdir: direction, 
-    ranksep: 15,
-    nodesep: 50,
-  });
-  const {
-    nodeToGroup,
-    groupToGroup
-  }=calculateHierarchy(groups);
+// Новая функция для получения порядка групп (от вложенных к внешним)
+function getGroupOrder(groups: Record<string, any>, groupToGroup: Record<string, string>): string[] {
+  const allGroups = Object.keys(groups);
+  const children: Record<string, string[]> = {};
+  const roots: string[] = [];
   
-  Object.keys(groups).forEach(gId => {
-    dagreGraph.setNode(gId, { label: gId });
-  });
-  nodes.forEach((node:any) => {
-    dagreGraph.setNode(node.id, { width: NodeWidth-40, height: NodeHeight });
-  });
-  Object.entries(nodeToGroup).forEach(([nId, pId]) => {
-    if (dagreGraph.hasNode(nId) && dagreGraph.hasNode(pId)) {
-      dagreGraph.setParent(nId, pId);
+  // Строим дерево детей для каждой группы
+  allGroups.forEach(gId => {
+    const parent = groupToGroup[gId];
+    if (parent && groups[parent]) {
+      if (!children[parent]) children[parent] = [];
+      children[parent].push(gId);
+    } else {
+      roots.push(gId);
     }
   });
-  Object.entries(groupToGroup).forEach(([cId, pId]) => {
-    if (dagreGraph.hasNode(cId) && dagreGraph.hasNode(pId)) {
-      dagreGraph.setParent(cId, pId);
+  
+  // Обход в глубину: сначала дети, потом родитель
+  const result: string[] = [];
+  
+  function visitGroup(gId: string, visited: Set<string>) {
+    if (visited.has(gId)) return;
+    visited.add(gId);
+    
+    // Сначала посещаем всех детей
+    if (children[gId]) {
+      children[gId].forEach(childId => {
+        visitGroup(childId, visited);
+      });
+    }
+    
+    // Затем добавляем саму группу
+    result.push(gId);
+  }
+  
+  const visited = new Set<string>();
+  roots.forEach(rootId => visitGroup(rootId, visited));
+  
+  // Добавляем группы, которые не были посещены (изолированные)
+  allGroups.forEach(gId => {
+    if (!visited.has(gId)) {
+      visitGroup(gId, visited);
     }
   });
-  edges.forEach((edge:any) => {
-    dagreGraph.setEdge(edge.source, edge.target);
+  
+  return result;
+}
+
+// Функция для получения всех потомков группы (рекурсивно)
+function getAllDescendants(groupId: string, groupToGroup: Record<string, string>): Set<string> {
+  const descendants = new Set<string>();
+  Object.entries(groupToGroup).forEach(([child, parent]) => {
+    if (parent === groupId) {
+      descendants.add(child);
+      getAllDescendants(child, groupToGroup).forEach(d => descendants.add(d));
+    }
+  });
+  return descendants;
+}
+
+const getLayoutedElements = (
+  nodes: any[],
+  edges: any[],
+  groups: any = {},
+  direction: string = 'TB',
+  spacing: { x: number; y: number } = { x: 3.5, y: 2.0 }
+) => {
+  // 1. Собираем иерархию
+  const { nodeToGroup, groupToGroup } = calculateHierarchy(groups);
+
+  // 2. Получаем правильный порядок групп (от вложенных к внешним)
+  const orderedGroups = getGroupOrder(groups, groupToGroup);
+
+  // 3. Создаем маппинг: узел -> его самая вложенная группа
+  const nodeToDeepestGroup: Record<string, string> = {};
+  Object.entries(nodeToGroup).forEach(([nodeId, gId]) => {
+    // Находим самого глубокого предка для этой группы
+    let deepest = gId;
+    let current = gId;
+    while (groupToGroup[current]) {
+      current = groupToGroup[current];
+      deepest = current;
+    }
+    // Ищем самого глубокого потомка (самую вложенную группу)
+    const descendants = getAllDescendants(gId, groupToGroup);
+    if (descendants.size > 0) {
+      // Берем первую найденную самую вложенную
+      descendants.forEach(d => {
+        if (!groupToGroup[d]) { // это лист (самая вложенная)
+          deepest = d;
+        }
+      });
+    }
+    nodeToDeepestGroup[nodeId] = deepest;
   });
 
-  dagre.layout(dagreGraph);
-  const newNodes: any[] =[];
-  Object.keys(groups).forEach(gId => {
-    const pos = dagreGraph.node(gId);
-    if (!pos) return;
-    newNodes.push({
+  // 4. Группируем узлы по их самой вложенной группе
+  const nodesByDeepestGroup: Record<string, any[]> = {};
+  nodes.forEach((node) => {
+    const deepestGId = nodeToDeepestGroup[node.id];
+    if (!deepestGId) return;
+    if (!nodesByDeepestGroup[deepestGId]) nodesByDeepestGroup[deepestGId] = [];
+    nodesByDeepestGroup[deepestGId].push(node);
+  });
+
+  let currentGroupX = 0;
+  const layoutedNodes: any[] = [];
+  const processedNodes = new Set<string>();
+
+  // 5. Раскладываем группы в правильном порядке
+  orderedGroups.forEach((gId) => {
+    const gNodes = (nodesByDeepestGroup[gId] || [])
+      .filter(n => !processedNodes.has(n.id))
+      .sort((a, b) => a.id.localeCompare(b.id));
+    
+    const gData = groups[gId];
+    const nodeGapY = 20 * spacing.y;
+    
+    // Уменьшаем отступ в 2 раза для вложенных групп
+    const isNestedGroup = !!groupToGroup[gId];
+    const groupPadding = (isNestedGroup ? 2 : 4) * spacing.x;
+
+    let currentY = groupPadding;
+    let maxWidth = 0;
+
+    // Раскладываем узлы внутри группы сверху вниз
+    gNodes.forEach((node) => {
+      processedNodes.add(node.id);
+      const w = node.width || NodeWidth;
+      const h = node.height || NodeHeight;
+      maxWidth = Math.max(maxWidth, w);
+
+      layoutedNodes.push({
+        ...node,
+        parentId: gId,
+        position: { 
+          x: currentGroupX + groupPadding,
+          y: currentY 
+        },
+        width: w,
+        height: h,
+      });
+
+      currentY += h + nodeGapY;
+    });
+
+    // Вычисляем итоговые размеры группы
+    const totalGroupWidth = maxWidth + groupPadding * 2;
+    const totalGroupHeight = currentY + groupPadding - nodeGapY*2;
+
+    // Добавляем саму группу
+    layoutedNodes.push({
       id: gId,
       type: 'SpGroup',
-      position: {
-        x: pos.x - (pos.width || 0) / 2 - PADDING,
-        y: pos.y - (pos.height || 0) / 2 - PADDING,
-      },
-      style: {
-        width: (pos.width || 200) + PADDING * 2,
-        height: (pos.height || 100) + PADDING * 2,
-        zIndex: -1,
-        pointerEvents: 'none',
-      },
-      selectable: false,
-      draggable: false,
-      data: { label: gId, color: groups[gId].color },
+      position: { x: currentGroupX, y: 0 },
+      width: totalGroupWidth,
+      height: totalGroupHeight,
+      data: { label: gId, color: gData?.color || '#ccc' },
       parentId: groupToGroup[gId] || undefined,
     });
+
+    // Сдвигаем X для следующей группы
+    currentGroupX += totalGroupWidth + 30 * spacing.x;
   });
 
-  nodes.forEach((node:any)=>{
-    const pos = dagreGraph.node(node.id);
-    const pId = nodeToGroup[node.id];
-    let relX = pos.x - (NodeWidth - 40) / 2;
-    let relY = pos.y - NodeHeight / 2;
-    if (pId) {
-      const pNode = dagreGraph.node(pId);
-      if (pNode) {
-        relX = (pos.x - (NodeWidth - 40) / 2) - (pNode.x - pNode.width / 2) + PADDING;
-        relY = (pos.y - NodeHeight / 2) - (pNode.y - pNode.height / 2) + PADDING;
-      }
+  // 6. Обрабатываем узлы без групп
+  nodes.forEach((node) => {
+    if (!nodeToGroup[node.id] && !processedNodes.has(node.id)) {
+      layoutedNodes.push({
+        ...node,
+        position: { x: currentGroupX, y: 0 },
+        width: node.width || NodeWidth,
+        height: node.height || NodeHeight,
+      });
+      currentGroupX += (node.width || NodeWidth) + 30 * spacing.x;
     }
-    newNodes.push({
-      ...node,
-      targetPosition: isHorizontal ? 'left' : 'top',
-      sourcePosition: isHorizontal ? 'right' : 'bottom',
-      parentId: pId || undefined,
-      position: { x: relX, y: relY },
-    });
   });
-  return {nodes: newNodes, edges};
+
+  return { nodes: layoutedNodes, edges };
 };
 
-
-export const calcG=(rawNs:Record<string,string>, groups:any={})=>{
+export const calcG = (
+  rawNs: Record<string, string>,
+  groups: any = {},
+  spacing: { x: number; y: number } = { x: 1, y: 1.0 }
+) => {
   const cleanNs = { ...rawNs };
   delete cleanNs['__groups__'];
   const parsedDatas = parseRawCards(cleanNs);
-	const newEdges = calcEs(parsedDatas);
-	const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(
-		parsedDatas, 
-		newEdges,
-        groups,
-		'TB',
-	);
-	const newNs = layoutedNodes.map((n:any) => {
+  const newEdges = calcEs(parsedDatas);
+  const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(
+    parsedDatas,
+    newEdges,
+    groups,
+    'TB',
+    spacing
+  );
+  const newNs = layoutedNodes.map((n: any) => {
     if (n.type === 'SpGroup') return n;
     return {
       id: n.id,
@@ -682,5 +647,5 @@ export const calcG=(rawNs:Record<string,string>, groups:any={})=>{
       }
     };
   });
-	return[newNs, layoutedEdges];
+  return[newNs, layoutedEdges];
 }
