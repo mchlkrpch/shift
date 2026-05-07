@@ -22,7 +22,6 @@ import {
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.css';
-import dagre from '@dagrejs/dagre';
 import { Box } from '@chakra-ui/react'
 import { Clip } from '../clip'
 

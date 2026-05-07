@@ -188,12 +188,18 @@ export const getCardState = (id: string, ns: any, repeats: any) => {
   return { level, nextReview, isLocked, isNew, isDue, isLearned, data };
 };
 
-export const Feed = React.forwardRef((props: any, ref: any) => {
+export const Feed = React.forwardRef(({initialSelection, autoStart}: any, ref: any) => {
   const { id, ns, repeats, setRepeats, groups } = useGraphCtx() as any;
   
+  const [isTraining, setIsTraining] = useState(autoStart || false);
+  const[selectedCards, setSelectedCards] = useState<Set<string>>(() => {
+    if (initialSelection && initialSelection.length > 0) {
+      return new Set(initialSelection);
+    }
+    return new Set(Object.keys(ns || {}));
+  });
+
   // States для экрана настройки и фильтров
-  const [isTraining, setIsTraining] = useState(false);
-  const [selectedCards, setSelectedCards] = useState<Set<string>>(() => new Set(Object.keys(ns || {})));
   const [filters, setFilters] = useState({ new: true, due: true, learned: false });
 
   const [history, setHistory] = useState<{ id: string; status: 'remember' | 'forgot' }[]>([]);
@@ -206,12 +212,14 @@ export const Feed = React.forwardRef((props: any, ref: any) => {
   useEffect(() => { historyRef.current = history; },[history]);
   useEffect(() => {
     // Синхронизация новых добавленных нод
-    setSelectedCards(prev => {
-      const next = new Set(prev);
-      Object.keys(ns || {}).forEach(k => next.add(k));
-      return next;
-    });
-  }, [ns]);
+    if(!initialSelection) { // Синхронизация работает только если мы не в режиме "целевой тренировки"
+      setSelectedCards(prev => {
+        const next = new Set(prev);
+        Object.keys(ns || {}).forEach(k => next.add(k));
+        return next;
+      });
+    }
+  }, [ns, initialSelection]);
 
   useEffect(() => {
     const syncToAppwrite = () => {

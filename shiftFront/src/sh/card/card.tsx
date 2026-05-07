@@ -286,6 +286,15 @@ export declare type shCardProps = {
   focus?: boolean,
 }
 
+import { ID } from "appwrite";
+
+const resolveCardId = (explicitId: string, fallbackContent: string): string => {
+  if (explicitId && explicitId.trim()) {
+    return explicitId.trim();
+  }
+  return ID.unique();
+};
+
 export const Card = forwardRef(({
   id,
   content,
@@ -442,51 +451,10 @@ export const Card = forwardRef(({
 
   // str: cur backward side of the card
   let bwd_content:string = (hide===false||options.twoSides===true)
-    ? innerC.split('@@@').slice(1).join('')
+    ? (innerC||'').split('@@@').slice(1).join('')
     : '';
 
   const isHTML_set = useRef(false);
-
-
-  // const onBlurCb=async()=>{
-  //   console.log('ns',ns)
-  //   const newC:string=[...inputRef.current.children]
-  //     .map((ch: any)=>(
-  //       (ch.children.length>=1)
-  //         ? [...ch.childNodes]
-  //             .map((n:any)=>(
-  //               n.nodeType === Node.TEXT_NODE?(
-  //                 n.textContent
-  //               ):(n.className==='inlineCell')?(
-  //                 `<id=${ch.children[0]?.id}>`
-  //               ):n.textContent
-  //             ))
-  //             .join('')
-  //         : ch.innerText
-  //     ))
-  //     .join('\n');
-  //   const chunks = newC.split('~~~');
-  //   let lastContent = ''
-  //   for (const chunk of chunks) {
-  //     const newlineIndex = chunk.indexOf('\n');
-  //     const id = (newlineIndex === -1 ? chunk : chunk.substring(0, newlineIndex)).trim();
-  //     const content = newlineIndex === -1 ? '' : chunk.substring(newlineIndex + 1).trim();
-  //     // console.log('id:',id, 'cnt:',content)
-  //     if (id) {
-  //       ns[id] = content;
-  //     }
-  //     lastContent=content
-  //   }
-  //   console.log('lastContent',lastContent)
-  //   await setC(lastContent)
-  //   // console.log('cnt:', newC.split(CARD_SPLIT_SYM))
-  //   console.log('ns',ns)
-  //   ns[path[path.length-1]]=lastContent;
-  //   await setNs(ns);
-  //   if (options.twoSides===false) {
-  //     await setIsEdit(v=>!v);
-  //   }
-  // };
 
   const onBlurCb = async () => {
     const newC: string =[...inputRef.current.children]
@@ -505,8 +473,8 @@ export const Card = forwardRef(({
       ))
       .join('\n');
     const chunks = newC.split('~~~');
-    const currentCardContent = chunks[0].trim();
-    const currentCardId = path[path.length - 1];
+    const currentCardContent = chunks[0];
+    const currentCardId = path[path.length-1];
     const newCardsUpdates: Record<string, string> = {};
     newCardsUpdates[currentCardId] = currentCardContent;
     for (let i = 1; i < chunks.length; i++) {
@@ -515,20 +483,31 @@ export const Card = forwardRef(({
       let id = '';
       let content = '';
       if (newlineIndex === -1) {
-        id = chunk.trim();
+        id = chunk;
       } else {
         id = chunk.substring(0, newlineIndex).trim();
-        content = chunk.substring(newlineIndex + 1).trim();
+        content = chunk.substring(newlineIndex + 1);
       }
-      if (id) {
-        newCardsUpdates[id] = content;
+
+      const finalId = resolveCardId(id, content);
+      if (finalId) {
+        newCardsUpdates[finalId] = content;
       }
     }
+    console.log('newCardsUpdates',newCardsUpdates)
     setC(currentCardContent);
     const updatedNs = {
       ...ns,
       ...newCardsUpdates
     };
+    if (options.onCardsCreated && Object.keys(newCardsUpdates).length > 1) {
+      const newlyCreatedIds = Object.keys(newCardsUpdates).filter(
+        cid => cid !== currentCardId && !Object.keys(ns).includes(cid)
+      );
+      if (newlyCreatedIds.length > 0) {
+        options.onCardsCreated(newlyCreatedIds);
+      }
+    }
     setNs(updatedNs);
     if (options.twoSides === false) {
       setIsEdit(false);
@@ -539,7 +518,7 @@ export const Card = forwardRef(({
   const OptionSwitcher:any=(<>
     {(groupTp!=="multiple_fwd")&&(
       <Accordion.Root collapsible defaultValue={[""]}
-        mt={options.twoSides===true?'50px':0}
+        mt={options.twoSides===true?'10px':0}
         onClick={async(e:any)=>{
           e.stopPropagation();
           e.preventDefault();
@@ -598,7 +577,7 @@ export const Card = forwardRef(({
     onKeyDown={localOnKeyDown}
     style={{
       width:'100%',
-      marginTop: options.twoSides===true?'50px':0,
+      marginTop: options.twoSides===true?'10px':0,
       flex: 1,
       padding: '0px 10px',
     }}/>
@@ -611,7 +590,6 @@ export const Card = forwardRef(({
       onMouseEnter={()=>setHovered(true)}
       onMouseLeave={()=>setHovered(false)} 
       onClick={async ()=>{
-        console.log('here?')
         if (options.twoSides===false) {
           setIsEdit(true)
         }

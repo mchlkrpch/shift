@@ -321,7 +321,8 @@ const getAllGroupDescendantsHelper = (groupId: string, groups: any, nodeToGroup:
 };
 
 
-const Flow = React.forwardRef(({ onNodeHover, onContextMenu }: any,ref:any)=>{
+// ===== ИСПРАВЛЕННЫЙ FLOW =====
+const Flow = React.forwardRef(({ onNodeHover, onContextMenu, onDoubleClickNode  }: any,ref:any)=>{
   const gCtx = useGraphCtx() as any;
   const { ns, setNs, gRef, groups, setGroups } = gCtx;
   const[reactflowNs, reactflowEs] = useMemo(
@@ -347,6 +348,13 @@ const Flow = React.forwardRef(({ onNodeHover, onContextMenu }: any,ref:any)=>{
   const[exportName, setExportName] = useState('graph');
   const groupDescendantsRef = useRef<Record<string, string[]>>({});
   const sortedGroupsRef = useRef<string[]>([]);
+  const onDoubleClickNodeRef = useRef(onDoubleClickNode);
+
+  const [cameraInfo, setCameraInfo] = useState({ x: 0, y: 0, ratio: 1 });
+  const lastCameraUpdate = useRef(0);
+  const CAMERA_UPDATE_THROTTLE = 50;
+
+  useEffect(() => { onDoubleClickNodeRef.current = onDoubleClickNode; }, [onDoubleClickNode]);
 
   useEffect(() => {
     const {groupToGroup}=calculateHierarchy(groups);
@@ -380,7 +388,24 @@ const Flow = React.forwardRef(({ onNodeHover, onContextMenu }: any,ref:any)=>{
       renderEdgeLabels: false,
       autoRescale: false,
       defaultDrawNodeHover: () => null,
+      doubleClickZoomingRatio: sigmaRef.current?sigmaRef.current.getCamera().ratio:1,
     });
+    const updateCameraInfo = () => {
+      if (sigmaRef.current) {
+        const cam = (sigmaRef.current as any).camera;
+        setCameraInfo({
+          x: cam.x,
+          y: cam.y,
+          ratio: parseFloat(cam.ratio.toFixed(2))
+        });
+      }
+    };
+    updateCameraInfo();
+    if (sigmaRef.current){
+      (sigmaRef.current as any).camera.on("updated", updateCameraInfo);
+    }
+    // @ts-ignore
+    renderer.camera.removeListener("updated", updateCameraInfo);
     sigmaRef.current = renderer;
     let lastHoveredNode: string | null = null;
 
@@ -446,6 +471,7 @@ const Flow = React.forwardRef(({ onNodeHover, onContextMenu }: any,ref:any)=>{
     const resizeObserver = new ResizeObserver(syncCanvasSize);
     resizeObserver.observe(containerRef.current);
     window.addEventListener('resize', syncCanvasSize);
+    
     renderer.on("afterRender", () => {
       const underCtx = underlayCanvasRef.current?.getContext("2d");
       const overCtx = overlayCanvasRef.current?.getContext("2d");
@@ -457,6 +483,8 @@ const Flow = React.forwardRef(({ onNodeHover, onContextMenu }: any,ref:any)=>{
         syncCanvasSize();
         return;
       }
+
+      updateCameraInfo();
 
       underCtx.save(); 
       overCtx.save();
@@ -492,17 +520,15 @@ const Flow = React.forwardRef(({ onNodeHover, onContextMenu }: any,ref:any)=>{
         maxX += pad; 
         maxY += pad;
         const hexColor = gData.color.startsWith('#') ? gData.color : rgba2hex(gData.color) || '#555';
-        underCtx.fillStyle = hexColor + "26"; // "26" добавляет прозрачность (~15%)
+        underCtx.fillStyle = hexColor + "26"; 
         drawRoundRect(underCtx, minX, minY, maxX - minX, maxY - minY, 8 * scale);
         underCtx.fill();
 
         underCtx.save();
-
         underCtx.fillStyle = "#ffffff";
         underCtx.font = `700 ${12 * scale}px 'Merriweather', 'Roboto', sans-serif`;
         underCtx.textAlign = "left";
         underCtx.textBaseline = "top";
-
         underCtx.fillText(gName, minX + 8 * scale, minY + 8 * scale);
         underCtx.restore();
       });
@@ -518,7 +544,7 @@ const Flow = React.forwardRef(({ onNodeHover, onContextMenu }: any,ref:any)=>{
         const isHovered = hoveredNode.current === node;
         const w = 160 * scale; 
         const h = 36 * scale;
-        const lw = 1.5 * scale;
+        
         if (data.status?.isLocked && !isSelected && !isHovered) {
           overCtx.fillStyle = "rgba(30, 30, 30, 1.0)";
         } else if (isSelected) {
@@ -531,16 +557,7 @@ const Flow = React.forwardRef(({ onNodeHover, onContextMenu }: any,ref:any)=>{
 
         drawRoundRect(overCtx, x - w/2, y - h/2, w, h, 6 * scale);
         overCtx.fill();
-        // overCtx.strokeStyle = isSelected ? "#63b3ed" : "rgba(255,255,255,0.15)";
-        // overCtx.lineWidth = lw;
-        // const inset = lw / 2;
-        // const strokeX = x - w/2 + inset;
-        // const strokeY = y - h/2 + inset;
-        // const strokeW = w - lw;
-        // const strokeH = h - lw;
-        // const strokeRadius = Math.max(0, 6 * scale - inset);
-        // drawRoundRect(overCtx, strokeX, strokeY, strokeW, strokeH, strokeRadius);
-        // overCtx.stroke();
+        
         if (data.status && !data.status.isLocked) {
           let dotColor = "#718096";
           if (data.status.isNew) dotColor = "#3182ce";
@@ -573,6 +590,14 @@ const Flow = React.forwardRef(({ onNodeHover, onContextMenu }: any,ref:any)=>{
 
       underCtx.restore(); 
       overCtx.restore();
+    });
+
+    renderer.on("doubleClickNode", (e: any) => {
+      e.event.original.preventDefault();
+      if(sigmaRef.current){
+        console.log(sigmaRef.current.getCamera());
+      }
+      onDoubleClickNodeRef.current?.(e.node);
     });
 
     renderer.on("clickNode", (e:any) => {
@@ -636,6 +661,7 @@ const Flow = React.forwardRef(({ onNodeHover, onContextMenu }: any,ref:any)=>{
     let isSelecting = false;
     let startPos = { x: 0, y: 0 };
     let lastClickTime = 0;
+    
     const onPointerDown = (e:MouseEvent|PointerEvent|TouchEvent|any) => {
         if (e.button !== 0) return;
         if (!hoveredNode.current && !isSpaceDown && !e.ctrlKey && !e.metaKey) {
@@ -859,13 +885,21 @@ const Flow = React.forwardRef(({ onNodeHover, onContextMenu }: any,ref:any)=>{
   useEffect(() => {
     if (nodeToZoomId && sigmaRef.current && graphRef.current.hasNode(nodeToZoomId)) {
       const timer = setTimeout(() => {
-        const pos = graphRef.current.getNodeAttributes(nodeToZoomId);
-        (sigmaRef.current as any)!.camera.animate({ x: pos.x, y: pos.y, ratio: 0.3 }, { duration: 600 });
+        const displayData = (sigmaRef.current as any).getNodeDisplayData(nodeToZoomId);
+        if (displayData) {
+          const px = Number(displayData.x);
+          const py = Number(displayData.y);
+          if (!isNaN(px) && !isNaN(py)) {
+            const currentRatio = (sigmaRef.current as any).camera.ratio;
+            const targetRatio = 0.8;
+            (sigmaRef.current as any)!.camera.animate({ x: px, y: py, ratio: targetRatio }, { duration: 150 });
+          }
+        }
         setNodeToZoomId(null);
       }, 150);
       return () => clearTimeout(timer);
     }
-  },[nodeToZoomId, reactflowNs]);
+  },[nodeToZoomId]); // убрали reactflowNs, чтобы не вызывать повторно при перестроении
 
 
   useImperativeHandle(ref,()=>({
@@ -881,6 +915,9 @@ const Flow = React.forwardRef(({ onNodeHover, onContextMenu }: any,ref:any)=>{
       if (curSelected.current.size > 0) {
         onContextMenu?.({ clientX: window.innerWidth / 2 - 100, clientY: window.innerHeight / 2 - 50, preventDefault: () => {} });
       }
+    },
+    zoomToNode: (id: string) => {
+      setNodeToZoomId(id);
     }
   }));
 
@@ -909,6 +946,17 @@ const Flow = React.forwardRef(({ onNodeHover, onContextMenu }: any,ref:any)=>{
       )}
 
       <HStack className="sigma-tools-panel" gap="2" zIndex={50}>
+        <Box 
+          px={2} py={1} 
+          bg="rgba(30,30,30,0.7)" 
+          borderRadius="md" 
+          fontSize="10px" 
+          fontFamily="monospace"
+          color="gray.300"
+          backdropFilter="blur(5px)"
+        >
+          x: {cameraInfo.x} | y: {cameraInfo.y} | z: {cameraInfo.ratio}x
+        </Box>
         <Box position="relative">
           <IconButton aria-label="export graph" variant="subtle" size="sm" bg="rgba(150, 150, 150, 0.1)" backdropFilter="blur(5px)" borderRadius="md" onClick={() => setExportMenuOpen(!exportMenuOpen)}>
             <PiExport size="14px" />
@@ -946,7 +994,7 @@ const treeRowAreEqual = (prev:any,next:any) => {
 
 const VirtualTreeRow = memo(({ 
   item, style, isSelected, isGroupFullySelected, 
-  actions, ns, groups 
+  actions, ns, groups,
 }: any) => {
   const isGroup = item.type === 'group';
   const gData = isGroup ? groups[item.id] : null;
@@ -985,6 +1033,12 @@ const VirtualTreeRow = memo(({
       onMouseLeave={() => !isGroup && actions.onHover(null)}
       _hover={{ bg: isSel ? undefined : 'whiteAlpha.200' }}
       display="flex" alignItems="center" px={2} cursor={isGroup ? "default" : "pointer"}
+      onDoubleClick={(e) => {
+        // console.log('?')
+        if (!isGroup && actions.onDoubleClickNode) {
+          actions.onDoubleClickNode(item.id);
+        }
+      }}
       bg={
         isSel 
           ? 'rgba(49, 130, 206, 0.4)' 
@@ -1014,7 +1068,8 @@ const VirtualTreeRow = memo(({
               style={{ flex: 1, background: 'rgba(0,0,0,0.3)', color: 'white', outline: 'none', border: '1px solid gray', borderRadius: '3px', padding: '0 4px' }}
             />
           ) : (
-            <Box flex={1} onDoubleClick={() => setIsEditing(true)}>{item.id}</Box>
+            // <Box flex={1} onDoubleClick={() => setIsEditing(true)}>{item.id}</Box>
+            <Box flex={1} onDoubleClick={(e) => { e.stopPropagation(); setIsEditing(true); }}>{item.id}</Box>
           )}
           <Box 
             as="input" 
@@ -1036,13 +1091,13 @@ const VirtualTreeRow = memo(({
 }, treeRowAreEqual);
 
 
-const VirtualTreeView = memo(({ flatTree, sel, fullySelectedGroups, ns, groups, actions }: any) => {
+// ===== ИСПРАВЛЕННЫЙ VirtualTreeView =====
+const VirtualTreeView = memo(React.forwardRef(({ flatTree, sel, fullySelectedGroups, ns, groups, actions }: any, ref: any) => {
   const ITEM_HEIGHT = 32;
-  const [scrollTop, setScrollTop] = useState(0);
+  const[scrollTop, setScrollTop] = useState(0);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [containerHeight, setContainerHeight] = useState(600);
   
-  // Отключение событий мыши при скролле (убирает фризы от вызова hover & refresh на каждой строке)
   const [isScrolling, setIsScrolling] = useState(false);
   const scrollTimeout = useRef<any>(null);
 
@@ -1080,12 +1135,12 @@ const VirtualTreeView = memo(({ flatTree, sel, fullySelectedGroups, ns, groups, 
       const container = scrollContainerRef.current;
       const rect = container.getBoundingClientRect();
       const y = e.clientY - rect.top;
-      const threshold = 50; // Зона автоскролла 50px от краев
+      const threshold = 50;
       
       if (y < threshold) {
-        container.scrollTop -= 10; // Скорость автоскролла вверх
+        container.scrollTop -= 10;
       } else if (rect.height - y < threshold) {
-        container.scrollTop += 10; // Скорость автоскролла вниз
+        container.scrollTop += 10;
       }
     }
     actions.onDragOver(e);
@@ -1101,6 +1156,22 @@ const VirtualTreeView = memo(({ flatTree, sel, fullySelectedGroups, ns, groups, 
     Math.ceil((scrollTop + containerHeight) / ITEM_HEIGHT) + DOWNWARD_BUFFER
   );
 
+  useImperativeHandle(ref, () => ({
+    scrollToNode: (id: string) => {
+      setTimeout(() => {
+        const index = flatTree.findIndex((i: any) => i.id === id);
+        if (index !== -1 && scrollContainerRef.current) {
+          const top = Math.max(0, index * ITEM_HEIGHT - containerHeight / 2 + ITEM_HEIGHT / 2);
+          try {
+            scrollContainerRef.current.scrollTo({ top, behavior: 'instant' });
+          } catch(e) {
+            scrollContainerRef.current.scrollTop = top; // Fallback 
+          }
+        }
+      }, 50); 
+    }
+  }));
+
   return (
     <div 
       className='GraphmodeStack' 
@@ -1113,7 +1184,7 @@ const VirtualTreeView = memo(({ flatTree, sel, fullySelectedGroups, ns, groups, 
          height: totalHeight,
          position: 'relative', 
          width: '100%',
-         pointerEvents: isScrolling ? 'none' : 'auto' // отключаем подсветку на время скролла
+         pointerEvents: isScrolling ? 'none' : 'auto'
        }}>
          {flatTree.map((item: any, index: number) => {
            const isVisible = index >= startIndex && index <= endIndex;
@@ -1143,7 +1214,7 @@ const VirtualTreeView = memo(({ flatTree, sel, fullySelectedGroups, ns, groups, 
        </div>
     </div>
   );
-}, (prev, next) => {
+}), (prev, next) => {
   return prev.flatTree === next.flatTree &&
          prev.sel === next.sel &&
          prev.fullySelectedGroups === next.fullySelectedGroups &&
@@ -1152,15 +1223,22 @@ const VirtualTreeView = memo(({ flatTree, sel, fullySelectedGroups, ns, groups, 
 });
 
 
+// ===== ИСПРАВЛЕННЫЙ GRAPH =====
 export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
-  const{ns,setNs,id,name,groups,setGroups}=useGraphCtx()as any;
+  const{ns,setNs,id,name,groups,setGroups,repeats,setRepeats}=useGraphCtx()as any;
   const[sel,setSel]=useState<string[]>([]);
   const[mode,setMode]=useState('eg') as any;
   const[curName,setCurName]=useState({'0':name}) as any;
+  
   const flowRef=useRef(null) as any;
+  const treeRef=useRef<any>(null); 
+  
   const latestNs = useRef(ns);
   const latestGroups = useRef(groups);
   const latestName = useRef(curName);
+
+  const [feedSelection, setFeedSelection] = useState<string[] | null>(null);
+  const [feedAutoStart, setFeedAutoStart] = useState(false);
   
   const { open: openMenu, close: closeMenu, props: menuProps } = useContextMenu();
 
@@ -1174,6 +1252,14 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
     });
     if (needsUpdate) setGroups(normalized);
   },[])
+
+  // Сбрасываем фильтры, когда уходим с экрана repeat
+  useEffect(() => {
+    if (mode !== 'repeat') {
+      setFeedAutoStart(false);
+      setFeedSelection(null);
+    }
+  },[mode]);
 
   useEffect(() => { latestNs.current = ns; },[ns]);
   useEffect(() => { latestGroups.current = groups; }, [groups]);
@@ -1301,14 +1387,14 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
 
   const handleCreateGroup = useCallback((name: string, ids: string[]) => {
     const color = generateRandomHexColor(0.15);
-    setGroups((prev:any) => ({...prev, [name]: {color, nodes:ids}}));
+    setGroups((prev:any) => ({...prev,[name]: {color, nodes:ids}}));
   }, [setGroups]);
 
   const handleAddNodesToGroup = useCallback((targetGroupName: string) => {
     setGroups((prev: any) => {
       const updated = { ...prev };
       Object.keys(updated).forEach(g => { updated[g] = { ...updated[g], nodes: updated[g].nodes.filter((n:any)=>!sel.includes(n)) }; });
-      updated[targetGroupName] = { ...updated[targetGroupName], nodes: [...new Set([...updated[targetGroupName].nodes, ...sel])] };
+      updated[targetGroupName] = { ...updated[targetGroupName], nodes:[...new Set([...updated[targetGroupName].nodes, ...sel])] };
       return updated;
     });
   }, [sel, setGroups]);
@@ -1353,7 +1439,32 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
         setNs(filtered);
         closeMenu();
       }
-    }
+    },
+    {
+      id: 'repeat_selected', el: 'repeat selected',
+      onClick: () => {
+        if (sel.length > 0) {
+          setFeedSelection(sel);
+          setFeedAutoStart(true);
+          setMode('repeat');
+        }
+        closeMenu();
+      }
+    },{
+      id: 'forget', el: 'forget history', danger: true,
+      onClick: () => {
+        if (window.confirm('Forget history for selected cards?')) {
+          setRepeats((prev: any) => {
+            const next = { ...prev };
+            sel.forEach((selectedId: string) => {
+              delete next[selectedId];
+            });
+            return next;
+          });
+        }
+        closeMenu();
+      }
+    },
   ],[groups, ns, sel, handleCreateGroup, handleAddNodesToGroup, closeMenu, setNs]);
 
   const handleTreeContextMenu = useCallback((e: React.MouseEvent, itemId: string, itemType: string) => {
@@ -1370,7 +1481,7 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
       }
     } else {
       if (!newSel.includes(itemId)) {
-        newSel = [itemId];
+        newSel =[itemId];
         setSel(newSel);
       }
     }
@@ -1396,7 +1507,7 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
         if (e.ctrlKey || e.metaKey) {
           const allSelected = groupNodes.every(n => newSel.includes(n));
           if (allSelected) newSel = newSel.filter(id => !groupNodes.includes(id));
-          else newSel = [...new Set([...newSel, ...groupNodes])];
+          else newSel =[...new Set([...newSel, ...groupNodes])];
         } else if (e.shiftKey && lastSelectedIdx !== null) {
           const start = Math.min(lastSelectedIdx, index);
           const end = Math.max(lastSelectedIdx, index);
@@ -1452,7 +1563,6 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
         const data = JSON.parse(e.dataTransfer.getData('application/json'));
         const { id: dragId, type: dragType, selectedIds } = data;
         
-        // Предотвращение зацикливания и перетаскивания группы саму в себя
         if (dragType === 'group' && targetType === 'group') {
           let curr: string | undefined = targetId;
           while (curr) {
@@ -1483,7 +1593,7 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
       e.preventDefault();
       try {
         const data = JSON.parse(e.dataTransfer.getData('application/json'));
-        const idsToRemove = data.selectedIds; // Поддерживаем как узлы, так и группы (вынос группы в корень)
+        const idsToRemove = data.selectedIds; 
         setGroups((prev: any) => {
           const next = { ...prev };
           Object.keys(next).forEach(g => { 
@@ -1492,7 +1602,11 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
           return next;
         });
       } catch(err) {}
-    }
+    },
+
+    onDoubleClickNode: (id: string) => {
+      flowRef.current?.zoomToNode(id);
+    },
   }),[sel, flatTree, groups, nodeToGroup, groupToGroup, lastSelectedIdx, handleRenameGroup, handleChangeGroupColor, handleUngroup, toggleGroup, setGroups, handleTreeContextMenu]);
 
 
@@ -1525,7 +1639,7 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
             const descendants = next[groupToUngroup!]?.nodes ||[];
             
             if (parentGroup && next[parentGroup]) {
-              next[parentGroup] = { ...next[parentGroup], nodes: [...new Set([...next[parentGroup].nodes, ...descendants])] };
+              next[parentGroup] = { ...next[parentGroup], nodes:[...new Set([...next[parentGroup].nodes, ...descendants])] };
             }
             delete next[groupToUngroup!];
             return next;
@@ -1550,6 +1664,7 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
     {mode==='eg'&&(
       <HStack className='GraphmodeSides'>
         <VirtualTreeView 
+          ref={treeRef}
           flatTree={flatTree} 
           sel={sel} 
           fullySelectedGroups={fullySelectedGroups} 
@@ -1558,7 +1673,11 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
           actions={treeActions} 
         />
         <Separator orientation={'vertical'} w={'1px'} h={'100%'}/>
-        <Flow ref={flowRef} onContextMenu={openMenu} />
+        <Flow 
+          ref={flowRef} 
+          onContextMenu={openMenu} 
+          onDoubleClickNode={(nodeId: string) => treeRef.current?.scrollToNode(nodeId)}
+        />
       </HStack>
     )}
 
@@ -1567,13 +1686,29 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
         <Box className='textmodeToolsPanel'>
           <Button className='thinButton' variant="subtle" onClick={handleTopSort}><BsDiagram2Fill style={{height:'13px',width:'13px',marginRight: '5px'}}/>top sort</Button>
         </Box>
-        {orderedIds.map((curId:any)=>{ return <Card key={curId} id={curId} content={ns[curId]} options={{ stats: false, twoSides: true, onMove: (dir: number) => handleMoveCard(curId, dir as -1|1) }} /> })}
+        {orderedIds.map((curId:any)=>{
+          return <Card
+            key={curId}
+            id={curId}
+            content={ns[curId]}
+            options={{
+              stats: false,
+              twoSides: true,
+              onMove: (dir: number) => handleMoveCard(curId, dir as -1|1),
+              onCardsCreated: (newIds: string[]) => {
+                setOrderedIds(prev => {
+                  const uniqueNew = newIds.filter(id => !prev.includes(id));
+                  return[...prev, ...uniqueNew];
+                });
+              }
+            }}
+            /> })}
       </VStack>
     )}
 
-    {mode==='repeat'&&( <Feed/> )}
+    {/* Убрали пустой <Feed/>, оставив только один: */}
+    {mode==='repeat'&&( <Feed initialSelection={feedSelection} autoStart={feedAutoStart} /> )}
     
-    {/* Меню перенесено в блок поверх графа */}
     <Box position="absolute" zIndex={9999}>
       <ContextMenu {...menuProps} items={menuItems} />
     </Box>
