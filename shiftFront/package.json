@@ -17,6 +17,7 @@
     "@emotion/react": "^11.14.0",
     "@xyflow/react": "^12.10.2",
     "appwrite": "^23.0.0",
+    "dagre": "^0.8.5",
     "graphology": "^0.26.0",
     "highlight.js": "^11.11.1",
     "katex": "^0.16.38",

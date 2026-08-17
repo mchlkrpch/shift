@@ -10,6 +10,13 @@ export const Cell: any = forwardRef((
         path,setPath,
         setC,
     }=useCardCtx()as any;
+    console.log('[cell]id:',id)
+    let option = undefined;
+    if (id.split(':').length===2){
+        const parts = id.split(':')
+        id = parts[0]
+        option = parts[1]
+    }
     return (
         <span className='inlineCell'
             id={id}
@@ -24,7 +31,7 @@ export const Cell: any = forwardRef((
                 ref={ref}
                 id={id}
                 content={ns[id]}
-                options={{inner:true}}
+                options={{inner:true,option:option}}
             />
         </span>
     )

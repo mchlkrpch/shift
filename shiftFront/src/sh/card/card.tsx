@@ -1,6 +1,6 @@
 /** @jsxImportSource @emotion/react */
 import { css } from "@emotion/react";
-import {
+import React, {
   createContext,
   forwardRef,
   useCallback,
@@ -43,6 +43,8 @@ import '@xyflow/react/dist/style.css';
 import { IoMdHeart, IoMdHeartEmpty } from "react-icons/io";
 import { FaRegCommentAlt } from "react-icons/fa";
 import { createPortal } from 'react-dom';
+import { FaChevronRight } from 'react-icons/fa';
+import { LuChevronLeft } from 'react-icons/lu';
 
 
 export const dropMenuCSS=css`
@@ -68,7 +70,7 @@ export const dropMenuCSS=css`
   gap: 5px;
 
   font-weight: 400;
-  z-index 12000;
+  z-index: 12000;
 }
 
 .menuFrame .tip{
@@ -84,6 +86,7 @@ export const dropMenuCSS=css`
   align-items:center;
   gap: 8px;
   border-radius: 3px;
+  cursor: pointer;
 }
 `
 
@@ -94,19 +97,14 @@ position: relative;
 
 .chakra-stack{
   scrollbar-width: none;
-}
-
-[role="textbox"]{
+}[role="textbox"]{
   outline: none;
   border: none;
   tab-index: 0;
-  // display: flex;
   display: block;
   flex-direction: column;
   font-family: Roboto mono;
-  // overflow-x: auto;
   overflow-x: hidden;
-  // white-space: nowrap;
   white-space: pre-wrap;
   contain: content;
   scrollbar-width: none;
@@ -118,13 +116,10 @@ position: relative;
 }
 
 .sh_string{
-  // height: 20px;
   border-bottom: 1px solid color-mix(in srgb, #555 25%, transparent);
   border-style: dotted;
-  // overflow: hidden;
   width: fit-content;
   height: fit-content;
-  // white-space: nowrap;
   white-space: pre-wrap;
   word-break: break-word;
 
@@ -141,8 +136,6 @@ position: relative;
   display: inline-block;
 	width: fit-content;
 	height: fit-content;
-  // background-color: color-mix(in srgb, var(--chakra-colors-blue-500) 15%, transparent);
-  // border: 1px solid color-mix(in srgb, var(--chakra-colors-blue-500) 5%, transparent);
   padding: 0px 2px;
   border-radius: 4px;
   color: var(--chakra-colors-blue-500);
@@ -240,6 +233,262 @@ position: relative;
 }
 `;
 
+// ============================================================================
+// CONTEXT MENU (Custom Dropdown Logic)
+// ============================================================================
+
+export interface MenuItem {
+	id?: string;
+	el?: React.ReactNode | 'separator';
+	children?: MenuItem[];
+	onClick?: (e: React.MouseEvent<HTMLDivElement> | any, data?: any) => void;
+	disabled?: boolean;
+	danger?: boolean;
+	shortcut?: string | React.ReactNode;
+	data?: any;
+}
+
+export interface MenuProps{
+	isOpen: boolean;
+	x: number;
+	y: number;
+	items: MenuItem[];
+	onClose: () => void;
+	onAction?: (itemId: string, data?: any) => void;
+	width?: number;
+	zIndex?: number;
+}
+
+export const useContextMenu = () => {
+	const[menu, setMenu] = useState<any>({ isOpen: false, x: 0, y: 0 });
+
+	const open = useCallback((e: any) => {
+		e.preventDefault();
+		setMenu({ isOpen: true, x: e.clientX, y: e.clientY });
+	},[]);
+
+	const close = useCallback(() => {
+		setMenu((prev: any) => ({ ...prev, isOpen: false }));
+	},[]);
+
+	return {
+		menu, open, close,
+		props: {
+			isOpen: menu.isOpen,
+			x: menu.x,
+			y: menu.y,
+			onClose: close,
+		},
+	};
+};
+
+const normalizeItems = (menuItems: MenuItem[], prefix = 'item-'): MenuItem[] => {
+	return menuItems.map((item, index) => {
+		const id = item.id ?? `${prefix}${index}`;
+		return {
+			...item,
+			id,
+			children: item.children ? normalizeItems(item.children, `${id}-`) : undefined,
+		};
+	});
+};
+
+export const ContextMenu = React.forwardRef(({
+	isOpen,
+	x,
+	y,
+	items,
+	onClose,
+	onAction,
+}:any,ref:any)=>{
+	const menuRef = useRef<HTMLDivElement>(null);
+	const[pt,setPt] = useState<string[]>([]);
+	const[focusedIndex, setFocusedIndex] = useState<number>(0);
+	const normalizedItems = useMemo(() => normalizeItems(items), [items]);
+
+	useImperativeHandle(ref,()=>({
+		setPath:(pt:any)=>setPt(pt),
+	}))
+
+	const currentItems = useMemo(() => {
+		let current = normalizedItems;
+		for (const id of pt) {
+			const parent = current.find((i) => i.id === id);
+			if (parent?.children) current = parent.children;
+			else break;
+		}
+		return current;
+	}, [normalizedItems, pt]);
+
+	useEffect(() => {
+		let first = 0;
+		while (first < currentItems.length && (currentItems[first].el === 'separator' || currentItems[first].disabled)) {
+			first++;
+		}
+		setFocusedIndex(first < currentItems.length ? first : 0);
+	}, [pt, currentItems]);
+
+	useEffect(() => {
+		if (!isOpen) return;
+		const handler = (e: MouseEvent) => {
+			if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+				onClose();
+				setPt([]);
+			}
+		};
+		document.addEventListener('mousedown', handler);
+		return () => document.removeEventListener('mousedown', handler);
+	}, [isOpen, onClose]);
+
+	useEffect(() => {
+		if (!isOpen) return;
+		const onKey = (e: KeyboardEvent) => {
+			const activeTag = document.activeElement?.tagName.toLowerCase();
+			const isInput =['input', 'textarea', 'select'].includes(activeTag || '');
+
+			if (e.key === 'Escape') {
+				if (pt.length > 0) {
+					setPt((prev) => prev.slice(0, -1));
+				} else {
+					onClose();
+				}
+				return;
+			}
+
+			if (e.key === 'ArrowDown') {
+				e.preventDefault();
+				let next = focusedIndex + 1;
+				while (next < currentItems.length && (currentItems[next].el === 'separator' || currentItems[next].disabled)) {
+					next++;
+				}
+				if (next < currentItems.length) setFocusedIndex(next);
+			} else if (e.key === 'ArrowUp') {
+				e.preventDefault();
+				let prev = focusedIndex - 1;
+				while (prev >= 0 && (currentItems[prev].el === 'separator' || currentItems[prev].disabled)) {
+					prev--;
+				}
+				if (prev >= 0) setFocusedIndex(prev);
+			} else if (e.key === 'ArrowRight' && !isInput) {
+				e.preventDefault();
+				const item = currentItems[focusedIndex];
+				if (item?.children && item.children.length > 0) {
+					setPt((prev) => [...prev, item.id!]);
+				}
+			} else if (e.key === 'ArrowLeft' && !isInput) {
+				e.preventDefault();
+				if (pt.length > 0) {
+					setPt((prev) => prev.slice(0, -1));
+				}
+			} else if (e.key === 'Enter' && !isInput) {
+				e.preventDefault();
+				const item = currentItems[focusedIndex];
+				if (item && item.el !== 'separator' && !item.disabled) {
+					if (item.children && item.children.length > 0) {
+						setPt((prev) =>[...prev, item.id!]);
+					} else {
+						item.onClick?.(e, item.data);
+						if (item.id) {
+							onAction?.(item.id, item.data);
+						}
+						onClose();
+						setPt([]);
+					}
+				}
+			}
+		};
+		document.addEventListener('keydown', onKey);
+		return () => document.removeEventListener('keydown', onKey);
+	},[isOpen, pt, focusedIndex, currentItems, onClose, onAction]);
+
+	if (!isOpen) return null;
+
+	const getActiveItem = (): MenuItem | null => {
+		if (pt.length===0) {
+			return null;
+		}
+		let current = normalizedItems;
+		let activeItem: MenuItem | null = null;
+		for (const id of pt) {
+			activeItem = current.find((i) => i.id === id) || null;
+			if (activeItem?.children) current = activeItem.children;
+		}
+		return activeItem;
+	};
+
+	const handleItemClick = (e: React.MouseEvent<HTMLDivElement>, item: MenuItem) => {
+		if (item.disabled || item.el === 'separator') return;
+		if (item.children && item.children.length > 0) {
+			setPt((prev) => [...prev, item.id!]);
+			return;
+		}
+		const target = e.target as HTMLElement;
+		const tagName = target.tagName.toLowerCase();
+		if (['input', 'textarea', 'select', 'button'].includes(tagName)) {
+			return;
+		}
+
+		item.onClick?.(e, item.data);
+		if (item.id) {
+			onAction?.(item.id, item.data);
+		}
+		onClose();
+		setPt([]);
+	};
+
+	const renderMenuItem = (x:MenuItem, index: number) => {
+		if (x.el==='separator'){
+			return (<Separator key={x.id} borderColor={'color-mix(in srgb, var(--chakra-colors-fg) 30%, transparent)'}/>);
+		}
+
+		const hasChildren = !!x.children?.length;
+		const isFocused = index === focusedIndex;
+		const bgColor=x.danger
+			? 'rgba(220, 38, 38, 0.2)'
+			: 'color-mix(in srgb, blue 50%, transparent)';
+
+		return (
+			<div
+				key={x.id}
+				onClick={(e) => handleItemClick(e, x)}
+				onMouseEnter={() => {
+					if (!x.disabled) {
+						setFocusedIndex(index);
+					}
+				}}
+				className={'item'}
+				style={{
+					padding:x.disabled?'0px':'4px 6px',
+					color:x.danger?'#fc8181':'inherit',
+					background:isFocused&&!x.disabled? bgColor:'transparent',
+				}}
+			>
+				{x.el}
+				<Spacer/>
+				{hasChildren&&<FaChevronRight size={10} opacity={.6}/>}
+				{x.shortcut && (
+				<span css={css`font-size: 10px; opacity: 0.5; margin-left: auto;`}>
+					{x.shortcut}
+				</span>)}
+			</div>
+		);
+	};
+
+	const activeParentItem = getActiveItem();
+
+	return createPortal(
+		<span ref={menuRef} css={dropMenuCSS}>
+			<Box className='menuFrame' top={y} left={x}>
+				<HStack className={'tip'} gap={'2px'}>
+					{activeParentItem&&(<LuChevronLeft size={'12px'}/>)}
+					{activeParentItem ? activeParentItem.el : 'cards to mention'}
+				</HStack>
+				{currentItems.map((x:any,i:number)=>renderMenuItem(x,i))}
+			</Box>
+		</span>,document.body
+	);
+})
+
 
 const CardPath:any=({path}:any)=>{
   // path to subcard that previewed inside complex term
@@ -315,9 +564,9 @@ export const Card = forwardRef(({
   // cur displayed option among all possiblilities 
   const [option,setOption]=useState(0) as any;
   // path of inner term (within parent term)
-  const [path,setPath]=useState([id]) as any;
+  const[path,setPath]=useState([id]) as any;
   // if not hide - display opposite side of card
-  const [hide,setHide]=useState(options.open?false:true) as any;
+  const[hide,setHide]=useState(options.open?false:true) as any;
   // current zoom of card's content (sz in px)
   const [fontSize,setFontSize]=useState(options.fontSize?options.fontSize:12) as any;
   // const [visualize,setVisualize]=useState(false) as any;
@@ -330,14 +579,10 @@ export const Card = forwardRef(({
     path:path,setPath:setPath,
     c:c,setC:setC,
   }),[path,c,setPath,setC]);
-  const [mentionMenu, setMentionMenu] = useState<{isOpen:boolean,query:string,
+  const[mentionMenu, setMentionMenu] = useState<{isOpen:boolean,query:string,
     x:number, y:number, range:Range|null}>({isOpen:false,query:'', x:0,y:0, range:null});
-  const[mentionIndex, setMentionIndex] = useState(0);
-  const mentionOptions = Object.keys(ns)
-    .filter(nid => ns[nid]?.toLowerCase().includes(mentionMenu.query.toLowerCase()))
-    .map(nid => ({ id: nid, text: ns[nid].split('\n')[0] || 'empty' }));
 
-  const insertMention=(item: {id: string, text: string})=>{
+  const insertMention = useCallback((item: {id: string, text: string}) => {
     const sel = window.getSelection();
     if (!sel || !mentionMenu.range) return;
     sel.removeAllRanges();
@@ -360,8 +605,51 @@ export const Card = forwardRef(({
     r.collapse(true);
     sel.removeAllRanges();
     sel.addRange(r);
-    setMentionMenu({ isOpen: false, query: '', x: 0, y: 0, range: null });
-  };
+    setMentionMenu(prev => ({ ...prev, isOpen: false, query: '' }));
+  },[mentionMenu]);
+
+  const mentionMenuItems = useMemo(() => {
+    const q = mentionMenu.query.toLowerCase();
+    const opts: MenuItem[] =[];
+    Object.keys(ns).forEach(nid => {
+      const cardContent = ns[nid] || '';
+      const fwdText = cardContent.split('\n')[0] || 'empty';
+      
+      if (fwdText.toLowerCase().includes(q) || nid.toLowerCase().includes(q)) {
+        const cardOpts = cardContent.split(OPTION_SPLIT_SYM);
+        
+        if (cardOpts.length > 1) {
+          // Если есть варианты выбора, делаем вложенное меню
+          opts.push({
+            id: nid,
+            el: fwdText,
+            children: cardOpts.map((optStr, i) => {
+              const optFwd = optStr.split(SIDE_SPLIT_SYM)[0].trim();
+              const optText = optFwd.split('\n')[0] || `Option ${i + 1}`;
+              return {
+                id: `${nid}:${i}`,
+                el: optText,
+                onClick: () => insertMention({ id: `${nid}:${i}`, text: optText })
+              };
+            })
+          });
+        } else {
+          // Прямая вставка для обычной карточки
+          opts.push({
+            id: nid,
+            el: fwdText,
+            onClick: () => insertMention({ id: nid, text: fwdText })
+          });
+        }
+      }
+    });
+
+    if (opts.length === 0) {
+      opts.push({ id: 'no-results', el: <Text className='tip'>no cards match</Text>, disabled: true });
+    }
+
+    return opts;
+  }, [ns, mentionMenu.query, insertMention]);
 
   const localOnKeyDown = (e:React.KeyboardEvent) => {
     if (e.altKey && e.key === 'ArrowUp') {
@@ -374,19 +662,17 @@ export const Card = forwardRef(({
       if (options.onMove) options.onMove(1);
       return;
     }
-    // 2. Логика выпадающего меню '/'
+    // Логика выпадающего меню '/'
     if (mentionMenu.isOpen) {
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        setMentionIndex(i => Math.min(i + 1, mentionOptions.length - 1));
-      } else if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        setMentionIndex(i => Math.max(i - 1, 0));
-      } else if (e.key === 'Enter') {
-        e.preventDefault();
-        if (mentionOptions.length > 0) insertMention(mentionOptions[mentionIndex]);
+      if (['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Enter'].includes(e.key)) {
+        // Мы предотвращаем дефолт, чтобы каретка в contentEditable не прыгала
+        // и чтобы Enter не переносил строку, когда мы в меню.
+        // Дальше глобальный листенер ContextMenu перехватит этот евент.
+        e.preventDefault(); 
       } else if (e.key === 'Escape') {
-        setMentionMenu(prev => ({ ...prev, isOpen: false }));
+        e.preventDefault();
+        // Escape тоже перехватывается ContextMenu (чтобы подняться наверх), 
+        // так что здесь мы просто стопаем нативный прыжок фокуса
       } else if (e.key === 'Backspace') {
         if (mentionMenu.query.length === 0) {
           setMentionMenu(prev => ({ ...prev, isOpen: false }));
@@ -409,7 +695,6 @@ export const Card = forwardRef(({
             y: rect.bottom+5,
             range: range 
           });
-          setMentionIndex(0);
         }
       }, 10);
     }
@@ -461,13 +746,24 @@ export const Card = forwardRef(({
       .map((ch: any) => (
         (ch.children.length >= 1)
           ?[...ch.childNodes]
-              .map((n: any) => (
-                n.nodeType === Node.TEXT_NODE ? (
-                  n.textContent
-                ) : (n.className === 'inlineCell') ? (
-                  `<id=${ch.children[0]?.id}>`
-                ) : n.textContent
-              ))
+              .map((n: any) => {
+                console.log('n.id[onBlur]',n.id)
+                if (n.id&&n.className==='inlineCell') {
+                  if(n.id.split(':').length==2) {
+                    const parts = n.id.split(':');
+                    const retText=`<id=${parts[0]}:${parts[1]}>`
+                    console.log('retText',retText)
+                    return retText
+                  }
+                }
+                return (
+                  n.nodeType === Node.TEXT_NODE ? (
+                    n.textContent
+                  ) : (n.className === 'inlineCell') ? (
+                    `<id=${n.id}>` // <-- БЕРЕТСЯ ID ИМЕННО ЭТОЙ ЯЧЕЙКИ 
+                  ) : n.textContent
+                )
+              })
               .join('')
           : ch.innerText
       ))
@@ -598,30 +894,14 @@ export const Card = forwardRef(({
         fontSize:`${fontSize}px`,
         padding:options.padding||'0px',
       }}>
-      {/* menu with auxilary menu of insertion */}
-      {mentionMenu.isOpen&&createPortal(
-        <span css={[dropMenuCSS]}>
-          <Box className='menuFrame' left={mentionMenu.x} top={mentionMenu.y}>
-            {/* Show all options if options.length > 0
-            otherwise show 'no cards...' message */}
-            {mentionOptions.length===0
-              ? (<Text className='tip'>no cards to mention</Text>)
-              : (<Text className='tip'>cards to mention</Text>)}
-            {/* Display options */}
-            {mentionOptions.map((opt,i) => (
-              <Box key={i} p={'2px 5px'} borderRadius="sm" fontSize="sm" mt={'3px'}
-                  bg={i===mentionIndex? 'blue.600':'transparent'}
-                  cursor="pointer" 
-                  onMouseDown={(e:any)=>{
-                    e.preventDefault();
-                    insertMention(opt);
-                  }}> 
-                {opt.text}
-              </Box>
-            ))}
-          </Box>
-        </span>
-        , document.body)}
+      {/* Подключаем новый ContextMenu вместо ручной верстки */}
+      <ContextMenu 
+        isOpen={mentionMenu.isOpen}
+        x={mentionMenu.x}
+        y={mentionMenu.y}
+        items={mentionMenuItems}
+        onClose={() => setMentionMenu(prev => ({ ...prev, isOpen: false }))}
+      />
       {/* Editable div + Card previewr */}
       {isEdit?(TextBox):(
         <HStack justifyContent={'stretch'} alignItems={'stretch'} w={'100%'} gap={0}>
@@ -737,10 +1017,8 @@ export const Card = forwardRef(({
     if (focus) {
       const tryFocus = (attempts = 0) => {
         if (inputRef.current) {
-          // setIsEdit(true);
           inputRef.current.focus();
         } else if (attempts < 15) {
-          // Если ref еще null, пробуем снова через 10мс (до 15 попыток)
           setTimeout(() => tryFocus(attempts + 1), 10);
         }
       }
@@ -756,7 +1034,9 @@ export const Card = forwardRef(({
 
   // link inside card's code editor
   if (options?.inner===true) {
-    return (<span className='card_inline_link'>{fwdParts[0]}</span>)
+    console.log('option!', options?.option)
+    const option = options?.option?options?.option:0; 
+    return (<span className='card_inline_link'>{fwdParts[option]}</span>)
   }
 
   return (

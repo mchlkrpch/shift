@@ -1,3 +1,4 @@
+// utility.tsx
 import ReactMarkdown, {
   type Components
 } from 'react-markdown';
@@ -11,9 +12,6 @@ import type {
   Text,
   Root
 } from 'mdast';
-import {
-  Cell
-} from './cell';
 import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
 import {
@@ -22,8 +20,10 @@ import {
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.css';
-import { Box } from '@chakra-ui/react'
-import { Clip } from '../clip'
+import { Cell } from './cell';
+import { Box } from '@chakra-ui/react';
+import { Clip } from '../clip';
+import dagre from 'dagre';
 
 export const SIDE_SPLIT_SYM: string = '@@@'
 export const OPTION_SPLIT_SYM: string = '==='
@@ -55,7 +55,7 @@ export function topSort(ns: Record<string, string>, preferredOrder:string[]=[]) 
     const regex = /<id=([^>]+)>/g;
     let match;
     while ((match = regex.exec(str)) !== null) {
-      deps.add(match[1]);
+      deps.add(match[1].split(':')[0]);
     }
     return Array.from(deps);
   };
@@ -183,21 +183,19 @@ const headingStyles: React.CSSProperties = {
 };
 export const shComponents:Components={
   h1: ({ node, ...props }:any) => <h1 style={{ ...headingStyles, fontSize: '2em', borderBottom: '1px solid #ddd' }} {...props} />,
-	h2: ({ node, ...props }) => <h2 style={{ ...headingStyles, fontSize: '1.5em', borderBottom: '1px solid #eee' }} {...props} />,
-	h3: ({ node, ...props }) => <h3 style={{ ...headingStyles, fontSize: '1.25em' }} {...props} />,
-	h4: ({ node, ...props }) => <h4 style={{ ...headingStyles, fontSize: '1em' }} {...props} />,
-	h5: ({ node, ...props }) => <h5 style={{ ...headingStyles, fontSize: '0.875em', color: '#555' }} {...props} />,
-	h6: ({ node, ...props }) => <h6 style={{ ...headingStyles, fontSize: '0.85em', color: '#666' }} {...props} />,
-  // Списки
+  h2: ({ node, ...props }) => <h2 style={{ ...headingStyles, fontSize: '1.5em', borderBottom: '1px solid #eee' }} {...props} />,
+  h3: ({ node, ...props }) => <h3 style={{ ...headingStyles, fontSize: '1.25em' }} {...props} />,
+  h4: ({ node, ...props }) => <h4 style={{ ...headingStyles, fontSize: '1em' }} {...props} />,
+  h5: ({ node, ...props }) => <h5 style={{ ...headingStyles, fontSize: '0.875em', color: '#555' }} {...props} />,
+  h6: ({ node, ...props }) => <h6 style={{ ...headingStyles, fontSize: '0.85em', color: '#666' }} {...props} />,
   ul: ({ node, ...props }) => <ul style={{ paddingLeft: '20px', listStyleType: 'disc' }} {...props} />,
-	ol: ({ node, ...props }) => <ol style={{ paddingLeft: '0px' }} {...props} />,
+  ol: ({ node, ...props }) => <ol style={{ paddingLeft: '0px' }} {...props} />,
   p: ({ node, ...props }) => <p style={{ marginLeft: '4px', padding: '2px 0px' }} {...props} />,
-  // Элементы списка. Можно добавить кастомные маркеры или логику.
   li: ({ node, ...props }) => <li style={{ marginBottom: '0.4em' }} {...props} />,
   code: CodeBlock,
 };
 
-const LINK_REGEX_EXPR: RegExp = /<id=([^\$]*?)>/g;
+const LINK_REGEX_EXPR: RegExp = /<id=([^>]+?)>/g;
 const MATH_REGEX_EXPR: RegExp = /\$([^<>]*?)\$/g;
 const splitPattern = (
   s: string,
@@ -226,17 +224,14 @@ const splitPattern = (
 
 export const shRemark: Plugin<[], Root> = () => {
   return (tree: any) => {
-    // custom visitor for detecting math and custom inner blocks
     visit(tree,['text', 'html'], (node: Text, index: any, p: any) => {
       if (!p || index === null ) return;
       const newChildren = splitPattern(
         node.value,
         LINK_REGEX_EXPR,
-        // split original string (s) and insert as textnode
         (ans:any,s:string,pI:number,sI:number)=>{
           ans.push({type:'text',value:s.slice(pI, sI)})
         },
-        // insert data as splink content
         (ans:any,data:string)=>{
           ans.push({
             type:'html',
@@ -259,7 +254,7 @@ export const shRemark: Plugin<[], Root> = () => {
                 hChildren:[{type:'text',value:data}],
                 hName: 'code',
                 hProperties: {
-                  className: ['lambuage-math', 'math-inline']
+                  className:['lambuage-math', 'math-inline']
                 }
               },
               position: {},
@@ -314,17 +309,16 @@ export const md2sh=(
 
 export const insertBlock=async(
 ) => {
-	const selection = window.getSelection()!;
-	const range = selection.getRangeAt(0);
-	// delete selected text
-	range.deleteContents();
-	const el = document.createElement('div');
-	el.className = 'inlineCell';
-	el.contentEditable = 'false';
-	el.dataset.id='';
-	await range.insertNode(el);
-	const root = createRoot(el);
-	await root.render(<>
+  const selection = window.getSelection()!;
+  const range = selection.getRangeAt(0);
+  range.deleteContents();
+  const el = document.createElement('div');
+  el.className = 'inlineCell';
+  el.contentEditable = 'false';
+  el.dataset.id='';
+  await range.insertNode(el);
+  const root = createRoot(el);
+  await root.render(<>
     <Cell id={'val'}/>
   </>)
 };
@@ -332,82 +326,74 @@ export const insertBlock=async(
 export const onKeyDownCb:any=async(
   e:any,
 )=>{
-	switch (e.key) {
-		case '/': {
-			e.preventDefault();
-			e.stopPropagation();
-			insertBlock();
-			return
-		}
-		default: {
-			return;
-		}
-	}
+  switch (e.key) {
+    case '/': {
+      e.preventDefault();
+      e.stopPropagation();
+      insertBlock();
+      return
+    }
+    default: {
+      return;
+    }
+  }
 }
 
-// -----------------------------------------------------------
-// ПОДГОТОВКА ГРАФА И DAGRE
-// -----------------------------------------------------------
-
 type DataTp = {
-	forward: string[],
-	backward: string[],
-	id: string,
+  forward: string[],
+  backward: string[],
+  id: string,
   tp?: string,
 }
 
 export const parseRawCards = (ns: Record<string, string>): DataTp[] => {
-	return Object.entries(ns).map(([id, text]) => {
-		const options = text.split('===');		
-		const forward = options.map(opt => {
-			const parts = opt.split('@@@');
-			return parts[0] ? parts[0].trim() : '';
-		});
-		const backward = options.map(opt => {
-			const parts = opt.split('@@@');
-			return parts[1] ? parts[1].trim() : '';
-		});
-		return {
-			id,
-			forward,
-			backward,
+  return Object.entries(ns).map(([id, text]) => {
+    const options = text.split('===');		
+    const forward = options.map(opt => {
+      const parts = opt.split('@@@');
+      return parts[0] ? parts[0].trim() : '';
+    });
+    const backward = options.map(opt => {
+      const parts = opt.split('@@@');
+      return parts[1] ? parts[1].trim() : '';
+    });
+    return {
+      id,
+      forward,
+      backward,
       tp: 'default_type'
-		};
-	});
+    };
+  });
 };
 
 export const calcEs = (datas: DataTp[]) => {
-	const edgesSet = new Set() as Set<string>;
-	const allNodeIds = new Set(datas.map(d => d.id));
-	const nodeContent: { [key: string]: string } = {};
-	const edges =[] as any;
+  const edgesSet = new Set() as Set<string>;
+  const edges = [] as any;
 
-	datas.forEach(card => {
-		const concatenatedString =[...card.forward, ...card.backward].join(' ');
-		nodeContent[card.id] = concatenatedString;
-		const regex = /<id=(.*?)>/g;
-		let match;
-		while ((match = regex.exec(concatenatedString)) !== null) {
-			const sourceId = match[1];
-			if (sourceId) {
-				if (!edgesSet.has(`e-${sourceId}-${card.id}`)) {
-					edgesSet.add(`e-${sourceId}-${card.id}`);
-					allNodeIds.add(sourceId);
-					edges.push({
-						id: `e-${sourceId}-${card.id}`,
-						source: sourceId,
-						target: card.id,
-						type: 'SpEdge',
-					});
-				}
-			}
-		}
-	});
-	return edges;
+  datas.forEach(card => {
+    const concatenatedString = [...card.forward, ...card.backward].join(' ');
+    const regex = /<id=(.*?)>/g;
+    let match;
+    while ((match = regex.exec(concatenatedString)) !== null) {
+      const sourceId = match[1].split(':')[0];
+      if (sourceId) {
+        if (!edgesSet.has(`e-${sourceId}-${card.id}`)) {
+          edgesSet.add(`e-${sourceId}-${card.id}`);
+          edges.push({
+            id: `e-${sourceId}-${card.id}`,
+            source: sourceId,
+            target: card.id,
+            type: 'SpEdge',
+          });
+        }
+      }
+    }
+  });
+  return edges;
 }
 
-export const NodeWidth = 258;
-export const NodeHeight = 50;
+export const NodeWidth = 160;
+export const NodeHeight = 36;
 
 export function calculateHierarchy(groups: Record<string, {color: string, nodes: string[]}>) {
   const sortedGroups = Object.entries(groups || {}).sort((a,b) => a[1].nodes.length - b[1].nodes.length);
@@ -434,182 +420,90 @@ export function calculateHierarchy(groups: Record<string, {color: string, nodes:
   return { nodeToGroup, groupToGroup };
 }
 
-// Новая функция для получения порядка групп (от вложенных к внешним)
-function getGroupOrder(groups: Record<string, any>, groupToGroup: Record<string, string>): string[] {
-  const allGroups = Object.keys(groups);
-  const children: Record<string, string[]> = {};
-  const roots: string[] = [];
-  
-  // Строим дерево детей для каждой группы
-  allGroups.forEach(gId => {
-    const parent = groupToGroup[gId];
-    if (parent && groups[parent]) {
-      if (!children[parent]) children[parent] = [];
-      children[parent].push(gId);
-    } else {
-      roots.push(gId);
-    }
-  });
-  
-  // Обход в глубину: сначала дети, потом родитель
-  const result: string[] = [];
-  
-  function visitGroup(gId: string, visited: Set<string>) {
-    if (visited.has(gId)) return;
-    visited.add(gId);
-    
-    // Сначала посещаем всех детей
-    if (children[gId]) {
-      children[gId].forEach(childId => {
-        visitGroup(childId, visited);
-      });
-    }
-    
-    // Затем добавляем саму группу
-    result.push(gId);
-  }
-  
-  const visited = new Set<string>();
-  roots.forEach(rootId => visitGroup(rootId, visited));
-  
-  // Добавляем группы, которые не были посещены (изолированные)
-  allGroups.forEach(gId => {
-    if (!visited.has(gId)) {
-      visitGroup(gId, visited);
-    }
-  });
-  
-  return result;
-}
-
-// Функция для получения всех потомков группы (рекурсивно)
-function getAllDescendants(groupId: string, groupToGroup: Record<string, string>): Set<string> {
-  const descendants = new Set<string>();
-  Object.entries(groupToGroup).forEach(([child, parent]) => {
-    if (parent === groupId) {
-      descendants.add(child);
-      getAllDescendants(child, groupToGroup).forEach(d => descendants.add(d));
-    }
-  });
-  return descendants;
-}
-
 const getLayoutedElements = (
   nodes: any[],
   edges: any[],
   groups: any = {},
-  direction: string = 'TB',
-  spacing: { x: number; y: number } = { x: 3.5, y: 2.0 }
+  direction: string = 'LR',
+  spacing: { x: number; y: number } = { x: 1, y: 1 }
 ) => {
-  // 1. Собираем иерархию
+  const dagreGraph = new dagre.graphlib.Graph({ compound: true });
+  dagreGraph.setDefaultEdgeLabel(() => ({}));
+
+  dagreGraph.setGraph({ 
+    rankdir: direction, 
+    nodesep: 20 * spacing.y, 
+    ranksep: 30 * spacing.x, 
+    edgesep: 40 * spacing.y 
+  });
+
   const { nodeToGroup, groupToGroup } = calculateHierarchy(groups);
 
-  // 2. Получаем правильный порядок групп (от вложенных к внешним)
-  const orderedGroups = getGroupOrder(groups, groupToGroup);
-
-  // 3. Создаем маппинг: узел -> его самая вложенная группа
-  const nodeToDeepestGroup: Record<string, string> = {};
-  Object.entries(nodeToGroup).forEach(([nodeId, gId]) => {
-    // Находим самого глубокого предка для этой группы
-    let deepest = gId;
-    let current = gId;
-    while (groupToGroup[current]) {
-      current = groupToGroup[current];
-      deepest = current;
-    }
-    // Ищем самого глубокого потомка (самую вложенную группу)
-    const descendants = getAllDescendants(gId, groupToGroup);
-    if (descendants.size > 0) {
-      // Берем первую найденную самую вложенную
-      descendants.forEach(d => {
-        if (!groupToGroup[d]) { // это лист (самая вложенная)
-          deepest = d;
-        }
-      });
-    }
-    nodeToDeepestGroup[nodeId] = deepest;
-  });
-
-  // 4. Группируем узлы по их самой вложенной группе
-  const nodesByDeepestGroup: Record<string, any[]> = {};
-  nodes.forEach((node) => {
-    const deepestGId = nodeToDeepestGroup[node.id];
-    if (!deepestGId) return;
-    if (!nodesByDeepestGroup[deepestGId]) nodesByDeepestGroup[deepestGId] = [];
-    nodesByDeepestGroup[deepestGId].push(node);
-  });
-
-  let currentGroupX = 0;
-  const layoutedNodes: any[] = [];
-  const processedNodes = new Set<string>();
-
-  // 5. Раскладываем группы в правильном порядке
-  orderedGroups.forEach((gId) => {
-    const gNodes = (nodesByDeepestGroup[gId] || [])
-      .filter(n => !processedNodes.has(n.id))
-      .sort((a, b) => a.id.localeCompare(b.id));
-    
-    const gData = groups[gId];
-    const nodeGapY = 20 * spacing.y;
-    
-    // Уменьшаем отступ в 2 раза для вложенных групп
-    const isNestedGroup = !!groupToGroup[gId];
-    const groupPadding = (isNestedGroup ? 2 : 4) * spacing.x;
-
-    let currentY = groupPadding;
-    let maxWidth = 0;
-
-    // Раскладываем узлы внутри группы сверху вниз
-    gNodes.forEach((node) => {
-      processedNodes.add(node.id);
-      const w = node.width || NodeWidth;
-      const h = node.height || NodeHeight;
-      maxWidth = Math.max(maxWidth, w);
-
-      layoutedNodes.push({
-        ...node,
-        parentId: gId,
-        position: { 
-          x: currentGroupX + groupPadding,
-          y: currentY 
-        },
-        width: w,
-        height: h,
-      });
-
-      currentY += h + nodeGapY;
+  Object.keys(groups).forEach(gId => {
+    dagreGraph.setNode(gId, { 
+      label: gId,
+      paddingLeft: 10, paddingRight: 0, paddingTop: 0, paddingBottom: 0
     });
+  });
+  
+  Object.keys(groupToGroup).forEach(gId => {
+    const parentId = groupToGroup[gId];
+    if (parentId && groups[parentId]) {
+      dagreGraph.setParent(gId, parentId);
+    }
+  });
 
-    // Вычисляем итоговые размеры группы
-    const totalGroupWidth = maxWidth + groupPadding * 2;
-    const totalGroupHeight = currentY + groupPadding - nodeGapY*2;
+  nodes.forEach(node => {
+    const w = node.width || NodeWidth;
+    const h = node.height || NodeHeight;
+    dagreGraph.setNode(node.id, { width: w, height: h });
+    
+    const parentId = nodeToGroup[node.id];
+    if (parentId && groups[parentId]) {
+      dagreGraph.setParent(node.id, parentId);
+    }
+  });
 
-    // Добавляем саму группу
+  edges.forEach(edge => {
+    dagreGraph.setEdge(edge.source, edge.target);
+  });
+
+  dagre.layout(dagreGraph);
+
+  const layoutedNodes: any[] = [];
+  
+  nodes.forEach(node => {
+    const nodeWithPosition = dagreGraph.node(node.id);
+    if (!nodeWithPosition) return;
+    
+    layoutedNodes.push({
+      ...node,
+      position: { 
+        x: nodeWithPosition.x,
+        y: nodeWithPosition.y - 12
+      },
+      width: nodeWithPosition.width,
+      height: nodeWithPosition.height,
+      parentId: nodeToGroup[node.id]
+    });
+  });
+
+  Object.keys(groups).forEach(gId => {
+    const groupNode = dagreGraph.node(gId);
+    if (!groupNode) return;
+    const gData = groups[gId];
     layoutedNodes.push({
       id: gId,
       type: 'SpGroup',
-      position: { x: currentGroupX, y: 0 },
-      width: totalGroupWidth,
-      height: totalGroupHeight,
+      position: { 
+        x: groupNode.x, 
+        y: groupNode.y + 8
+      },
+      width: groupNode.width,
+      height: groupNode.height,
       data: { label: gId, color: gData?.color || '#ccc' },
       parentId: groupToGroup[gId] || undefined,
     });
-
-    // Сдвигаем X для следующей группы
-    currentGroupX += totalGroupWidth + 30 * spacing.x;
-  });
-
-  // 6. Обрабатываем узлы без групп
-  nodes.forEach((node) => {
-    if (!nodeToGroup[node.id] && !processedNodes.has(node.id)) {
-      layoutedNodes.push({
-        ...node,
-        position: { x: currentGroupX, y: 0 },
-        width: node.width || NodeWidth,
-        height: node.height || NodeHeight,
-      });
-      currentGroupX += (node.width || NodeWidth) + 30 * spacing.x;
-    }
   });
 
   return { nodes: layoutedNodes, edges };
@@ -624,13 +518,15 @@ export const calcG = (
   delete cleanNs['__groups__'];
   const parsedDatas = parseRawCards(cleanNs);
   const newEdges = calcEs(parsedDatas);
+  
   const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(
     parsedDatas,
     newEdges,
     groups,
-    'TB',
+    'LR',
     spacing
   );
+  
   const newNs = layoutedNodes.map((n: any) => {
     if (n.type === 'SpGroup') return n;
     return {
@@ -646,5 +542,6 @@ export const calcG = (
       }
     };
   });
-  return[newNs, layoutedEdges];
+  
+  return [newNs, layoutedEdges];
 }
