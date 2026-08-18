@@ -1,32 +1,24 @@
-// graphEditor.tsx
 /** @jsxImportSource @emotion/react */
 import { css } from "@emotion/react";
-
 import React, {
+  createContext,
   forwardRef,
   useCallback,
+  useContext,
   useEffect,
   useImperativeHandle,
   useMemo,
   useRef,
   useState,
   memo
-} from 'react'
-
-import Sigma from "sigma";
-import Graphology from "graphology";
-
+} from 'react';
 import {
-  GraphCtx,
-  useGraphCtx
-} from '../../App';
-import {
-  DarkMode,
-  LightMode,
-  useColorMode
-} from '../../main';
-import {
+  Accordion,
   Box,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbRoot,
+  BreadcrumbSeparator,
   Button,
   CardRoot,
   HStack,
@@ -36,24 +28,78 @@ import {
   Tabs,
   Text,
   VStack
-} from '@chakra-ui/react';
-import { calcG, calculateHierarchy, SIDE_SPLIT_SYM, topSort } from '../card/utility';
-import { Card } from '../card/card';
-import { ContextMenu, useContextMenu } from '../menu'; 
-
-import { FaParagraph } from "react-icons/fa6";
-import { BsDiagram2Fill } from "react-icons/bs";
-import { APPWRITE_CONFIG, gReq, spaced_account } from "../../appwrite/service";
-import { MdFilterCenterFocus } from "react-icons/md";
-import { Clip } from "../clip";
+} from "@chakra-ui/react";
+import { Clip } from '../clip';
 import {
-  FaShare,
-} from "react-icons/fa";
+  calcG, 
+  calculateHierarchy, 
+  CARD_SPLIT_SYM,
+  getGroupTp,
+  OPTION_SPLIT_SYM,
+  Sh,
+  SIDE_SPLIT_SYM,
+  topSort,
+  type GroupTp,
+} from "../card/utility";
+import { match } from "../../utility";
+import { GraphCtx, useGraphCtx } from "../../App";
+import { renderToString } from "react-dom/server";
+import { Cell } from "../card/cell";
+import '@xyflow/react/dist/style.css';
+import { IoMdHeart, IoMdHeartEmpty } from "react-icons/io";
+import { FaRegCommentAlt, FaShare } from "react-icons/fa";
+import { createPortal } from 'react-dom';
+import { FaChevronRight, FaParagraph } from 'react-icons/fa6';
+import { LuChevronLeft, LuChevronDown, LuChevronRight, LuPilcrow } from 'react-icons/lu';
+import { BsDiagram2Fill } from "react-icons/bs";
+import { MdFilterCenterFocus } from "react-icons/md";
 import { PiExport } from "react-icons/pi";
 import { RiSaveFill, RiRepeat2Line } from "react-icons/ri";
 
+import Sigma from "sigma";
+import Graphology from "graphology";
+import { ID } from "appwrite";
+import { APPWRITE_CONFIG, gReq, spaced_account } from "../../appwrite/service";
+import { DarkMode, LightMode, useColorMode } from '../../main';
 import { Feed, getCardState } from "./feed"; 
-import { LuChevronDown, LuChevronRight, LuPilcrow } from "react-icons/lu";
+import { Card } from "../card/card";
+
+export const dropMenuCSS=css`
+.menuFrame{
+  position: fixed;
+  backdrop-filter:blur(20px);
+  background-color: color-mix(in srgb, #223 60%, transparent);
+  border: 1px solid color-mix(in srgb, #666 60%, transparent);
+  border-radius: 5px;
+  padding: 5px;
+  max-height: 200px;
+  overflow-y: auto;
+  min-width: 150px;
+
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+
+  font-weight: 400;
+  z-index: 12000;
+}
+
+.menuFrame .tip{
+  font-size: 11px;
+  opacity: 0.3;
+  font-weight: 400;
+}
+
+.item {
+  width: 100%;
+  font-size:12px;
+  display:flex;
+  align-items:center;
+  gap: 8px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+`
 
 export const graphCSS = css`
 display:flex;
@@ -191,6 +237,408 @@ overflow-y: hidden;
 }
 `;
 
+export const contentCSS = css`
+position: relative;
+
+.chakra-stack{
+  scrollbar-width: none;
+}[role="textbox"]{
+  outline: none;
+  border: none;
+  tab-index: 0;
+  display: block;
+  flex-direction: column;
+  font-family: Roboto mono;
+  overflow-x: hidden;
+  white-space: pre-wrap;
+  contain: content;
+  scrollbar-width: none;
+}
+
+[data-scope="accordion"]{
+  border-bottom: none;
+  padding: 0;
+}
+
+.sh_string{
+  border-bottom: 1px solid color-mix(in srgb, #555 25%, transparent);
+  border-style: dotted;
+  width: fit-content;
+  height: fit-content;
+  white-space: pre-wrap;
+  word-break: break-word;
+
+  width: 100%;
+  height: auto;
+}
+
+.selectedOption{
+  opacity: 1.0;
+  text-decoration: underline;
+}
+
+.inlineCell{
+  display: inline-block;
+	width: fit-content;
+	height: fit-content;
+  padding: 0px 2px;
+  border-radius: 4px;
+  color: var(--chakra-colors-blue-500);
+}
+
+.pale{
+  display: flex;
+  opacity: 0.4;
+}
+.pale:hover{
+  opacity: 1.0;
+}
+
+.cardContent{
+  gap: 0;
+  border-radius: 0;
+  padding: 0;
+  alignItems: start;
+}
+
+.editor{
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+  width: 100%;
+}
+
+.cardStats {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 0px 5px;
+}
+
+.statButton {
+  font-size: 16px;
+  font-weight: 600;
+  padding-right: 2px;
+  height: 23px;
+  gap: 4px;
+}
+
+.buttonIcon{
+  width: 13px;
+  height: 13px;
+}
+
+.card_inline_link:hover{
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.chakra-breadcrumb__list {
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 300;
+  display:flex;
+  flex-direction: row;
+}
+
+.chakra-breadcrumb__link {
+  gap: 4px;
+}
+
+.optionsTrigger{
+  width: 100%;
+  gap: 0;
+}
+`;
+
+
+// ============================================================================
+// CONTEXT MENU (Custom Dropdown Logic)
+// ============================================================================
+
+export interface MenuItem {
+	id?: string;
+	el?: React.ReactNode | 'separator';
+	children?: MenuItem[];
+	onClick?: (e: React.MouseEvent<HTMLDivElement> | any, data?: any) => void;
+	disabled?: boolean;
+	danger?: boolean;
+	shortcut?: string | React.ReactNode;
+	data?: any;
+}
+
+export interface MenuProps{
+	isOpen: boolean;
+	x: number;
+	y: number;
+	items: MenuItem[];
+	onClose: () => void;
+	onAction?: (itemId: string, data?: any) => void;
+	width?: number;
+	zIndex?: number;
+}
+
+export const useContextMenu = () => {
+	const[menu, setMenu] = useState<any>({ isOpen: false, x: 0, y: 0 });
+
+	const open = useCallback((e: any) => {
+		e.preventDefault();
+		setMenu({ isOpen: true, x: e.clientX, y: e.clientY });
+	},[]);
+
+	const close = useCallback(() => {
+		setMenu((prev: any) => ({ ...prev, isOpen: false }));
+	},[]);
+
+	return {
+		menu, open, close,
+		props: {
+			isOpen: menu.isOpen,
+			x: menu.x,
+			y: menu.y,
+			onClose: close,
+		},
+	};
+};
+
+const normalizeItems = (menuItems: MenuItem[], prefix = 'item-'): MenuItem[] => {
+	return menuItems.map((item, index) => {
+		const id = item.id ?? `${prefix}${index}`;
+		return {
+			...item,
+			id,
+			children: item.children ? normalizeItems(item.children, `${id}-`) : undefined,
+		};
+	});
+};
+
+export const ContextMenu = React.forwardRef(({
+	isOpen,
+	x,
+	y,
+	items,
+	onClose,
+	onAction,
+}:any,ref:any)=>{
+	const menuRef = useRef<HTMLDivElement>(null);
+	const[pt,setPt] = useState<string[]>([]);
+	const[focusedIndex, setFocusedIndex] = useState<number>(0);
+	const normalizedItems = useMemo(() => normalizeItems(items), [items]);
+
+	useImperativeHandle(ref,()=>({
+		setPath:(pt:any)=>setPt(pt),
+	}))
+
+	const currentItems = useMemo(() => {
+		let current = normalizedItems;
+		for (const id of pt) {
+			const parent = current.find((i) => i.id === id);
+			if (parent?.children) current = parent.children;
+			else break;
+		}
+		return current;
+	}, [normalizedItems, pt]);
+
+	useEffect(() => {
+		let first = 0;
+		while (first < currentItems.length && (currentItems[first].el === 'separator' || currentItems[first].disabled)) {
+			first++;
+		}
+		setFocusedIndex(first < currentItems.length ? first : 0);
+	}, [pt, currentItems]);
+
+	useEffect(() => {
+		if (!isOpen) return;
+		const handler = (e: MouseEvent) => {
+			if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+				onClose();
+				setPt([]);
+			}
+		};
+		document.addEventListener('mousedown', handler);
+		return () => document.removeEventListener('mousedown', handler);
+	}, [isOpen, onClose]);
+
+	useEffect(() => {
+		if (!isOpen) return;
+		const onKey = (e: KeyboardEvent) => {
+			const activeTag = document.activeElement?.tagName.toLowerCase();
+			const isInput =['input', 'textarea', 'select'].includes(activeTag || '');
+
+			if (e.key === 'Escape') {
+				if (pt.length > 0) {
+					setPt((prev) => prev.slice(0, -1));
+				} else {
+					onClose();
+				}
+				return;
+			}
+
+			if (e.key === 'ArrowDown') {
+				e.preventDefault();
+				let next = focusedIndex + 1;
+				while (next < currentItems.length && (currentItems[next].el === 'separator' || currentItems[next].disabled)) {
+					next++;
+				}
+				if (next < currentItems.length) setFocusedIndex(next);
+			} else if (e.key === 'ArrowUp') {
+				e.preventDefault();
+				let prev = focusedIndex - 1;
+				while (prev >= 0 && (currentItems[prev].el === 'separator' || currentItems[prev].disabled)) {
+					prev--;
+				}
+				if (prev >= 0) setFocusedIndex(prev);
+			} else if (e.key === 'ArrowRight' && !isInput) {
+				e.preventDefault();
+				const item = currentItems[focusedIndex];
+				if (item?.children && item.children.length > 0) {
+					setPt((prev) => [...prev, item.id!]);
+				}
+			} else if (e.key === 'ArrowLeft' && !isInput) {
+				e.preventDefault();
+				if (pt.length > 0) {
+					setPt((prev) => prev.slice(0, -1));
+				}
+			} else if (e.key === 'Enter' && !isInput) {
+				e.preventDefault();
+				const item = currentItems[focusedIndex];
+				if (item && item.el !== 'separator' && !item.disabled) {
+					if (item.children && item.children.length > 0) {
+						setPt((prev) =>[...prev, item.id!]);
+					} else {
+						item.onClick?.(e, item.data);
+						if (item.id) {
+							onAction?.(item.id, item.data);
+						}
+						onClose();
+						setPt([]);
+					}
+				}
+			}
+		};
+		document.addEventListener('keydown', onKey);
+		return () => document.removeEventListener('keydown', onKey);
+	},[isOpen, pt, focusedIndex, currentItems, onClose, onAction]);
+
+	if (!isOpen) return null;
+
+	const getActiveItem = (): MenuItem | null => {
+		if (pt.length===0) {
+			return null;
+		}
+		let current = normalizedItems;
+		let activeItem: MenuItem | null = null;
+		for (const id of pt) {
+			activeItem = current.find((i) => i.id === id) || null;
+			if (activeItem?.children) current = activeItem.children;
+		}
+		return activeItem;
+	};
+
+	const handleItemClick = (e: React.MouseEvent<HTMLDivElement>, item: MenuItem) => {
+		if (item.disabled || item.el === 'separator') return;
+		if (item.children && item.children.length > 0) {
+			setPt((prev) => [...prev, item.id!]);
+			return;
+		}
+		const target = e.target as HTMLElement;
+		const tagName = target.tagName.toLowerCase();
+		if (['input', 'textarea', 'select', 'button'].includes(tagName)) {
+			return;
+		}
+
+		item.onClick?.(e, item.data);
+		if (item.id) {
+			onAction?.(item.id, item.data);
+		}
+		onClose();
+		setPt([]);
+	};
+
+	const renderMenuItem = (x:MenuItem, index: number) => {
+		if (x.el==='separator'){
+			return (<Separator key={x.id} borderColor={'color-mix(in srgb, var(--chakra-colors-fg) 30%, transparent)'}/>);
+		}
+
+		const hasChildren = !!x.children?.length;
+		const isFocused = index === focusedIndex;
+		const bgColor=x.danger
+			? 'rgba(220, 38, 38, 0.2)'
+			: 'color-mix(in srgb, blue 50%, transparent)';
+
+		return (
+			<div
+				key={x.id}
+				onClick={(e) => handleItemClick(e, x)}
+				onMouseEnter={() => {
+					if (!x.disabled) {
+						setFocusedIndex(index);
+					}
+				}}
+				className={'item'}
+				style={{
+					padding:x.disabled?'0px':'4px 6px',
+					color:x.danger?'#fc8181':'inherit',
+					background:isFocused&&!x.disabled? bgColor:'transparent',
+				}}
+			>
+				{x.el}
+				<Spacer/>
+				{hasChildren&&<FaChevronRight size={10} opacity={.6}/>}
+				{x.shortcut && (
+				<span css={css`font-size: 10px; opacity: 0.5; margin-left: auto;`}>
+					{x.shortcut}
+				</span>)}
+			</div>
+		);
+	};
+
+	const activeParentItem = getActiveItem();
+
+	return createPortal(
+		<span ref={menuRef} css={dropMenuCSS}>
+			<Box className='menuFrame' top={y} left={x}>
+				<HStack className={'tip'} gap={'2px'}>
+					{activeParentItem&&(<LuChevronLeft size={'12px'}/>)}
+					{activeParentItem ? activeParentItem.el : 'cards to mention'}
+				</HStack>
+				{currentItems.map((x:any,i:number)=>renderMenuItem(x,i))}
+			</Box>
+		</span>,document.body
+	);
+})
+
+
+interface CardCtxI{
+  path: any[],setPath:(p:any[])=>any[],
+  c:string,setC:(t:string)=>void,
+};
+
+export const CardCtx = createContext<CardCtxI|null>(null);
+export const useCardCtx=()=>{
+  const ctx = useContext(CardCtx);
+  if (!ctx) {
+    throw new Error('use graph context');
+  }
+  return ctx;
+}
+
+export declare type shCardProps = {
+  id: string,
+  content: string,
+  options: any,
+  focus?: boolean,
+}
+
+
+// ============================================================================
+// GRAPH AND TREE VIEWS
+// ============================================================================
+
 const Colored=({content}:any)=>{
   const {colorMode} = useColorMode();
   return colorMode === 'light' ? <LightMode>{content}</LightMode> : <DarkMode>{content}</DarkMode>;
@@ -277,7 +725,337 @@ const drawRoundRect = (ctx: CanvasRenderingContext2D, x: number, y: number, w: n
   ctx.closePath();
 };
 
-const Flow = React.forwardRef(({ onCanvasHover, onContextMenu, onDoubleClickNode, sel }: any, ref:any) => {
+const MiniGraphPopup = memo(({ id, type, targetNodes, targetGroups, x, y, ns, groups, onClose }: any) => {
+    const containerRef = useRef<HTMLDivElement>(null);
+    const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
+    const { repeats } = useGraphCtx() as any;
+    
+    useEffect(() => {
+        if (!containerRef.current) return;
+        
+        const visited = new Set<string>();
+        
+        if (type === 'group' || type === 'root') {
+            (targetNodes || []).forEach((n: string) => visited.add(n));
+        } else {
+            const traverse = (currId: string) => {
+                if (visited.has(currId)) return;
+                visited.add(currId);
+                const content = ns[currId];
+                if (!content) return;
+                const matches = [...content.matchAll(/<id=([a-zA-Z0-9_:-]+)>/g)];
+                for (const match of matches) {
+                    const targetId = match[1];
+                    traverse(targetId);
+                }
+            };
+            traverse(id);
+        }
+        
+        const miniNs: any = {};
+        visited.forEach(n => { miniNs[n] = ns[n] || ''; });
+
+        const miniGroups: any = {};
+        if (targetGroups) {
+            targetGroups.forEach((gName: string) => {
+                if (groups && groups[gName]) miniGroups[gName] = groups[gName];
+            });
+        }
+        
+        const [reactflowNs, reactflowEs] = calcG(miniNs, miniGroups, {x:1, y:1});
+        
+        const graph = new Graphology();
+        reactflowNs.forEach((n: any) => {
+            const isGroup = n.type === 'SpGroup';
+
+            if (isGroup) {
+                graph.addNode(n.id, {
+                    x: n.position.x,
+                    y: n.position.y,
+                    width: n.width,
+                    height: n.height,
+                    isGroup: true,
+                    color: "rgba(0,0,0,0)",
+                    size: 0
+                });
+                return;
+            }
+
+            let status = { isLocked: false, isNew: true, isDue: false, isLearned: false, level: 0 };
+            try { status = getCardState(n.id, ns, repeats); } catch(e) {}
+            
+            graph.addNode(n.id, {
+                x: n.position.x,
+                y: n.position.y,
+                size: 15,
+                width: n.width || 160,
+                height: n.height || 36,
+                label: (ns[n.id] || '').split('\n')[0].replace(/<[^>]*>?/gm, '').trim().substring(0, 35) || n.id,
+                color: "rgba(0,0,0,0)",
+                status
+            });
+        });
+        
+        reactflowEs.forEach((e: any) => {
+            if (graph.hasNode(e.source) && graph.hasNode(e.target) && !graph.hasEdge(e.source, e.target)) {
+                graph.addEdge(e.source, e.target, { color: '#4a5568', size: 1, type: 'arrow' });
+            }
+        });
+
+        const renderer = new Sigma(graph, containerRef.current, {
+            renderLabels: false,
+            defaultEdgeColor: "rgba(255, 255, 255, 0.1)",
+            renderEdgeLabels: false,
+            autoRescale: false
+        });
+
+        const syncCanvasSize = () => {
+            if (!overlayCanvasRef.current || !containerRef.current) return false;
+            const rect = containerRef.current.getBoundingClientRect();
+            if (rect.width === 0 || rect.height === 0) return false;
+            const dpr = window.devicePixelRatio || 1;
+            const newW = Math.floor(rect.width * dpr);
+            const newH = Math.floor(rect.height * dpr);
+            if (overlayCanvasRef.current.width !== newW || overlayCanvasRef.current.height !== newH) {
+                overlayCanvasRef.current.width = newW;
+                overlayCanvasRef.current.height = newH;
+                overlayCanvasRef.current.style.width = `${rect.width}px`;
+                overlayCanvasRef.current.style.height = `${rect.height}px`;
+                return true;
+            }
+            return false;
+        };
+
+        syncCanvasSize();
+        const resizeObserver = new ResizeObserver(() => {
+            if (syncCanvasSize()) renderer.refresh();
+        });
+        resizeObserver.observe(containerRef.current);
+
+        const handleWheel = (e: WheelEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            const camera = renderer.getCamera();
+            if (!e.ctrlKey && !e.metaKey) {
+                camera.setState({
+                    x: camera.x + e.deltaX * camera.ratio / 100,
+                    y: camera.y - e.deltaY * camera.ratio / 100
+                });
+            } else {
+              const rect = containerRef.current!.getBoundingClientRect();
+              const size = Math.max(rect.width, rect.height);
+              const mousePx = e.clientX - rect.left;
+              const mousePy = e.clientY - rect.top;
+              const dxPx = mousePx - rect.width / 2;
+              const dyPx = mousePy - rect.height / 2;
+              const dxNorm = dxPx / size;
+              const dyNorm = dyPx / size;
+              let newRatio = camera.ratio * Math.pow(1.005, e.deltaY);
+              newRatio = Math.max(0.01, Math.min(newRatio, 100));
+              const deltaRatio = camera.ratio - newRatio;
+
+              const newX = camera.x + dxNorm * deltaRatio;
+              const newY = camera.y - dyNorm * deltaRatio; 
+
+              camera.setState({ x: newX, y: newY, ratio: newRatio });
+            }
+        };
+        containerRef.current.addEventListener('wheel', handleWheel, { capture: true, passive: false });
+        
+        renderer.on("afterRender", () => {
+            const overCtx = overlayCanvasRef.current?.getContext("2d");
+            if (!overCtx || !overlayCanvasRef.current) return;
+            
+            syncCanvasSize();
+            if (overlayCanvasRef.current.width === 0) return;
+
+                        const dpr = window.devicePixelRatio || 1;
+            const width = overlayCanvasRef.current.width / dpr;
+            const height = overlayCanvasRef.current.height / dpr;
+
+            overCtx.save();
+            overCtx.scale(dpr, dpr);
+            overCtx.clearRect(0, 0, width, height);
+
+            const scale = 1 / renderer.getCamera().ratio;
+
+            const groupNodes: any[] = [];
+            graph.forEachNode((node, attrs) => {
+                if (attrs.isGroup) groupNodes.push({ id: node, ...attrs });
+            });
+            groupNodes.sort((a, b) => (b.width * b.height) - (a.width * a.height));
+
+            groupNodes.forEach(group => {
+                const vp = renderer.graphToViewport({ x: group.x, y: group.y });
+                const gw = group.width * scale;
+                const gh = group.height * scale;
+                const minX = vp.x - gw / 2;
+                const minY = vp.y - gh / 2;
+                
+                const gData = miniGroups[group.id] || { color: '#555555' };
+                let baseColor = gData.color || '#555555';
+                if (!baseColor.startsWith('#')) baseColor = rgba2hex(baseColor) || '#555555';
+                baseColor = baseColor.padEnd(7, '0');
+                if (baseColor.length === 4) {
+                    baseColor = '#' + baseColor[1] + baseColor[1] + baseColor[2] + baseColor[2] + baseColor[3] + baseColor[3];
+                }
+
+                let r = parseInt(baseColor.slice(1, 3), 16) || 85;
+                let g = parseInt(baseColor.slice(3, 5), 16) || 85;
+                let b = parseInt(baseColor.slice(5, 7), 16) || 85;
+                let a = 0.05;
+
+                overCtx.fillStyle = `rgba(${r}, ${g}, ${b}, ${a})`;
+                overCtx.fillRect(minX, minY, gw, gh);
+            });
+
+            graph.forEachNode((node, attrs) => {
+                if (attrs.isGroup) return;
+
+                const vp = renderer.graphToViewport({ x: attrs.x, y: attrs.y });
+                const nodeW = (attrs.width || 160) * scale;
+                const nodeH = (attrs.height || 36) * scale;
+
+                const isSelected = node === id;
+
+                if (attrs.status?.isLocked && !isSelected) {
+                    overCtx.fillStyle = "rgba(40, 40, 40, 1.0)";
+                } else if (isSelected) {
+                    overCtx.fillStyle = "rgba(49, 130, 206, 1.0)";
+                } else {
+                    overCtx.fillStyle = "rgba(30, 30, 30, 1.0)";
+                }
+
+                drawRoundRect(overCtx, vp.x - nodeW/2, vp.y - nodeH/2, nodeW, nodeH, 6 * scale);
+                overCtx.fill();
+                
+                overCtx.lineWidth = 1.5;
+                overCtx.strokeStyle = isSelected ? "rgba(255, 255, 255, 0.8)" : "rgba(100, 100, 100, 0.5)";
+                overCtx.stroke();
+
+                if (attrs.status && !attrs.status.isLocked) {
+                    let dotColor = "#718096";
+                    if (attrs.status.isNew) dotColor = "#3182ce";
+                    else if (attrs.status.isDue) dotColor = "#e53e3e";
+                    else if (attrs.status.isLearned) dotColor = "#38a169";
+                    overCtx.fillStyle = dotColor;
+                    overCtx.beginPath();
+                    overCtx.arc(vp.x + nodeW/2 - 12 * scale, vp.y - nodeH/2 + 12 * scale, 3.5 * scale, 0, Math.PI * 2);
+                    overCtx.fill();
+                }
+
+                const fontSize = Math.max(9, 12 * scale);
+                overCtx.fillStyle = attrs.status?.isLocked ? "rgba(255,255,255,0.4)" : "#ffffff";
+                overCtx.font = `500 ${fontSize}px 'Merriweather', 'Roboto', sans-serif`;
+                overCtx.textAlign = "center";
+                overCtx.textBaseline = "middle";
+
+                let text = attrs.label || "";
+                let maxTextWidth = nodeW - 16 * scale;
+                if (maxTextWidth < 10) maxTextWidth = 10;
+                
+                let tw = overCtx.measureText(text).width;
+                if (tw > maxTextWidth) {
+                    const ratio = maxTextWidth / tw;
+                    const keepChars = Math.max(1, Math.floor(text.length * ratio) - 2);
+                    text = text.slice(0, keepChars) + '..';
+                }
+                overCtx.fillText(text, vp.x, vp.y);
+            });
+
+            groupNodes.forEach(group => {
+                const vp = renderer.graphToViewport({ x: group.x, y: group.y });
+                const gw = group.width * scale;
+                const gh = group.height * scale;
+                const minX = vp.x - gw / 2;
+                const minY = vp.y - gh / 2;
+
+                if (gw < 30 || gh < 20) return; 
+
+                const gData = miniGroups[group.id] || { color: '#555555' };
+                let baseColor = gData.color || '#555555';
+                if (!baseColor.startsWith('#')) baseColor = rgba2hex(baseColor) || '#555555';
+                baseColor = baseColor.padEnd(7, '0');
+                if (baseColor.length === 4) {
+                    baseColor = '#' + baseColor[1] + baseColor[1] + baseColor[2] + baseColor[2] + baseColor[3] + baseColor[3];
+                }
+
+                let r = parseInt(baseColor.slice(1, 3), 16) || 85;
+                let g = parseInt(baseColor.slice(3, 5), 16) || 85;
+                let b = parseInt(baseColor.slice(5, 7), 16) || 85;
+
+                overCtx.font = `600 13px 'Roboto', sans-serif`;
+                let text = group.id;
+                const maxTextW = gw - 16; 
+
+                let tw = overCtx.measureText(text).width;
+                if (tw > maxTextW) {
+                    const ratio = maxTextW / tw;
+                    const keepChars = Math.max(1, Math.floor(text.length * ratio) - 2);
+                    text = text.slice(0, keepChars) + '..';
+                    tw = overCtx.measureText(text).width;
+                }
+
+                const pillW = tw + 16; 
+                const pillH = 22; 
+                const pillX = minX + 5;
+                const pillY = minY + 5; 
+
+                overCtx.fillStyle = "rgba(30, 30, 30, 0.95)"; 
+                overCtx.fillRect(pillX, pillY, pillW, pillH);
+                
+                overCtx.strokeStyle = `rgba(${r}, ${g}, ${b}, 1.0)`; 
+                overCtx.lineWidth = 1.2;
+                overCtx.strokeRect(pillX, pillY, pillW, pillH);
+
+                overCtx.fillStyle = "#ffffff";
+                overCtx.textAlign = "left";
+                overCtx.textBaseline = "middle";
+                overCtx.fillText(text, pillX + 8, pillY + pillH / 2 + 1);
+            });
+
+            overCtx.restore();
+        });
+        
+        // setTimeout(() => renderer.refresh(), 10);
+        setTimeout(() => {
+           renderer.camera.animatedReset({ duration: 200 });
+        }, 50);
+        // setTimeout(() => renderer.refresh(), 100);
+        setTimeout(() => renderer.refresh(), 300);
+
+        return () => {
+            containerRef.current?.removeEventListener('wheel', handleWheel, { capture: true });
+            resizeObserver.disconnect();
+            renderer.kill();
+        };
+    }, [id, ns, repeats]);
+
+    const w = 350;
+    const h = 300;
+    const margin = 15;
+    
+    let finalX = x + margin;
+    let finalY = y + margin;
+
+    finalX = Math.min(finalX, window.innerWidth - w - margin);
+    finalX = Math.max(margin, finalX);
+
+    finalY = Math.min(finalY, window.innerHeight - h - margin);
+    finalY = Math.max(margin, finalY);
+
+    return createPortal(
+        <Box position="fixed" top={finalY} left={finalX} w={`${w}px`} h={`${h}px`} bg="#1e1e1e" border="1px solid color-mix(in srgb, #666 40%, transparent)" borderRadius="md" zIndex={99999} boxShadow="dark-lg">
+            <Box position="absolute" top="4px" right="4px" zIndex={10} cursor="pointer" onClick={(e) => { e.stopPropagation(); onClose?.(); }} bg="rgba(0,0,0,0.5)" borderRadius="4px" p="2px 6px" fontSize="10px" color="white" _hover={{ bg: 'rgba(255,255,255,0.2)' }}>✕</Box>
+            <div ref={containerRef} className="sigma-container" style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, zIndex: 1, backgroundColor: 'transparent' }} />
+            <canvas ref={overlayCanvasRef} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 2, backgroundColor: 'transparent' }} />
+        </Box>,
+        document.body
+    );
+});
+
+const Flow = React.forwardRef(({ onCanvasHover, onContextMenu, onDoubleClickNode, sel, onAltClick }: any, ref:any) => {
   const gCtx = useGraphCtx() as any;
   const { ns, setNs, gRef, groups, setGroups } = gCtx;
 
@@ -406,12 +1184,14 @@ const Flow = React.forwardRef(({ onCanvasHover, onContextMenu, onDoubleClickNode
   const groupDescendantsRef = useRef<Record<string, string[]>>({});
   const sortedGroupsRef = useRef<string[]>([]);
   const onDoubleClickNodeRef = useRef(onDoubleClickNode);
+  const onAltClickRef = useRef(onAltClick);
   const [cameraInfo, setCameraInfo] = useState({ x: 0, y: 0, ratio: 1 });
 
   const activeGroupsRef = useRef(activeGroups);
   useEffect(() => { activeGroupsRef.current = activeGroups; }, [activeGroups]);
 
   useEffect(() => { onDoubleClickNodeRef.current = onDoubleClickNode; }, [onDoubleClickNode]);
+  useEffect(() => { onAltClickRef.current = onAltClick; }, [onAltClick]);
 
   useEffect(() => {
     const desc: Record<string, string[]> = {};
@@ -605,18 +1385,17 @@ const Flow = React.forwardRef(({ onCanvasHover, onContextMenu, onDoubleClickNode
         let r = parseInt(baseColor.slice(1, 3), 16) || 85;
         let g = parseInt(baseColor.slice(3, 5), 16) || 85;
         let b = parseInt(baseColor.slice(5, 7), 16) || 85;
-        let a = 255;
+        let a = 0.05;
 
         if (isHovered) {
            r = Math.min(255, Math.floor(r * 1.2 + 20));
            g = Math.min(255, Math.floor(g * 1.2 + 20));
            b = Math.min(255, Math.floor(b * 1.2 + 20));
-           a = Math.min(1, a + 0.15); 
+           a = 0.1; 
         }
 
         underCtx.fillStyle = `rgba(${r}, ${g}, ${b}, ${a})`;
-        drawRoundRect(underCtx, minX, minY, gw, gh, 8 * scale);
-        underCtx.fill();
+        underCtx.fillRect(minX, minY, gw, gh);
       });
 
       graphRef.current.forEachNode((node, data) => {
@@ -675,6 +1454,7 @@ const Flow = React.forwardRef(({ onCanvasHover, onContextMenu, onDoubleClickNode
       });
 
       sortedGroupsRef.current.forEach(gName => {
+        const gData = activeGroupsRef.current[gName] || { color: '#555555' };
         const groupNode = graphRef.current.hasNode(gName) ? graphRef.current.getNodeAttributes(gName) : null;
         if (!groupNode || groupNode.width === undefined) return;
         
@@ -685,6 +1465,17 @@ const Flow = React.forwardRef(({ onCanvasHover, onContextMenu, onDoubleClickNode
         const minY = vp.y - gh / 2;
 
         if (gw < 30 || gh < 20) return; 
+
+        let baseColor = gData.color || '#555555';
+        if (!baseColor.startsWith('#')) baseColor = rgba2hex(baseColor) || '#555555';
+        baseColor = baseColor.padEnd(7, '0');
+        if (baseColor.length === 4) {
+          baseColor = '#' + baseColor[1] + baseColor[1] + baseColor[2] + baseColor[2] + baseColor[3] + baseColor[3];
+        }
+
+        let r = parseInt(baseColor.slice(1, 3), 16) || 85;
+        let g = parseInt(baseColor.slice(3, 5), 16) || 85;
+        let b = parseInt(baseColor.slice(5, 7), 16) || 85;
 
         overCtx.font = `600 13px 'Roboto', sans-serif`;
         let text = gName;
@@ -704,12 +1495,11 @@ const Flow = React.forwardRef(({ onCanvasHover, onContextMenu, onDoubleClickNode
         const pillY = minY + 5; 
 
         overCtx.fillStyle = "rgba(30, 30, 30, 0.95)"; 
-        drawRoundRect(overCtx, pillX, pillY, pillW, pillH, 6);
-        overCtx.fill();
+        overCtx.fillRect(pillX, pillY, pillW, pillH);
         
-        overCtx.strokeStyle = "rgba(255, 255, 255, 0.1)"; 
-        overCtx.lineWidth = 1;
-        overCtx.stroke();
+        overCtx.strokeStyle = `rgba(${r}, ${g}, ${b}, 1.0)`; 
+        overCtx.lineWidth = 1.2;
+        overCtx.strokeRect(pillX, pillY, pillW, pillH);
 
         overCtx.fillStyle = "#ffffff";
         overCtx.textAlign = "left";
@@ -737,6 +1527,13 @@ const Flow = React.forwardRef(({ onCanvasHover, onContextMenu, onDoubleClickNode
 
     renderer.on("clickNode", (e:any) => {
       const isCtrl = e.event.original.ctrlKey || e.event.original.metaKey;
+      const isAlt = e.event.original.altKey;
+      
+      if (isAlt) {
+        onAltClickRef.current?.(e.event.original, e.node);
+        return;
+      }
+      
       if (isCtrl) {
         if (curSelected.current.has(e.node)) curSelected.current.delete(e.node);
         else curSelected.current.add(e.node);
@@ -906,6 +1703,37 @@ const Flow = React.forwardRef(({ onCanvasHover, onContextMenu, onDoubleClickNode
         }
     };
 
+    const handleFlowWheel = (e: WheelEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const camera = (renderer as any).camera;
+        if (!e.ctrlKey && !e.metaKey) {
+            camera.setState({
+                x: camera.x + e.deltaX * camera.ratio / 100,
+                y: camera.y - e.deltaY * camera.ratio / 100
+            });
+        } else {
+            const rect = containerRef.current!.getBoundingClientRect();
+            const size = Math.max(rect.width, rect.height);
+            const mousePx = e.clientX - rect.left;
+            const mousePy = e.clientY - rect.top;
+            const dxPx = mousePx - rect.width / 2;
+            const dyPx = mousePy - rect.height / 2;
+            const dxNorm = dxPx / size;
+            const dyNorm = dyPx / size;
+            let newRatio = camera.ratio * Math.pow(1.01, e.deltaY);
+            newRatio = Math.max(0.01, Math.min(newRatio, 100));
+            const deltaRatio = camera.ratio - newRatio;
+
+            const newX = camera.x + dxNorm * deltaRatio;
+            const newY = camera.y - dyNorm * deltaRatio; 
+
+            camera.setState({ x: newX, y: newY, ratio: newRatio });
+        }
+    };
+    containerRef.current.addEventListener('wheel', handleFlowWheel, { capture: true, passive: false });
+
     containerRef.current.addEventListener('mousedown', onPointerDown, { capture: true });
     containerRef.current.addEventListener('touchstart', onPointerDown, { capture: true });
     window.addEventListener('mousemove', onPointerMove, { capture: true });
@@ -914,6 +1742,7 @@ const Flow = React.forwardRef(({ onCanvasHover, onContextMenu, onDoubleClickNode
     window.addEventListener('touchend', onPointerUp, { capture: true });
 
     return () => {
+      containerRef.current?.removeEventListener('wheel', handleFlowWheel, { capture: true });
       // @ts-ignore
       renderer.camera.removeListener("updated", updateTempNodePos);
       resizeObserver.disconnect();
@@ -1153,24 +1982,35 @@ const Flow = React.forwardRef(({ onCanvasHover, onContextMenu, onDoubleClickNode
 });
 
 const TreeRowContent = memo(({
-  item, actions, nsContent, groupData, isEditingCard, isSel, isFirstSel, isLastSel, isCanvasHovered, isDropTargetInside
+  item, actions, nsContent, groupData, isEditingCard, isSel, isFirstSel, isLastSel, isCanvasHovered, isDropTargetInside, graphName
 }: any) => {
-  const isGroup = item.type === 'group';
-  const itemHexColor = isGroup ? (groupData?.color?.startsWith('#') ? groupData.color : rgba2hex(groupData?.color || '#555555')) : null;
+  const isRoot = item.type === 'root';
+  const isGroup = item.type === 'group' || isRoot;
+  const itemHexColor = isRoot ? '#666666' : (isGroup ? (groupData?.color?.startsWith('#') ? groupData.color : rgba2hex(groupData?.color || '#555555')) : null);
   
   const [localColor, setLocalColor] = useState(itemHexColor || '#555555');
   const [isEditing, setIsEditing] = useState(false);
-  const [editName, setEditName] = useState(item.id);
+  const [editName, setEditName] = useState(isRoot ? graphName : item.id);
 
   useEffect(() => {
-    if (isGroup && localColor !== itemHexColor && itemHexColor) {
+    if (isRoot) setEditName(graphName);
+    else setEditName(item.id);
+  }, [isRoot, graphName, item.id]);
+
+  useEffect(() => {
+    if (isGroup && !isRoot && localColor !== itemHexColor && itemHexColor) {
       const handler = setTimeout(() => { actions.handleChangeGroupColor(item.id, localColor); }, 200);
       return () => clearTimeout(handler);
     }
-  }, [localColor, itemHexColor, item.id, isGroup, actions]);
+  }, [localColor, itemHexColor, item.id, isGroup, isRoot, actions]);
 
   const onRenameSubmit = () => {
     setIsEditing(false);
+    if (isRoot) {
+        if (editName && editName !== graphName) actions.handleRenameRoot(editName);
+        else setEditName(graphName);
+        return;
+    }
     if (!editName || editName === item.id || actions.hasGroup(editName)) { setEditName(item.id); return; }
     actions.handleRenameGroup(item.id, editName);
   };
@@ -1204,9 +2044,14 @@ const TreeRowContent = memo(({
       _hover={{ bg: isDropTargetInside ? 'rgba(13, 153, 255, 0.2)' : hoverBg }}
       onMouseOver={(e) => { e.stopPropagation(); actions.onHover(item.id); }}
       onMouseOut={(e) => { e.stopPropagation(); actions.onHover(null); }}
+      onMouseLeave={(e) => { e.stopPropagation(); actions.onHover(null); }}
       onClick={(e) => {
         if (isEditingCard) return; 
         e.stopPropagation();
+        if (e.altKey) {
+            actions.onAltClick(e, item.id, item.type);
+            return;
+        }
         actions.onClick(e, item.id, item.type);
       }}
       onDoubleClick={(e) => {
@@ -1220,25 +2065,26 @@ const TreeRowContent = memo(({
           <IconButton variant={'plain'} h={'20px'} w={'20px'} minW={'20px'} p={0} onClick={(e) => { e.stopPropagation(); actions.onToggleGroup(item.id); }}>
             {item.collapsed ? <LuChevronRight className={'smIcon'} /> : <LuChevronDown className={'smIcon'} />}
           </IconButton>
-          <LuPilcrow opacity={0.3} size={'12px'}/>
-
+          {isRoot ? null : <Text fontSize="10px" opacity={0.4} whiteSpace="nowrap" fontFamily="monospace">{item.numbering}</Text>}
           {isEditing ? (
             <input autoFocus value={editName} onChange={e => setEditName(e.target.value)}
               onBlur={onRenameSubmit} onClick={e => e.stopPropagation()}
-              onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') onRenameSubmit(); if (e.key === 'Escape') { setIsEditing(false); setEditName(item.id); } }}
+              onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') onRenameSubmit(); if (e.key === 'Escape') { setIsEditing(false); setEditName(isRoot ? graphName : item.id); } }}
               style={{ flex: 1, background: 'rgba(0,0,0,0.3)', color: 'white', outline: 'none', border: '1px solid gray', borderRadius: '3px', padding: '0 4px' }}
             />
           ) : (
-            <Box opacity={0.3} flex={1} onDoubleClick={(e) => { e.stopPropagation(); setIsEditing(true); }}>{item.id}</Box>
+            <Box opacity={isRoot ? 0.8 : 0.3} flex={1} fontWeight={isRoot ? 600 : 500} onDoubleClick={(e) => { e.stopPropagation(); setIsEditing(true); }}>{isRoot ? graphName : item.id}</Box>
           )}
-          <Box 
-            as="input" 
-            type="color" 
-            value={itemHexColor?.slice(0, 7) || '#555555'} 
-            onChange={(e:any)=>{ e.stopPropagation(); setLocalColor(e.target.value); }} 
-            onClick={(e:any)=>{ e.stopPropagation() }} 
-            style={{ width: '14px', height: '14px', padding: 0, border: 'none', background: 'none', cursor: 'pointer', borderRadius: '50%' }} 
-          />
+          {!isRoot && (
+            <Box 
+              as="input" 
+              type="color" 
+              value={itemHexColor?.slice(0, 7) || '#555555'} 
+              onChange={(e:any)=>{ e.stopPropagation(); setLocalColor(e.target.value); }} 
+              onClick={(e:any)=>{ e.stopPropagation() }} 
+              style={{ width: '14px', height: '14px', padding: 0, border: 'none', background: 'none', cursor: 'pointer', borderRadius: '50%' }} 
+            />
+          )}
         </Box>
       ) : (
         <Box 
@@ -1279,7 +2125,7 @@ const TreeRowContent = memo(({
 });
 
 const VirtualTreeRow = memo(({ 
-  item, style, actions, ns, groups, setRowHeight, selSet, hoveredNodeId, isFirstSel, isLastSel
+  item, style, actions, ns, groups, setRowHeight, selSet, hoveredNodeId, isFirstSel, isLastSel, graphName
 }: any) => {
   const isEditingCard = actions.editingId === item.id && item.type !== 'group';
   const contentRef = useRef<HTMLDivElement>(null);
@@ -1323,7 +2169,7 @@ const VirtualTreeRow = memo(({
       className={`tree-row ${isSel ? 'selected' : ''}`}
       data-tree-id={item.id}
       ref={contentRef}
-      draggable={!isEditingCard}
+      draggable={!isEditingCard && item.type !== 'root'}
       onDragStart={(e) => actions.onDragStart(e, item.id, item.type)}
       onDragOver={(e) => actions.onDragOverRow(e, item.id, item.type)}
       onDragLeave={actions.onDragLeaveRow}
@@ -1343,6 +2189,7 @@ const VirtualTreeRow = memo(({
         isLastSel={isLastSel}
         isCanvasHovered={hoveredNodeId === item.id}
         isDropTargetInside={isDropTargetInside}
+        graphName={graphName}
       />
     </Box>
   );
@@ -1365,10 +2212,11 @@ const VirtualTreeRow = memo(({
          prevIsEditing === nextIsEditing &&
          prevIsTarget === nextIsTarget &&
          prev.actions.dropTarget?.pos === next.actions.dropTarget?.pos &&
+         prev.actions.dropTarget?.depth === next.actions.dropTarget?.depth &&
          (prev.item.type === 'node' || prev.groups[prev.item.id] === next.groups[next.item.id]);
 });
 
-const VirtualTreeView = memo(React.forwardRef(({ flatTree, sel, ns, groups, actions, hoveredNodeId }: any, ref: any) => {
+const VirtualTreeView = memo(React.forwardRef(({ flatTree, sel, ns, groups, actions, hoveredNodeId, graphName }: any, ref: any) => {
   const[scrollTop, setScrollTop] = useState(0);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [containerHeight, setContainerHeight] = useState(600);
@@ -1490,7 +2338,7 @@ const VirtualTreeView = memo(React.forwardRef(({ flatTree, sel, ns, groups, acti
          {dropTarget && dropTargetIdx !== -1 && dropTarget.pos !== 'inside' && (
            <Box
               position="absolute"
-              left="0"
+              left={`${(dropTarget.depth !== undefined ? dropTarget.depth : 0) * 20 + 8}px`}
               right="0"
               height="2px"
               bg="#0d99ff"
@@ -1507,7 +2355,7 @@ const VirtualTreeView = memo(React.forwardRef(({ flatTree, sel, ns, groups, acti
               _before={{
                 content: '""',
                 position: "absolute",
-                left: "4px",
+                left: "-4px",
                 top: "-2.5px",
                 width: "7px",
                 height: "7px",
@@ -1547,6 +2395,7 @@ const VirtualTreeView = memo(React.forwardRef(({ flatTree, sel, ns, groups, acti
                groups={groups}
                setRowHeight={setRowHeight}
                hoveredNodeId={hoveredNodeId}
+               graphName={graphName}
              />
            );
          })}
@@ -1561,7 +2410,8 @@ const VirtualTreeView = memo(React.forwardRef(({ flatTree, sel, ns, groups, acti
          prev.hoveredNodeId === next.hoveredNodeId && 
          prev.actions.editingId === next.actions.editingId &&
          prev.actions.dropTarget?.id === next.actions.dropTarget?.id &&
-         prev.actions.dropTarget?.pos === next.actions.dropTarget?.pos;
+         prev.actions.dropTarget?.pos === next.actions.dropTarget?.pos &&
+         prev.actions.dropTarget?.depth === next.actions.dropTarget?.depth;
 });
 
 const reorderRootKeys = (obj: any, targetId: string, selectedIds: string[], pos: 'top'|'bottom'|'inside') => {
@@ -1585,6 +2435,7 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
   const[editingNodeId, setEditingNodeId] = useState<string | null>(null);
   
   const[hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+  const[altPopup, setAltPopup] = useState<{ id: string, x: number, y: number } | null>(null);
   
   const flowRef=useRef(null) as any;
   const treeRef=useRef<any>(null); 
@@ -1653,7 +2504,6 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
       const editingRow = document.querySelector(`[data-tree-id="${editingNodeId}"]`);
       if (editingRow && editingRow.contains(target)) return;
       
-      // Задержка позволяет Card выполнить свой нативный onBlur и сохранить изменения в стейт ns
       setTimeout(() => setEditingNodeId(null), 150);
     };
     const timer = setTimeout(() => {
@@ -1737,6 +2587,101 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
      return { nodeToGroup: n2g, groupToGroup: g2g, groupSets: gSets };
   }, [groups]);
   
+  const [lastSelectedIdx, setLastSelectedIdx] = useState<number | null>(null);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  
+  const flatTree = useMemo(() => {
+    const result: any[] = [];
+    const gNames = Object.keys(groups);
+    const rootGroups = gNames.filter(g => !groupToGroup[g]);
+    let counters: number[] = [];
+    
+    const rootId = '__root__';
+    const isRootCollapsed = collapsedGroups.has(rootId);
+    
+    result.push({ 
+        type: 'root', 
+        id: rootId, 
+        depth: 0, 
+        collapsed: isRootCollapsed, 
+        staticHeight: 32, 
+        extraTop: 0, 
+        numbering: '' 
+    });
+
+    if (!isRootCollapsed) {
+        const addGroup = (groupId: string, depth: number) => {
+            const isCollapsed = collapsedGroups.has(groupId);
+            const cIdx = depth - 1;
+            
+            if (counters.length <= cIdx) counters.push(0);
+            counters[cIdx]++;
+            counters = counters.slice(0, cIdx + 1);
+            const numbering = counters.join('.');
+            
+            result.push({ type: 'group', id: groupId, depth, collapsed: isCollapsed, staticHeight: 32, extraTop: 0, numbering });
+            
+            if (!isCollapsed) {
+                const seenGroups = new Set<string>();
+                const seenNodes = new Set<string>();
+                const directChildGroups = gNames.filter(c => groupToGroup[c] === groupId);
+                
+                const getChildGroupForNode = (node: string) => {
+                    for (let c of directChildGroups) {
+                        if (groupSets[c].has(node)) return c;
+                    }
+                    return null;
+                };
+
+                (groups[groupId].nodes || []).forEach((node: string) => {
+                    const childG = getChildGroupForNode(node);
+                    if (childG) {
+                        if (!seenGroups.has(childG)) {
+                            addGroup(childG, depth + 1);
+                            seenGroups.add(childG);
+                        }
+                    } else {
+                        if (!seenNodes.has(node) && ns[node] !== undefined) {
+                            result.push({ type: 'node', id: node, depth: depth + 1, staticHeight: 32 });
+                            seenNodes.add(node);
+                        }
+                    }
+                });
+                
+                directChildGroups.forEach(childG => {
+                    if (!seenGroups.has(childG)) {
+                        addGroup(childG, depth + 1);
+                    }
+                });
+            }
+        };
+
+        rootGroups.forEach(g => addGroup(g, 1));
+
+        Object.keys(ns).forEach(n => {
+            let inGroup = false;
+            for (let i = 0; i < gNames.length; i++) {
+                if (groupSets[gNames[i]].has(n)) {
+                    inGroup = true;
+                    break;
+                }
+            }
+            if (!inGroup && ns[n] !== undefined) {
+                result.push({ type: 'node', id: n, depth: 1, staticHeight: 32 });
+            }
+        });
+    }
+
+    return result;
+  }, [groups, ns, collapsedGroups, groupToGroup, groupSets]);
+
+  // Избавляемся от stale closures в treeActions: 
+  // используем реф для хранения актуальных состояний, которые не должны пересоздавать функции
+  const treeState = useRef({ sel, flatTree, groups, nodeToGroup, groupToGroup, groupSets, lastSelectedIdx, ns });
+  useEffect(() => {
+    treeState.current = { sel, flatTree, groups, nodeToGroup, groupToGroup, groupSets, lastSelectedIdx, ns };
+  });
+
   const[orderedIds, setOrderedIds] = useState<string[]>(Object.keys(ns).filter(k => sel.includes(k)));
   
   useEffect(() => { 
@@ -1757,10 +2702,13 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
   };
 
   const handleTopSort = () => { const sorted = topSort(ns, orderedIds); setOrderedIds(sorted.map(s => s.id)); };
-
   const handleRenameGroup = useCallback((oldName: string, newName: string) => {
     setGroups((prev: any) => { const updated = { ...prev }; updated[newName] = updated[oldName]; delete updated[oldName]; return updated; });
   },[setGroups]);
+
+  const handleRenameRoot = useCallback((newName: string) => {
+    setCurName({ '0': newName });
+  }, [setCurName]);
 
   const handleChangeGroupColor = useCallback((groupName: string, newColor: string) => {
     const hexColor = newColor.length === 7 ? newColor : normalizeColorToHex(newColor);
@@ -1780,7 +2728,6 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
     <span css={graphCSS} key={'header_tabs'}>
       <Tabs.Root className='headerTabs' value={mode} onValueChange={(e)=>{
         if (editingNodeId) {
-            // Если карточка редактируется, откладываем переход чтобы позволить сохраниться
             setTimeout(() => {
                 setMode(e.value);
                 setEditingNodeId(null);
@@ -1811,86 +2758,21 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
     }
   },[mode,groups,curName]);
 
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const toggleGroup = useCallback((gId: string) => {
     setCollapsedGroups(prev => { const next = new Set(prev); if (next.has(gId)) next.delete(gId); else next.add(gId); return next; });
   },[]);
 
-  const flatTree = useMemo(() => {
-    const result: any[] = [];
-    const gNames = Object.keys(groups);
-    const rootGroups = gNames.filter(g => !groupToGroup[g]);
-    
-    const addGroup = (groupId: string, depth: number) => {
-        const isCollapsed = collapsedGroups.has(groupId);
-        const extraTop = 0; 
-        result.push({ type: 'group', id: groupId, depth, collapsed: isCollapsed, staticHeight: 32, extraTop });
-        
-        if (!isCollapsed) {
-            const seenGroups = new Set<string>();
-            const seenNodes = new Set<string>();
-            const directChildGroups = gNames.filter(c => groupToGroup[c] === groupId);
-            
-            const getChildGroupForNode = (node: string) => {
-                for (let c of directChildGroups) {
-                    if (groupSets[c].has(node)) return c;
-                }
-                return null;
-            };
-
-            (groups[groupId].nodes || []).forEach((node: string) => {
-                const childG = getChildGroupForNode(node);
-                if (childG) {
-                    if (!seenGroups.has(childG)) {
-                        addGroup(childG, depth + 1);
-                        seenGroups.add(childG);
-                    }
-                } else {
-                    if (!seenNodes.has(node) && ns[node] !== undefined) {
-                        result.push({ type: 'node', id: node, depth: depth + 1, staticHeight: 32 });
-                        seenNodes.add(node);
-                    }
-                }
-            });
-            
-            directChildGroups.forEach(childG => {
-                if (!seenGroups.has(childG)) {
-                    addGroup(childG, depth + 1);
-                }
-            });
-        }
-    };
-
-    rootGroups.forEach(g => addGroup(g, 0));
-
-    Object.keys(ns).forEach(n => {
-        let inGroup = false;
-        for (let i = 0; i < gNames.length; i++) {
-            if (groupSets[gNames[i]].has(n)) {
-                inGroup = true;
-                break;
-            }
-        }
-        if (!inGroup && ns[n] !== undefined) {
-            result.push({ type: 'node', id: n, depth: 0, staticHeight: 32 });
-        }
-    });
-
-    return result;
-  }, [groups, ns, collapsedGroups, groupToGroup, groupSets]);
-
-  const [lastSelectedIdx, setLastSelectedIdx] = useState<number | null>(null);
-
   const getAllDescendantsHelper = useCallback((groupId: string) => {
+    const { groupSets: currentGroupSets, groupToGroup: currentGroupToGroup } = treeState.current;
     const result = new Set<string>();
     
-    if (groupSets[groupId]) {
-        groupSets[groupId].forEach(n => result.add(n));
+    if (currentGroupSets[groupId]) {
+        currentGroupSets[groupId].forEach(n => result.add(n));
     }
     
     const collectGroups = (gId: string) => {
-        Object.keys(groupToGroup).forEach(childG => {
-            if (groupToGroup[childG] === gId) {
+        Object.keys(currentGroupToGroup).forEach(childG => {
+            if (currentGroupToGroup[childG] === gId) {
                 result.add(childG);
                 collectGroups(childG);
             }
@@ -1899,19 +2781,20 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
     collectGroups(groupId);
     
     return Array.from(result);
-  }, [groupSets, groupToGroup]);
+  }, []);
 
   const getDescendantGroups = useCallback((g: string) => {
+    const { groupToGroup: currentGroupToGroup } = treeState.current;
     const res: string[] = [];
     const q = [g];
     while (q.length) {
         const cur = q.shift()!;
-        Object.keys(groupToGroup).forEach(c => {
-            if (groupToGroup[c] === cur) { res.push(c); q.push(c); }
+        Object.keys(currentGroupToGroup).forEach(c => {
+            if (currentGroupToGroup[c] === cur) { res.push(c); q.push(c); }
         });
     }
     return res;
-  }, [groupToGroup]);
+  }, []);
 
   const handleCreateGroup = useCallback((name: string, ids: string[]) => {
     const color = generateRandomHexColor(0.15);
@@ -1919,11 +2802,12 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
   }, [setGroups]);
 
   const handleAddNodesToGroup = useCallback((targetGroupName: string) => {
+    const { sel: currentSel, groups: currentGroups, ns: currentNs, groupSets: currentGroupSets, groupToGroup: currentGroupToGroup } = treeState.current;
     const nodesToAdd = new Set<string>();
-    sel.forEach(id => {
-        if (groups[id]) {
-            groupSets[id].forEach(n => nodesToAdd.add(n));
-        } else if (ns[id]) {
+    currentSel.forEach(id => {
+        if (currentGroups[id]) {
+            currentGroupSets[id].forEach(n => nodesToAdd.add(n));
+        } else if (currentNs[id]) {
             nodesToAdd.add(id);
         }
     });
@@ -1937,11 +2821,11 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
               ...updated[curr], 
               nodes: [...new Set([...updated[curr].nodes, ...arrToAdd])] 
           };
-          curr = groupToGroup[curr];
+          curr = currentGroupToGroup[curr];
       }
       return updated;
     });
-  }, [sel, setGroups, groupToGroup, groups, ns, groupSets]);
+  }, [setGroups]);
 
   const menuItems = useMemo(() => {
     const selSetFast = new Set(sel);
@@ -2018,15 +2902,16 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
   const handleTreeContextMenu = useCallback((e: React.MouseEvent, itemId: string, itemType: string) => {
     e.preventDefault();
     e.stopPropagation();
-    let newSel = [...sel];
-    const selSetFast = new Set(sel);
+    const { sel: currentSel } = treeState.current;
+    const selSetFast = new Set(currentSel);
+    let newSel = [...currentSel];
 
     if (itemType === 'group') {
       const groupDescendants = getAllDescendantsHelper(itemId);
       const groupAndDescendants = [itemId, ...groupDescendants];
       const isFullySelected = groupAndDescendants.every(id => selSetFast.has(id));
       if (!isFullySelected) {
-        newSel = Array.from(new Set([...sel, ...groupAndDescendants]));
+        newSel = Array.from(new Set([...currentSel, ...groupAndDescendants]));
         setSel(newSel);
       }
     } else {
@@ -2036,21 +2921,40 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
       }
     }
     openMenu(e);
-  },[sel, getAllDescendantsHelper, setSel, openMenu]);
-
+  },[getAllDescendantsHelper, openMenu]);
 
   const treeActions = useMemo(() => {
-    const selSetFast = new Set(sel);
-
     return {
       handleRenameGroup,
+      handleRenameRoot,
       handleChangeGroupColor,
       handleUngroup,
       onToggleGroup: toggleGroup,
-      onHover: (id: string | null) => flowRef.current?.setHoveredExternally(id),
+      onHover: (id: string | null) => {
+          // if (!id) setAltPopup(null);
+          // flowRef.current?.setHoveredExternally(id);
+      },
+      onAltClick: (e: React.MouseEvent, id: string, type: string) => {
+          if (type === 'group' || type === 'root') {
+              const { ns, groups } = treeState.current;
+              let nodes: string[] = [];
+              let tGroups: string[] = [];
+              if (type === 'group') {
+                  const desc = getAllDescendantsHelper(id);
+                  nodes = desc.filter(x => ns[x] !== undefined);
+                  tGroups = [id, ...getDescendantGroups(id)];
+              } else {
+                  nodes = Object.keys(ns);
+                  tGroups = Object.keys(groups);
+              }
+              setAltPopup({ id, type, x: e.clientX, y: e.clientY, targetNodes: nodes, targetGroups: tGroups });
+          } else {
+              setAltPopup({ id, type: 'node', x: e.clientX, y: e.clientY, targetGroups: [] });
+          }
+      },
       onContextMenu: handleTreeContextMenu,
       editingId: editingNodeId,
-      hasGroup: (name: string) => !!groups[name],
+      hasGroup: (name: string) => !!treeState.current.groups[name],
       dropTarget,
       
       onClick: (e: React.MouseEvent, itemId: string, itemType: string) => {
@@ -2062,19 +2966,22 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
 
         const isShift = e.shiftKey;
         const isCtrl = e.ctrlKey || e.metaKey;
-        let newSel = [...sel];
-        const index = flatTree.findIndex(i => i.id === itemId);
+        
+        const { sel: currentSel, flatTree: currentFlatTree, lastSelectedIdx: currentLastSelectedIdx } = treeState.current;
+        const selSetFast = new Set(currentSel);
+        let newSel = [...currentSel];
+        const index = currentFlatTree.findIndex(i => i.id === itemId);
 
         if (itemType === 'group') {
           const groupDescendants = getAllDescendantsHelper(itemId);
           const groupAndDescendants = [itemId, ...groupDescendants];
           
-          if (isShift && lastSelectedIdx !== null) {
-            const start = Math.min(lastSelectedIdx, index);
-            const end = Math.max(lastSelectedIdx, index);
-            const rangeIds = flatTree.slice(start, end + 1).map(i => i.id);
+          if (isShift && currentLastSelectedIdx !== null) {
+            const start = Math.min(currentLastSelectedIdx, index);
+            const end = Math.max(currentLastSelectedIdx, index);
+            const rangeIds = currentFlatTree.slice(start, end + 1).map((i: any) => i.id);
             if (isCtrl) {
-                const toAdd = rangeIds.filter(id => !selSetFast.has(id));
+                const toAdd = rangeIds.filter((id: string) => !selSetFast.has(id));
                 newSel = [...newSel, ...toAdd];
             }
             else newSel = rangeIds;
@@ -2082,7 +2989,7 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
             const allSelected = groupAndDescendants.every(n => selSetFast.has(n));
             const gadSet = new Set(groupAndDescendants);
             if (allSelected) {
-                newSel = newSel.filter(id => !gadSet.has(id));
+                newSel = newSel.filter((id: string) => !gadSet.has(id));
             } else {
                 const toAdd = groupAndDescendants.filter(id => !selSetFast.has(id));
                 newSel = [...newSel, ...toAdd];
@@ -2092,23 +2999,23 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
           }
           
           setLastSelectedIdx(index);
-          if (newSel.length === sel.length && newSel.every(id => selSetFast.has(id))) return;
+          if (newSel.length === currentSel.length && newSel.every(id => selSetFast.has(id))) return;
           setSel(newSel);
           return;
         }
 
-        if (isShift && lastSelectedIdx !== null) {
-          const start = Math.min(lastSelectedIdx, index);
-          const end = Math.max(lastSelectedIdx, index);
-          const rangeIds = flatTree.slice(start, end + 1).map(i => i.id);
+        if (isShift && currentLastSelectedIdx !== null) {
+          const start = Math.min(currentLastSelectedIdx, index);
+          const end = Math.max(currentLastSelectedIdx, index);
+          const rangeIds = currentFlatTree.slice(start, end + 1).map((i: any) => i.id);
           
           if (isCtrl) {
-              const toAdd = rangeIds.filter(id => !selSetFast.has(id));
+              const toAdd = rangeIds.filter((id: string) => !selSetFast.has(id));
               newSel = [...newSel, ...toAdd];
           }
           else newSel = rangeIds;
         } else if (isCtrl) {
-          if (selSetFast.has(itemId)) newSel = newSel.filter(id => id !== itemId);
+          if (selSetFast.has(itemId)) newSel = newSel.filter((id: string) => id !== itemId);
           else newSel.push(itemId);
           setLastSelectedIdx(index);
         } else {
@@ -2116,7 +3023,7 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
           setLastSelectedIdx(index);
         }
         
-        if (newSel.length === sel.length && newSel.every(id => selSetFast.has(id))) return;
+        if (newSel.length === currentSel.length && newSel.every(id => selSetFast.has(id))) return;
         setSel(newSel);
       },
 
@@ -2124,8 +3031,11 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
         setEditingNodeId(id);
       },
 
-      onDragStart: (e: React.DragEvent, dragId: string, type: 'node' | 'group') => {
-        const selectedIds = type === 'group' ? Array.from(groupSets[dragId] || []) : (selSetFast.has(dragId) ? sel.filter(s => ns[s] !== undefined) : [dragId]);
+      onDragStart: (e: React.DragEvent, dragId: string, type: 'node' | 'group' | 'root') => {
+        if (type === 'root') return;
+        const { sel: currentSel, groupSets: currentGroupSets, ns: currentNs } = treeState.current;
+        const selSetFast = new Set(currentSel);
+        const selectedIds = type === 'group' ? Array.from(currentGroupSets[dragId] || []) : (selSetFast.has(dragId) ? currentSel.filter(s => currentNs[s] !== undefined) : [dragId]);
         const payload = { id: dragId, type, selectedIds };
         
         dragFallbackRef.current = payload;
@@ -2141,16 +3051,19 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
         setTimeout(() => document.body.removeChild(dragImage), 0);
       },
 
-      onDragOverRow: (e: React.DragEvent, id: string, type: 'node'|'group') => { 
+      onDragOverRow: (e: React.DragEvent, id: string, type: 'node'|'group'|'root') => { 
           e.preventDefault(); 
           e.stopPropagation(); 
           e.dataTransfer.dropEffect = 'move';
           
           const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+          const x = e.clientX - rect.left;
           const y = e.clientY - rect.top;
           let pos: 'top'|'bottom'|'inside' = 'inside';
 
-          if (type === 'node') {
+          if (type === 'root') {
+              pos = 'inside';
+          } else if (type === 'node') {
               pos = y < rect.height / 2 ? 'top' : 'bottom';
           } else {
               if (y < rect.height * 0.25) pos = 'top';
@@ -2198,11 +3111,13 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
           const { id: dragId, type: dragType, selectedIds } = data;
           const nodesToMove = selectedIds;
           
+          const { groupToGroup: currentGroupToGroup, nodeToGroup: currentNodeToGroup } = treeState.current;
+
           if (dragType === 'group' && targetType === 'group') {
             let curr: string | undefined = targetId;
             while (curr) {
               if (curr === dragId) return; 
-              curr = groupToGroup[curr];
+              curr = currentGroupToGroup[curr];
             }
           }
 
@@ -2227,7 +3142,7 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
             if (pos === 'inside' && targetType === 'group') {
                 insertTarget = targetId;
             } else {
-                insertTarget = targetType === 'group' ? groupToGroup[targetId] : nodeToGroup[targetId];
+                insertTarget = targetType === 'group' ? currentGroupToGroup[targetId] : currentNodeToGroup[targetId];
             }
 
             if (insertTarget) {
@@ -2260,13 +3175,208 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
                         }
                         next[curr] = { ...next[curr], nodes: arr };
                     }
-                    curr = groupToGroup[curr];
+                    curr = currentGroupToGroup[curr];
                 }
             } else if (!insertTarget && targetType === 'node') {
                 if (dragType === 'node') {
                     nsUpdateParams = { target: targetId, ids: nodesToMove, p: pos };
                 }
             }
+            return next;
+          });
+
+          if (nsUpdateParams) {
+              setTimeout(() => {
+                 setNs((prevNs: any) => reorderRootKeys(prevNs, nsUpdateParams!.target, nsUpdateParams!.ids, nsUpdateParams!.p));
+              }, 0);
+          }
+        } catch(err) { console.error('Drop error:', err); }
+      },onDragOverRow: (e: React.DragEvent, id: string, type: 'node'|'group') => { 
+          e.preventDefault(); 
+          e.stopPropagation(); 
+          e.dataTransfer.dropEffect = 'move';
+          
+          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+          const x = e.clientX - rect.left;
+          const y = e.clientY - rect.top;
+          let pos: 'top'|'bottom'|'inside' = 'inside';
+
+          if (type === 'node') {
+              pos = y < rect.height / 2 ? 'top' : 'bottom';
+          } else {
+              if (y < rect.height * 0.25) pos = 'top';
+              else if (y > rect.height * 0.75) pos = 'bottom';
+              else pos = 'inside';
+          }
+
+          const { flatTree } = treeState.current;
+          const targetItem = flatTree.find((i: any) => i.id === id);
+          const maxDepth = targetItem ? targetItem.depth : 0;
+
+          let targetDepth = maxDepth;
+          if (pos !== 'inside') {
+              const hoveredDepth = Math.max(1, Math.floor((x - 10) / 20));
+              targetDepth = Math.min(maxDepth, hoveredDepth);
+          } else {
+              targetDepth = maxDepth + 1;
+          }
+          
+          setDropTarget(prev => {
+              if (prev?.id === id && prev?.pos === pos && prev?.depth === targetDepth) return prev;
+              return { id, pos, depth: targetDepth };
+          });
+      },
+      
+      onDragOverRoot: (e: React.DragEvent) => {
+          setDropTarget(null); 
+      },
+
+      onDragLeaveRow: (e: React.DragEvent) => {},
+
+      onDrop: (e: React.DragEvent, targetId: string, targetType: 'node'|'group'|'root') => {
+        e.preventDefault(); 
+        e.stopPropagation();
+
+        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        let pos: 'top'|'bottom'|'inside' = 'inside';
+        
+        if (targetType === 'root') {
+            pos = 'inside';
+        } else if (targetType === 'node') {
+            pos = y < rect.height / 2 ? 'top' : 'bottom';
+        } else {
+            if (y < rect.height * 0.25) pos = 'top';
+            else if (y > rect.height * 0.75) pos = 'bottom';
+            else pos = 'inside';
+        }
+
+        const { flatTree, groupToGroup, nodeToGroup } = treeState.current;
+        const targetItem = flatTree.find((i: any) => i.id === targetId);
+        const targetMaxDepth = targetItem ? targetItem.depth : 0;
+
+        let targetDepth = targetMaxDepth;
+        if (pos !== 'inside') {
+            const hoveredDepth = Math.max(1, Math.floor((x - 10) / 20));
+            targetDepth = Math.min(targetMaxDepth, hoveredDepth);
+        } else {
+            targetDepth = targetMaxDepth + 1;
+        }
+
+        const finalDepth = dropTarget?.depth !== undefined ? dropTarget.depth : targetDepth;
+        setDropTarget(null);
+
+        try {
+          let data;
+          try {
+              data = JSON.parse(e.dataTransfer.getData('application/json'));
+          } catch(err) {}
+          if (!data || Object.keys(data).length === 0) data = dragFallbackRef.current;
+          if (!data) return;
+
+          const { id: dragId, type: dragType, selectedIds } = data;
+          const nodesToMove = selectedIds;
+          
+          if (dragType === 'group' && targetType === 'group') {
+            let curr: string | undefined = targetId;
+            while (curr) {
+              if (curr === dragId) return; 
+              curr = groupToGroup[curr];
+            }
+          }
+
+          let insertGroup: string | null = null;
+          if (pos === 'inside' && targetType === 'group') {
+              insertGroup = targetId;
+          } else if (pos === 'inside' && targetType === 'root') {
+              insertGroup = null;
+          } else {
+              const chain = [];
+              let curr = targetType === 'group' ? groupToGroup[targetId] : nodeToGroup[targetId];
+              while (curr) {
+                  chain.push(curr);
+                  curr = groupToGroup[curr];
+              }
+              chain.reverse();
+              if (finalDepth <= 1) {
+                  insertGroup = null;
+              } else {
+                  insertGroup = chain[finalDepth - 2];
+              }
+          }
+
+          let anchorId = targetId;
+          if (pos !== 'inside' && insertGroup !== (targetType === 'group' ? groupToGroup[targetId] : nodeToGroup[targetId])) {
+              let curr: string | undefined = targetType === 'group' ? targetId : nodeToGroup[targetId];
+              while (curr && groupToGroup[curr] !== (insertGroup || undefined)) {
+                  curr = groupToGroup[curr];
+              }
+              if (curr) anchorId = curr;
+          }
+
+          let nsUpdateParams: { target: string, ids: string[], p: 'top'|'bottom' } | null = null;
+          
+          setGroups((prev: any) => {
+            let next = { ...prev };
+            
+            let groupsToKeepNodes = new Set<string>();
+            if (dragType === 'group') {
+                groupsToKeepNodes.add(dragId);
+                getDescendantGroups(dragId).forEach(c => groupsToKeepNodes.add(c));
+            }
+
+            Object.keys(next).forEach(g => {
+                if (!groupsToKeepNodes.has(g)) {
+                    next[g] = { ...next[g], nodes: next[g].nodes.filter((n: string) => !nodesToMove.includes(n)) };
+                }
+            });
+
+            if (insertGroup) {
+                const arr = [...(next[insertGroup]?.nodes || [])];
+                if (pos === 'inside' && targetId === insertGroup) {
+                    arr.push(...nodesToMove);
+                } else {
+                    let targetIdx = -1;
+                    if (prev[anchorId]) {
+                        // Если anchorId - это группа, ищем индекс её первого дочернего узла в массиве
+                        const targetNodes = prev[anchorId].nodes || [];
+                        for (let i = 0; i < arr.length; i++) {
+                            if (targetNodes.includes(arr[i])) { targetIdx = i; break; }
+                        }
+                    } else {
+                        targetIdx = arr.indexOf(anchorId);
+                    }
+                    
+                    if (targetIdx !== -1) {
+                        arr.splice(pos === 'top' ? targetIdx : targetIdx + 1, 0, ...nodesToMove);
+                    } else {
+                        arr.push(...nodesToMove);
+                    }
+                }
+                next[insertGroup] = { ...next[insertGroup], nodes: arr };
+            } else if (!prev[anchorId]) {
+                // Если мы бросаем на корень и якорь - это не группа (а обычный узел)
+                if (dragType === 'node') {
+                    nsUpdateParams = { target: anchorId, ids: nodesToMove, p: pos };
+                }
+            }
+
+            // --- ПЕРЕСОРТИРОВКА ГРУПП ---
+            if (dragType === 'group' && pos !== 'inside') {
+                const keys = Object.keys(next).filter(k => k !== dragId);
+                const targetIdx = keys.indexOf(anchorId);
+                if (targetIdx !== -1) {
+                    keys.splice(pos === 'top' ? targetIdx : targetIdx + 1, 0, dragId);
+                } else {
+                    keys.push(dragId);
+                }
+                // Пересобираем объект groups с новым порядком ключей
+                const reordered: any = {};
+                keys.forEach(k => { reordered[k] = next[k]; });
+                next = reordered;
+            }
+
             return next;
           });
 
@@ -2306,113 +3416,259 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
         } catch(err) {}
       },
     }
-  },[sel, flatTree, groups, nodeToGroup, groupToGroup, lastSelectedIdx, handleRenameGroup, handleChangeGroupColor, handleUngroup, toggleGroup, setGroups, handleTreeContextMenu, editingNodeId, ns, getAllDescendantsHelper, getDescendantGroups, dropTarget, groupSets]);
+  },[handleRenameGroup, handleRenameRoot, handleChangeGroupColor, handleUngroup, toggleGroup, handleTreeContextMenu, editingNodeId, dropTarget, getAllDescendantsHelper, getDescendantGroups]);
 
-  const handleGlobalKeyDown = useCallback((e: React.KeyboardEvent) => {
+  const handleGlobalKeyDown = useCallback(async (e: React.KeyboardEvent) => {
+    const { sel: currentSel, groups: currentGroups, groupSets: currentGroupSets, ns: currentNs, nodeToGroup: currentNodeToGroup, groupToGroup: currentGroupToGroup } = treeState.current;
+    
     if (e.key === 'Escape') {
       if (editingNodeId) {
           setTimeout(() => setEditingNodeId(null), 150);
       }
+      setAltPopup(null);
     }
     
     const target = e.target as HTMLElement;
     const isTyping = ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable;
     if (isTyping) return;
 
+    if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'c' || e.key.toLowerCase() === 'x')) {
+        if (currentSel.length > 0) {
+            const toCopy: Record<string, string> = {};
+            const nodesToCopy = new Set<string>();
+            currentSel.forEach(id => {
+                if (currentGroups[id]) {
+                    currentGroupSets[id].forEach(n => nodesToCopy.add(n));
+                } else if (currentNs[id]) {
+                    nodesToCopy.add(id);
+                }
+            });
+            nodesToCopy.forEach(id => { toCopy[id] = currentNs[id]; });
+            await navigator.clipboard.writeText(JSON.stringify(toCopy));
+            
+            if (e.key.toLowerCase() === 'x') {
+                const filtered = Object.keys(currentNs).filter((k:any) => !nodesToCopy.has(k)).reduce((obj:any,k) => { obj[k] = currentNs[k]; return obj; }, {});
+                setNs(filtered);
+                setGroups((prev: any) => {
+                    const next = { ...prev };
+                    Object.keys(next).forEach(g => {
+                        next[g] = { ...next[g], nodes: next[g].nodes.filter((n: string) => !nodesToCopy.has(n)) };
+                    });
+                    return next;
+                });
+            }
+            e.preventDefault();
+            return;
+        }
+    }
+
     if (e.key==='Delete') {
-      const selSetFast = new Set(sel);
-      const filtered = Object.keys(ns).filter((k:any) => !selSetFast.has(k)).reduce((obj:any,k) => { obj[k] = ns[k]; return obj; }, {});
+      const selSetFast = new Set(currentSel);
+      const filtered = Object.keys(currentNs).filter((k:any) => !selSetFast.has(k)).reduce((obj:any,k) => { obj[k] = currentNs[k]; return obj; }, {});
       setNs(filtered)
     }
 
-    if ((e.key.toLowerCase() === 'a' || e.key.toLowerCase() === 'b') && sel.length > 0 && !e.ctrlKey && !e.metaKey) {
+    if ((e.key.toLowerCase() === 'a' || e.key.toLowerCase() === 'b') && currentSel.length > 0 && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();
-        const targetId = sel[0];
+        const targetId = currentSel[0];
         const isAbove = e.key.toLowerCase() === 'a';
-        const newId = `id_${Date.now()}`;
-        const targetType = groups[targetId] ? 'group' : 'node';
-        const targetGroup = targetType === 'group' ? targetId : nodeToGroup[targetId];
-
-        const afterAdd = () => {
-            setEditingNodeId(newId);
-            setSel([newId]);
-            // Даем React время отрендерить добавленный элемент, затем скроллим к нему для фокуса
-            setTimeout(() => {
-                treeRef.current?.scrollToNode(newId);
-            }, 50);
-        };
-
-        if (targetType === 'group') {
-            setGroups((prev: any) => {
-                const next = {...prev};
-                let curr: string | undefined = targetId;
-                let first = true;
-                while (curr && next[curr]) {
-                    const nodes = [...(next[curr].nodes || [])];
-                    if (first) {
-                        next[curr] = {...next[curr], nodes: isAbove ? [newId, ...nodes] : [...nodes, newId]};
-                        first = false;
-                    } else {
-                        nodes.push(newId);
-                        next[curr] = {...next[curr], nodes};
-                    }
-                    curr = groupToGroup[curr];
+        
+        let pastedNodes: Record<string, string> | null = null;
+        try {
+            const text = await navigator.clipboard.readText();
+            const parsed = JSON.parse(text);
+            if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+                if (Object.values(parsed).every(v => typeof v === 'string')) {
+                    pastedNodes = parsed as Record<string, string>;
                 }
-                return next;
-            });
-            setNs((prev: any) => ({...prev, [newId]: ''}));
-            afterAdd();
-            return;
-        }
+            }
+        } catch (err) {}
 
-        if (targetGroup) {
-            setGroups((prev: any) => {
-                const next = {...prev};
-                let curr: string | undefined = targetGroup;
-                let first = true;
-                while (curr && next[curr]) {
-                    const nodes = [...(next[curr].nodes || [])];
-                    if (first) {
-                        const idx = nodes.indexOf(targetId);
-                        if (idx !== -1) {
-                            nodes.splice(isAbove ? idx : idx + 1, 0, newId);
+        if (pastedNodes && Object.keys(pastedNodes).length > 0) {
+            const newIdsMap: Record<string, string> = {};
+            const newNsAddition: Record<string, string> = {};
+            const addedIds: string[] = [];
+
+            for (const [oldId, content] of Object.entries(pastedNodes)) {
+                let finalId = oldId;
+                if (currentNs[oldId] !== undefined) {
+                    finalId = ID.unique();
+                    newIdsMap[oldId] = finalId;
+                }
+                addedIds.push(finalId);
+                newNsAddition[finalId] = content;
+            }
+
+            for (const [id, content] of Object.entries(newNsAddition)) {
+                let newContent = content;
+                for (const [oldId, newId] of Object.entries(newIdsMap)) {
+                    const regex = new RegExp(`<id=${oldId}>`, 'g');
+                    newContent = newContent.replace(regex, `<id=${newId}>`);
+                }
+                newNsAddition[id] = newContent;
+            }
+
+            const targetType = currentGroups[targetId] ? 'group' : 'node';
+            const targetGroup = targetType === 'group' ? targetId : currentNodeToGroup[targetId];
+
+            const afterAdd = () => {
+                setSel(addedIds);
+            };
+
+            if (targetType === 'group') {
+                setGroups((prev: any) => {
+                    const next = {...prev};
+                    let curr: string | undefined = targetId;
+                    let first = true;
+                    while (curr && next[curr]) {
+                        const nodes = [...(next[curr].nodes || [])];
+                        if (first) {
+                            next[curr] = {...next[curr], nodes: isAbove ? [...addedIds, ...nodes] : [...nodes, ...addedIds]};
+                            first = false;
+                        } else {
+                            nodes.push(...addedIds);
+                            next[curr] = {...next[curr], nodes};
+                        }
+                        curr = currentGroupToGroup[curr];
+                    }
+                    return next;
+                });
+                setNs((prev: any) => ({...prev, ...newNsAddition}));
+                afterAdd();
+                return;
+            }
+
+            if (targetGroup) {
+                setGroups((prev: any) => {
+                    const next = {...prev};
+                    let curr: string | undefined = targetGroup;
+                    let first = true;
+                    while (curr && next[curr]) {
+                        const nodes = [...(next[curr].nodes || [])];
+                        if (first) {
+                            const idx = nodes.indexOf(targetId);
+                            if (idx !== -1) {
+                                nodes.splice(isAbove ? idx : idx + 1, 0, ...addedIds);
+                            } else {
+                                nodes.push(...addedIds);
+                            }
+                            next[curr] = {...next[curr], nodes};
+                            first = false;
+                        } else {
+                            nodes.push(...addedIds);
+                            next[curr] = {...next[curr], nodes};
+                        }
+                        curr = currentGroupToGroup[curr];
+                    }
+                    return next;
+                });
+                setNs((prev: any) => ({...prev, ...newNsAddition}));
+                afterAdd();
+            } else {
+                setNs((prev: any) => {
+                    const next: any = {};
+                    let added = false;
+                    for (const key of Object.keys(prev)) {
+                        if (key === targetId && isAbove) { 
+                            Object.assign(next, newNsAddition); 
+                            added = true; 
+                        }
+                        next[key] = prev[key];
+                        if (key === targetId && !isAbove) { 
+                            Object.assign(next, newNsAddition); 
+                            added = true; 
+                        }
+                    }
+                    if (!added) Object.assign(next, newNsAddition);
+                    return next;
+                });
+                afterAdd();
+            }
+        } else {
+            const newId = `id_${Date.now()}`;
+            const targetType = currentGroups[targetId] ? 'group' : 'node';
+            const targetGroup = targetType === 'group' ? targetId : currentNodeToGroup[targetId];
+
+            const afterAdd = () => {
+                setEditingNodeId(newId);
+                setSel([newId]);
+                setTimeout(() => {
+                    treeRef.current?.scrollToNode(newId);
+                }, 50);
+            };
+
+            if (targetType === 'group') {
+                setGroups((prev: any) => {
+                    const next = {...prev};
+                    let curr: string | undefined = targetId;
+                    let first = true;
+                    while (curr && next[curr]) {
+                        const nodes = [...(next[curr].nodes || [])];
+                        if (first) {
+                            next[curr] = {...next[curr], nodes: isAbove ? [newId, ...nodes] : [...nodes, newId]};
+                            first = false;
                         } else {
                             nodes.push(newId);
+                            next[curr] = {...next[curr], nodes};
                         }
-                        next[curr] = {...next[curr], nodes};
-                        first = false;
-                    } else {
-                        nodes.push(newId);
-                        next[curr] = {...next[curr], nodes};
+                        curr = currentGroupToGroup[curr];
                     }
-                    curr = groupToGroup[curr];
-                }
-                return next;
-            });
-            setNs((prev: any) => ({...prev, [newId]: ''}));
-            afterAdd();
-        } else {
-            setNs((prev: any) => {
-                const next: any = {};
-                let added = false;
-                for (const key of Object.keys(prev)) {
-                    if (key === targetId && isAbove) { next[newId] = ''; added = true; }
-                    next[key] = prev[key];
-                    if (key === targetId && !isAbove) { next[newId] = ''; added = true; }
-                }
-                if (!added) next[newId] = '';
-                return next;
-            });
-            afterAdd();
+                    return next;
+                });
+                setNs((prev: any) => ({...prev, [newId]: ''}));
+                afterAdd();
+                return;
+            }
+
+            if (targetGroup) {
+                setGroups((prev: any) => {
+                    const next = {...prev};
+                    let curr: string | undefined = targetGroup;
+                    let first = true;
+                    while (curr && next[curr]) {
+                        const nodes = [...(next[curr].nodes || [])];
+                        if (first) {
+                            const idx = nodes.indexOf(targetId);
+                            if (idx !== -1) {
+                                nodes.splice(isAbove ? idx : idx + 1, 0, newId);
+                            } else {
+                                nodes.push(newId);
+                            }
+                            next[curr] = {...next[curr], nodes};
+                            first = false;
+                        } else {
+                            nodes.push(newId);
+                            next[curr] = {...next[curr], nodes};
+                        }
+                        curr = currentGroupToGroup[curr];
+                    }
+                    return next;
+                });
+                setNs((prev: any) => ({...prev, [newId]: ''}));
+                afterAdd();
+            } else {
+                setNs((prev: any) => {
+                    const next: any = {};
+                    let added = false;
+                    for (const key of Object.keys(prev)) {
+                        if (key === targetId && isAbove) { next[newId] = ''; added = true; }
+                        next[key] = prev[key];
+                        if (key === targetId && !isAbove) { next[newId] = ''; added = true; }
+                    }
+                    if (!added) next[newId] = '';
+                    return next;
+                });
+                afterAdd();
+            }
         }
     }
 
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'g') {
       e.preventDefault();
       if (e.shiftKey) {
-        const selectedSet = new Set(sel);
+        const selectedSet = new Set(currentSel);
         let groupToUngroup: string | null = null;
-        for (const gName of Object.keys(groups)) {
+        for (const gName of Object.keys(currentGroups)) {
           const allDescendants = getAllDescendantsHelper(gName);
           if (allDescendants.length > 0 && allDescendants.every(id => selectedSet.has(id))) {
             groupToUngroup = gName; break;
@@ -2422,7 +3678,7 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
         if (groupToUngroup) {
           setGroups((prev: any) => {
             const next = { ...prev };
-            const parentGroup = groupToGroup[groupToUngroup!];
+            const parentGroup = currentGroupToGroup[groupToUngroup!];
             const descendants = next[groupToUngroup!]?.nodes ||[];
             
             if (parentGroup && next[parentGroup]) {
@@ -2433,10 +3689,10 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
           });
         }
       } else {
-        if (sel.length > 0 && flowRef.current) flowRef.current.triggerShortcutMenu();
+        if (currentSel.length > 0 && flowRef.current) flowRef.current.triggerShortcutMenu();
       }
     }
-  },[sel, groups, nodeToGroup, groupToGroup, setGroups, setNs, getAllDescendantsHelper]);
+  },[setGroups, setNs, getAllDescendantsHelper]);
 
   const Editor = (
   <Tabs.Root
@@ -2459,6 +3715,7 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
             groups={groups} 
             actions={treeActions} 
             hoveredNodeId={hoveredNodeId}
+            graphName={curName['0']}
           />
         </Box>
 
@@ -2485,6 +3742,7 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
             onContextMenu={openMenu} 
             onDoubleClickNode={(nodeId: string) => treeRef.current?.scrollToNode(nodeId)}
             onCanvasHover={setHoveredNodeId}
+            onAltClick={(e: any, nodeId: string) => setAltPopup({ id: nodeId, type: 'node', x: e.clientX, y: e.clientY })}
           />
         </Box>
       </HStack>
@@ -2520,6 +3778,9 @@ export const Graph=forwardRef(({headerRef}:any,ref:any)=>{
     <Box position="absolute" zIndex={9999}>
       <ContextMenu {...menuProps} items={menuItems} />
     </Box>
+    {altPopup && (
+      <MiniGraphPopup id={altPopup.id} type={altPopup.type} targetNodes={altPopup.targetNodes} targetGroups={altPopup.targetGroups} x={altPopup.x} y={altPopup.y} ns={ns} groups={groups} onClose={() => setAltPopup(null)} />
+    )}
   </Tabs.Root>)
 
   useImperativeHandle(ref,()=>({
