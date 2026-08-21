@@ -190,7 +190,7 @@ export const shComponents:Components={
   h6: ({ node, ...props }) => <h6 style={{ ...headingStyles, fontSize: '0.85em', color: '#666' }} {...props} />,
   ul: ({ node, ...props }) => <ul style={{ paddingLeft: '20px', listStyleType: 'disc' }} {...props} />,
   ol: ({ node, ...props }) => <ol style={{ paddingLeft: '0px' }} {...props} />,
-  p: ({ node, ...props }) => <p style={{ marginLeft: '4px', padding: '2px 0px' }} {...props} />,
+  p: ({ node, ...props }) => <p style={{ marginLeft: '4px', padding: '0px 0px', lineHeight: 'normal' }} {...props} />,
   li: ({ node, ...props }) => <li style={{ marginBottom: '0.4em' }} {...props} />,
   code: CodeBlock,
 };

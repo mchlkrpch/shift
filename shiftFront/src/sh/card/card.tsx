@@ -28,7 +28,6 @@ import {
   Clip
 } from '../clip';
 import {
-  CARD_SPLIT_SYM,
   getGroupTp,
   OPTION_SPLIT_SYM,
   Sh,
@@ -44,7 +43,7 @@ import { IoMdHeart, IoMdHeartEmpty } from "react-icons/io";
 import { FaRegCommentAlt } from "react-icons/fa";
 import { createPortal } from 'react-dom';
 import { FaChevronRight } from 'react-icons/fa';
-import { LuChevronLeft } from 'react-icons/lu';
+import { LuChevronLeft, LuDot, LuScan } from 'react-icons/lu';
 
 
 export const dropMenuCSS=css`
@@ -93,6 +92,8 @@ export const dropMenuCSS=css`
 
 export const contentCSS = css`
 position: relative;
+
+width: 100%;
 
 
 .chakra-stack{
@@ -537,7 +538,7 @@ export declare type shCardProps = {
 
 import { ID } from "appwrite";
 
-const resolveCardId = (explicitId: string, fallbackContent: string): string => {
+const resolveCardId = (explicitId: string, _fallbackContent: string): string => {
   if (explicitId && explicitId.trim()) {
     return explicitId.trim();
   }
@@ -623,7 +624,7 @@ export const Card = forwardRef(({
           opts.push({
             id: nid,
             el: fwdText,
-            children: cardOpts.map((optStr, i) => {
+            children: cardOpts.map((optStr: any, i: number) => {
               const optFwd = optStr.split(SIDE_SPLIT_SYM)[0].trim();
               const optText = optFwd.split('\n')[0] || `Option ${i + 1}`;
               return {
@@ -822,6 +823,16 @@ export const Card = forwardRef(({
       >
         <Accordion.Item value={fwdParts[option]}>
           <Accordion.ItemTrigger className='optionsTrigger'>
+            {fwdParts.length>1&&(
+              <Accordion.ItemIndicator mr={'5px'} >
+                <Box
+                  p={'0px'}
+                >
+                  {/* <Box w={'5px'} h={'5px'} bgColor={'whiteAlpha.300'} borderRadius={'5px'}/> */}
+                  <LuScan size={'4px'} style={{height: '8px', minHeight: '8px', minWidth: '8px'}} opacity={0.3}/>
+                </Box>
+              </Accordion.ItemIndicator>
+            )}
             <Box w={'100%'} fontWeight={600} onClick={(e:any)=>{
                 e.stopPropagation()
                 e.preventDefault()
@@ -838,10 +849,6 @@ export const Card = forwardRef(({
                 </Box>)}
               <Sh value={fwdParts[option]}/>
             </Box>
-
-            {fwdParts.length>1&&(
-              <Accordion.ItemIndicator mr={'5px'}/>
-            )}
           </Accordion.ItemTrigger>
 
           <Accordion.ItemContent gap={0} p={0}>
@@ -849,9 +856,23 @@ export const Card = forwardRef(({
             .map((f:any,i:number)=>(
             (i === option)
               ? (<span key={i}></span>)
-              : (<Box key={i} p={0} onClick={()=>setOption(i)} fontSize={`${fontSize}px`}>
+              : (<Box
+                  key={i}
+                  onClick={()=>setOption(i)}
+                  fontSize={`${fontSize}px`}
+                  display={'flex'} flexDirection={'row'}
+                  w={'100%'}
+                  p={'2px 0px'}
+                >
+                <Box mr={'12px'} p={0} ml={'5px'} alignItems={'center'}>
+                  <LuDot size={'4px'} style={{marginTop: '4px', height: '8px', minHeight: '8px', minWidth: '8px'}} opacity={0.2}/>
+                </Box>
+
                 <Accordion.ItemBody key={i} p={0} fontWeight={600}>
                   <Sh value={f}/>
+                  {i !== fwdParts.length - 1 && (
+                    <Separator/>
+                  )}
                 </Accordion.ItemBody>
               </Box>)
           ))}
@@ -893,6 +914,7 @@ export const Card = forwardRef(({
       style={{
         fontSize:`${fontSize}px`,
         padding:options.padding||'0px',
+        // ...options.style,
       }}>
       {/* Подключаем новый ContextMenu вместо ручной верстки */}
       <ContextMenu 
@@ -913,7 +935,7 @@ export const Card = forwardRef(({
           </>)}
 
           {/* Preview: card option switcher + backward preveiw if opened */}
-          <Box flex={1} w={'50%'} minW={0} fontWeight={300} p={'0px 4px'} fontSize={`${fontSize}px`}>
+          <Box flex={1} w={'50%'} minW={0} fontWeight={300} p={'0px'} fontSize={`${fontSize}px`}>
             {OptionSwitcher}
             <Sh value={bwd_content} />
           </Box>

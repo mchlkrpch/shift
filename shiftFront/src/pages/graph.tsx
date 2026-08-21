@@ -7,65 +7,55 @@ import { Graph } from '../sh/graph/graphEditor';
 import { History } from './utils';
 import { Sh } from '../sh/card/utility';
 import store from '../storage';
+
 // import store from '../storage';
 // 69e538c100181b0740ad
-
-
-const cntStr=`first
-@@@
-second<id=2>third<id=2>fourth
-\`\`\`python
-import typing;
-def add_numbers(a, b)->typng.Any:
-	"""Function to return the sum of two numbers."""
-	return a + b
-\`\`\`
-this code provide strong power of wibe coding
-===
-second
-@@@
-segssges sgds
-`;
-
-
-const inner2:string=`inner
-@@@
-inner complex definition of something <id=3>`;
-
-
-const inner3:string=`inner second def
-@@@
-more simple definition`;
-
-
-const inner4:string=`Аффинные многообразия
-@@@
-Пусть k — алгебраически замкнутое поле (в классической алгебраической геометрии
-— поле комплексных чисел);
-$\{\\displaystyle \\mathbb \{A\}^\{n\}\}$ — n-мерное аффинное пространство над k.
-Существует теорема из классического анализа, утверждающая, что замкнутые подмножества
-
-$\{\\displaystyle \\mathbb {R} ^{n}} — это в точности множества нулей всевозможных
-бесконечно дифференцируемых функций.[4] Топология Зарисского в некотором смысле
-переносит это свойство на случай полиномиальных функций: при определении топологии
-Зарисского каждому множеству многочленов от n переменных сопоставляется множество точек
-аффинного пространства, на которых все эти многочлены равны нулю:
-
-\$\{\\displaystyle Z(S)=\\{x\\in \\mathbb {A}^{n}\\mid f(x)=0\;\\forall f\\in S\\}}$
-Замкнутые множества в топологии Зарисского на 
-\{\\displaystyle \\mathbb {A}^{n}}$
-— это все множества вида Z(S), также эти замкнутые множества называются
-алгебраическими множествами. Аффинное алгебраическое многообразие
-— это алгебраическое множество, которое нельзя представить в виде объединения
-двух меньших алгебраических множеств
-`;
-
-const ns: object={
-  '1': cntStr,
-  '2': inner2,
-  '3': inner3,
-  '4':inner4,
-};
+// const cntStr=`first
+// @@@
+// second<id=2>third<id=2>fourth
+// \`\`\`python
+// import typing;
+// def add_numbers(a, b)->typng.Any:
+// 	"""Function to return the sum of two numbers."""
+// 	return a + b
+// \`\`\`
+// this code provide strong power of wibe coding
+// ===
+// second
+// @@@
+// segssges sgds
+// `;
+// const inner2:string=`inner
+// @@@
+// inner complex definition of something <id=3>`;
+// const inner3:string=`inner second def
+// @@@
+// more simple definition`;
+// const inner4:string=`Аффинные многообразия
+// @@@
+// Пусть k — алгебраически замкнутое поле (в классической алгебраической геометрии
+// — поле комплексных чисел);
+// $\{\\displaystyle \\mathbb \{A\}^\{n\}\}$ — n-мерное аффинное пространство над k.
+// Существует теорема из классического анализа, утверждающая, что замкнутые подмножества
+// $\{\\displaystyle \\mathbb {R} ^{n}} — это в точности множества нулей всевозможных
+// бесконечно дифференцируемых функций.[4] Топология Зарисского в некотором смысле
+// переносит это свойство на случай полиномиальных функций: при определении топологии
+// Зарисского каждому множеству многочленов от n переменных сопоставляется множество точек
+// аффинного пространства, на которых все эти многочлены равны нулю:
+// \$\{\\displaystyle Z(S)=\\{x\\in \\mathbb {A}^{n}\\mid f(x)=0\;\\forall f\\in S\\}}$
+// Замкнутые множества в топологии Зарисского на 
+// \{\\displaystyle \\mathbb {A}^{n}}$
+// — это все множества вида Z(S), также эти замкнутые множества называются
+// алгебраическими множествами. Аффинное алгебраическое многообразие
+// — это алгебраическое множество, которое нельзя представить в виде объединения
+// двух меньших алгебраических множеств
+// `;
+// const ns: object={
+//   '1': cntStr,
+//   '2': inner2,
+//   '3': inner3,
+//   '4':inner4,
+// };
 
 export const GraphPage = ({mode,id,name}: any) => {
     const [_,setGraphData] = useState<any>(null);
@@ -130,7 +120,7 @@ export const GraphPage = ({mode,id,name}: any) => {
     if (mode==='page'){
         return (
             <Box display="flex" flexDirection="column" h="100vh">
-                <Header ref={headerRef}/>
+                {/* <Header ref={headerRef}/> */}
                 {/* <Box flex={1} minH={0} p={0} m={0} display="flex" flexDirection="column" alignItems="center"> */}
                     {loading ? (
                         <Spinner size="xl" mt={10} />
