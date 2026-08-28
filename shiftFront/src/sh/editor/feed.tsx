@@ -1,15 +1,18 @@
 /** @jsxImportSource @emotion/react */
 import { css } from "@emotion/react";
-import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { ID } from "appwrite"; // <--- ДОБАВИТЬ ЭТОТ ИМПОРТ
+import React, { useState, useEffect, useRef, useCallback, useMemo, useImperativeHandle } from "react";
 import { useGraphCtx } from "../../App";
 import {
-  Textarea, Box, HStack, Separator, Text, Input, IconButton, Button, Spinner, Kbd, Spacer
+  Textarea, Box, HStack, Text, IconButton, Button, Spinner, Kbd, Spacer,
+  VStack
 } from "@chakra-ui/react";
-import { FaMagic, FaPaperPlane, FaHistory } from "react-icons/fa";
+import { FaPaperPlane, FaHistory } from "react-icons/fa";
 import { createPortal } from "react-dom";
 import { Card } from "../card/card";
 import { uReq } from "../../appwrite/service";
 import { calculateHierarchy } from "../card/utility";
+import ollama from 'ollama/browser';
 
 const useCreateCard = () => {
   return (text: string) => {
@@ -181,6 +184,8 @@ export const getCardState = (id: string, ns: any, repeats: any) => {
 };
 
 import {GoogleGenAI} from '@google/genai';
+import { MdClose } from "react-icons/md";
+import { LuChevronRight } from "react-icons/lu";
 const GEMINI_API_KEY = import.meta.env.VITE_GOOGLE_API_KEY;
 
 const genAI = new GoogleGenAI({apiKey: GEMINI_API_KEY});
@@ -219,16 +224,84 @@ export function ChatNN({ currentCardId, ns }: { currentCardId?: string | null, n
   const [prompt, setPrompt] = useState('');
   const [historyText, setHistoryText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  
+  // Изменено на массив для поддержки до 5 изображений
+  const [pastedImages, setPastedImages] = useState<{ url: string, base64: string, file: File, tokens: number }[]>([]);
+  // Состояние для попапа с просмотром картинки
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   
   // Настройки AI
-  const [model, setModel] = useState('gemini-3.6-flash'); 
-  const [useContext, setUseContext] = useState(false);
+  const [model, setModel] = useState('qwen2.5vl:7b'); 
+  const [useContext, setUseContext] = useState(true);
   const [generateCardsMode, setGenerateCardsMode] = useState(false);
 
-  const [menu, setMenu] = useState<{ isOpen: boolean, x: number, y: number, text: string }>({
-    isOpen: false, x: 0, y: 0, text: ''
+  const [menu, setMenu] = useState<{ 
+    isOpen: boolean, x: number, y: number, text: string,
+    type: 'text' | 'card', chunkIndex: number, selectionStart: number, selectionEnd: number,
+    cardId: string, cardContent: string
+  }>({
+    isOpen: false, x: 0, y: 0, text: '',
+    type: 'text', chunkIndex: -1, selectionStart: 0, selectionEnd: 0, cardId: '', cardContent: ''
   });
+
+  // 2. Добавляем функцию парсинга истории
+  const getParsedHistory = (text: string) => {
+    const CARD_REGEX = /<card id="([^"]+)">([\s\S]*?)<\/card>/g;
+    const parts = [];
+    let lastIdx = 0;
+    let match;
+    while ((match = CARD_REGEX.exec(text)) !== null) {
+      if (match.index > lastIdx) {
+        parts.push({ type: 'text', content: text.substring(lastIdx, match.index) });
+      }
+      parts.push({ type: 'card', id: match[1], content: match[2], raw: match[0] });
+      lastIdx = CARD_REGEX.lastIndex;
+    }
+    if (lastIdx < text.length) {
+      parts.push({ type: 'text', content: text.substring(lastIdx) });
+    }
+    return parts.length ? parts : [{ type: 'text', content: text }];
+  };
+
+  const updateTextChunk = (index: number, newText: string) => {
+    const parts = getParsedHistory(historyText);
+    parts[index].content = newText;
+    setHistoryText(parts.map((p: any) => p.type === 'card' ? p.raw : p.content).join(''));
+  };
+
+  const [isDraggingCard, setIsDraggingCard] = useState(false);
+
+  // Обновите функцию handleConvertToCard:
+  const handleConvertToCard = () => {
+    const { chunkIndex, selectionStart, selectionEnd } = menu;
+    const parts = getParsedHistory(historyText);
+    const targetText = parts[chunkIndex].content;
+
+    const selectedText = targetText.substring(selectionStart, selectionEnd).trim();
+    const words = selectedText.split(/\s+/);
+    const front = words.slice(0, 3).join(" ");
+    const back = words.slice(3).join(" ");
+    
+    // Генерируем уникальный ID через Appwrite (Пунк 3)
+    const cardId = ID.unique();
+
+    const cardStr = `\n\n<card id="${cardId}">\n${front}\n@@@\n${back}\n</card>\n\n`;
+
+    const before = targetText.substring(0, selectionStart);
+    const after = targetText.substring(selectionEnd);
+
+    parts[chunkIndex].content = before + cardStr + after;
+    setHistoryText(parts.map((p: any) => p.type === 'card' ? p.raw : p.content).join(''));
+    setMenu(prev => ({ ...prev, isOpen: false }));
+  };
+
+  const handleAttachToGraph = () => {
+    // TODO: Хук для прикрепления к графу по клику
+    console.log("Прикрепить к графу вызвано для карты:", menu.cardId);
+    setMenu(prev => ({ ...prev, isOpen: false }));
+  };
 
   const outputRef = useRef<HTMLTextAreaElement>(null);
   const createCard = useCreateCard();
@@ -249,13 +322,55 @@ export function ChatNN({ currentCardId, ns }: { currentCardId?: string | null, n
     }
   }, [historyText, isHistoryOpen]);
 
-  const handleGenerate = async () => {
-    if (!prompt.trim() || isLoading) return;
-    setIsLoading(true);
-    if (!isHistoryOpen) setIsHistoryOpen(true); // Автоматически открываем историю при отправке
-    
-    let finalPrompt = prompt;
+  const handlePaste = (e: React.ClipboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const items = e.clipboardData.items;
+    let addedCount = 0;
 
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf('image') === 0) {
+        e.preventDefault();
+        
+        // Ограничение до 5 изображений
+        if (pastedImages.length + addedCount >= 5) {
+          console.warn("Максимум 5 изображений");
+          break;
+        }
+        
+        const file = items[i].getAsFile();
+        if (!file) continue;
+        
+        addedCount++;
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const base64 = event.target?.result as string;
+          const estimatedTokens = Math.floor(file.size / 300) + 256; 
+
+          setPastedImages(prev => {
+            if (prev.length >= 5) return prev;
+            return [...prev, {
+              url: URL.createObjectURL(file),
+              base64,
+              file,
+              tokens: estimatedTokens
+            }];
+          });
+        };
+        reader.readAsDataURL(file);
+      }
+    }
+  };
+
+  const removeImage = (index: number) => {
+    setPastedImages(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleSend = async () => {
+    if (!prompt.trim() && pastedImages.length === 0) return;
+    
+    console.log('m:', model);
+
+    let finalPrompt = prompt;
     if (useContext && currentCardId && ns) {
       const graphContext = getContextForAi(currentCardId, ns);
       if (graphContext) {
@@ -263,48 +378,63 @@ export function ChatNN({ currentCardId, ns }: { currentCardId?: string | null, n
       }
     }
 
-    if (generateCardsMode) {
-      finalPrompt += `\n\nИНСТРУКЦИЯ ПО ФОРМАТУ ОТВЕТА:
-Пожалуйста, ответь строго в формате JSON, где ключи - это сгенерированные идентификаторы карточек, а значения - текст карточки. 
-Используй символ '@@@' для разделения передней и задней стороны карточки (передняя часть скрывается, задняя показывается при перевороте).
-Используй символ '===' для разделения опций карточки (разные вариации/синонимы одной и той же сущности).
+    let sendCallback = null;
+    
+    if (model === 'qwen2.5vl:7b') {
+      sendCallback = async()=>{
+        const message: any = { role: 'user', content: finalPrompt || "Опиши изображения" };
+        if (pastedImages.length > 0) {
+          // Ollama принимает массив base64 строк
+          message.images = pastedImages.map(img => img.base64.split(',')[1]);
+        }
 
-Пример ожидаемого ответа (ответь ТОЛЬКО JSON объектом):
-{
-    "id_1778105868671": "hello\\n@@@\\nworld",
-    "id2": "second card2\\n@@@\\nopposite"
-}`;
+        const response = await ollama.chat({
+          model: model,
+          messages: [message]
+        });
+        return response.message.content;
+      }
+    } else {
+      sendCallback = async()=>{
+        // Для Gemini формируем массив контента, если есть картинки
+        let contentsToPass: any = finalPrompt;
+        if (pastedImages.length > 0) {
+          contentsToPass = [
+            finalPrompt || "Опиши изображения",
+            ...pastedImages.map(img => ({
+              inlineData: {
+                data: img.base64.split(',')[1],
+                mimeType: img.file.type
+              }
+            }))
+          ];
+        }
+
+        const response = await genAI.models.generateContent({
+          model: model, 
+          contents: contentsToPass,
+        });
+        return response.text || '';
+      }
     }
-
-    const currentPromptOriginal = prompt;
-    setPrompt('');
-
+    
     try {
-      const response = await genAI.models.generateContent({
-        model: model, 
-        contents: finalPrompt,
-      });
-      
-      const newAnswer = response.text || '';
-      
+      const newAnswer = await sendCallback();
+
       setHistoryText(prev => {
         const separator = prev.trim() ? '\n\n' + '—'.repeat(30) + '\n\n' : '';
-        return prev + separator + `[Запрос]: ${currentPromptOriginal}\n\n` + newAnswer;
+        const imgIndicator = pastedImages.length > 0 ? ` [+${pastedImages.length} img]` : '';
+        return prev + separator + `[Запрос]${imgIndicator}: ${finalPrompt}\n\n` + newAnswer;
       });
 
-    } catch (err) {
-      console.error(err);
+    } catch (error) {
+      console.error("Ошибка при запросе к модели:", error);
       setHistoryText(prev => prev + '\n\n[Ошибка]: Не удалось получить ответ от нейросети. Проверьте консоль.');
-    } finally {
-      setIsLoading(false);
     }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-      e.preventDefault();
-      handleGenerate();
-    }
+  
+    // Очистка после отправки
+    setPrompt("");
+    setPastedImages([]);
   };
 
   const handleContextMenu = (e: React.MouseEvent<HTMLTextAreaElement>) => {
@@ -318,7 +448,7 @@ export function ChatNN({ currentCardId, ns }: { currentCardId?: string | null, n
         x: e.clientX,
         y: e.clientY + 5,
         text: selectedText.trim()
-      });
+      } as any);
     } else {
       setMenu(prev => ({ ...prev, isOpen: false }));
     }
@@ -330,8 +460,8 @@ export function ChatNN({ currentCardId, ns }: { currentCardId?: string | null, n
     return () => window.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Drag-and-drop логика для окна истории
   const handlePointerDownDrag = (e: React.PointerEvent, action: string) => {
+    // ... остался без изменений (пропущен для краткости, оставьте ваш код драг-н-дропа)
     e.preventDefault();
     e.stopPropagation();
     const startX = e.clientX;
@@ -369,7 +499,6 @@ export function ChatNN({ currentCardId, ns }: { currentCardId?: string | null, n
 
   return (
     <>
-      {/* 1. Постоянный нижний док (Google AI Studio style) */}
       {createPortal(
         <Box 
           position="fixed" 
@@ -380,82 +509,196 @@ export function ChatNN({ currentCardId, ns }: { currentCardId?: string | null, n
           w="80%" 
           maxW="800px" 
           bg="#1e1f20" 
-          borderRadius="24px" 
-          p="12px 16px"
-          boxShadow="0px 10px 30px rgba(0,0,0,0.5)" 
-          border="1px solid #444746"
+          borderRadius="14px" 
+          p="12px 14px"
+          border="1px solid color-mix(in srgb, white, transparent 95%)"
+          display="flex"
+          flexDirection="column"
+          boxShadow="0 8px 32px rgba(0,0,0,0.4)"
         >
-          <HStack alignItems="center" gap={3}>
+          <HStack alignItems="flex-start" gap={3}>
             <IconButton
               aria-label="Toggle History"
               variant="ghost"
               color={isHistoryOpen ? "blue.400" : "gray.400"}
               onClick={() => setIsHistoryOpen(!isHistoryOpen)}
+              mt="4px" // Выравнивание по уровню инпута
             >
               <FaHistory />
             </IconButton>
 
-            <Textarea
-              rows={1}
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Спроси нейросеть (Ctrl + Enter)..."
-              disabled={isLoading}
-              css={css`
-                flex: 1;
-                background: transparent;
-                border: none;
-                outline: none;
-                color: white;
-                font-size: 14px;
-                resize: none;
-                max-height: 150px;
-                &:focus { box-shadow: none; }
-                &::-webkit-scrollbar { display: none; }
-              `}
-            />
-
-            <IconButton
-              aria-label="Send"
-              colorPalette="blue"
-              borderRadius="full"
-              disabled={isLoading || !prompt.trim()}
-              onClick={handleGenerate}
-            >
-              {isLoading ? <Spinner size="sm" /> : <FaPaperPlane />}
-            </IconButton>
+            <Box display="flex" flexDirection="column" flex={1} gap={2} w="100%" overflow="hidden">
+              <input 
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                onPaste={handlePaste}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && e.ctrlKey) handleSend();
+                }}
+                placeholder="Ask AI (Ctrl + Enter) - Paste up to 5 images"
+                css={css`
+                  width: 100%;
+                  background: transparent;
+                  border: none;
+                  outline: none;
+                  color: white;
+                  font-size: 15px;
+                  padding: 8px 0;
+                  &::placeholder { color: #6b6b6b; }
+                `}
+              />
+            </Box>
           </HStack>
-          
-          {/* Настройки (Inline, компактные) */}
-          <HStack mt={2} gap={4} fontSize="11px" color="gray.400" justifyContent="center">
-             <HStack gap={1}>
-               <Text>Model:</Text>
-               <select 
-                  value={model} 
-                  onChange={(e) => setModel(e.target.value)} 
-                  style={{ background: 'transparent', color: 'white', border: 'none', outline: 'none', cursor: 'pointer' }}
+
+          {pastedImages.length > 0 && (
+                <HStack 
+                  w="100%" 
+                  overflowX="auto" 
+                  scrollbarWidth="none" 
+                  gap="12px" 
+                  pb="4px"
                 >
-                  <option value="gemini-3.1-pro-preview">gemini-3.1-pro</option>
-                  <option value="gemini-3.6-flash">gemini-3.6-flash</option>
-                </select>
-             </HStack>
+                  {pastedImages.map((img, idx) => (
+                    <Box 
+                      key={idx}
+                      bg="#2a2a2a" 
+                      border="1px solid #444" 
+                      borderRadius="10px" 
+                      p="6px 8px" 
+                      display="flex" 
+                      alignItems="center" 
+                      gap="10px" 
+                      minW="fit-content"
+                      cursor="pointer"
+                      _hover={{ bg: '#333' }}
+                      transition="0.2s"
+                      onClick={() => setPreviewImage(img.url)}
+                    >
+                      <Box w="36px" h="36px" borderRadius="6px" overflow="hidden" bg="#111" display="flex" justifyContent="center" alignItems="center">
+                        <img src={img.url} alt="pasted" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'cover' }} />
+                      </Box>
+                      
+                      <Box display="flex" flexDirection="column" maxW="120px">
+                        {/* @ts-expect-error */}
+                        <Text fontSize="12px" color="white" fontWeight="500" noOfLines={1} title={img.file.name}>
+                          {img.file.name || `image_${idx + 1}.png`}
+                        </Text>
+                        <Text fontSize="11px" color="gray.400">
+                          {img.tokens.toLocaleString()} tokens
+                        </Text>
+                      </Box>
+                      
+                      <IconButton 
+                        aria-label="Remove" 
+                        size="xs" 
+                        variant="ghost" 
+                        color="gray.400" 
+                        minW="24px" h="24px" 
+                        _hover={{ bg: 'rgba(255,255,255,0.1)', color: 'white' }}
+                        onClick={(e) => {
+                          e.stopPropagation(); // Чтобы не открывался попап
+                          removeImage(idx);
+                        }}
+                      >
+                        <MdClose />
+                      </IconButton>
+                    </Box>
+                  ))}
+                </HStack>
+              )}
+          
+          <HStack mt={pastedImages.length > 0 ? 2 : 1} gap={4} fontSize="9px" color="gray.400" justifyContent="center">
+            <HStack overflowX={'auto'} scrollbarWidth={'none'} w={'100%'}>
+              <HStack
+                gap={1}
+                p={'6px 8px'}
+                fontSize={'11px'}
+                fontWeight={600}
+                bgColor={'color-mix(in srgb, white, transparent 95%)'}
+                borderRadius={'50px'}
+              >
+                <select 
+                    value={model} 
+                    color="gray.400"
+                    onChange={(e) => setModel(e.target.value)} 
+                    style={{ background: 'transparent', border: 'none', outline: 'none', cursor: 'pointer' }}
+                  >
+                    <optgroup label="Cloud Models" style={{ background: '#1e1e1e' }}>
+                      <option value="gemini-3.6-flash">gemini-3.6-flash</option>
+                    </optgroup>
+                    <optgroup label="Local Models" style={{ background: '#1e1e1e' }}>
+                      <option value="qwen2.5vl:7b">qwen2.5vl:7b (Ollama)</option>
+                    </optgroup>
+                  </select>
+              </HStack>
 
-             <label style={{ display: 'flex', gap: '4px', cursor: 'pointer', alignItems: 'center' }}>
-               <input type="checkbox" checked={useContext} onChange={(e) => setUseContext(e.target.checked)} />
-               Graph Context
-             </label>
+              <label style={{ display: 'flex', gap: '4px', cursor: 'pointer', alignItems: 'center', minWidth: 'fit-content' }}>
+                <input type="checkbox" checked={useContext} onChange={(e) => setUseContext(e.target.checked)} />
+                course ctx
+              </label>
 
-             <label style={{ display: 'flex', gap: '4px', cursor: 'pointer', alignItems: 'center' }}>
-               <input type="checkbox" checked={generateCardsMode} onChange={(e) => setGenerateCardsMode(e.target.checked)} />
-               JSON Cards
-             </label>
+              <label style={{ display: 'flex', gap: '4px', cursor: 'pointer', alignItems: 'center', minWidth: 'fit-content' }}>
+                <input type="checkbox" checked={generateCardsMode} onChange={(e) => setGenerateCardsMode(e.target.checked)} />
+                json output
+              </label>
+            </HStack>
+            
+            <HStack
+              gap={1}
+              p={'6px 12px'}
+              fontSize={'12px'}
+              fontWeight={600}
+              bgColor={'color-mix(in srgb, white, transparent 92%)'}
+              borderRadius={'50px'}
+              cursor="pointer"
+              _hover={{bgColor: 'color-mix(in srgb, white, transparent 85%)'}}
+              onClick={handleSend}
+            >
+              run <LuChevronRight/>
+            </HStack>
           </HStack>
         </Box>, 
         document.body
       )}
 
-      {/* 2. Плавающее окно истории поверх всех вкладок */}
+      {/* Попап для просмотра прикрепленного изображения */}
+      {previewImage && createPortal(
+        <Box 
+          position="fixed" 
+          top={0} left={0} right={0} bottom={0} 
+          bg="rgba(0,0,0,0.85)" 
+          backdropFilter="blur(5px)"
+          zIndex={10000} 
+          display="flex" 
+          justifyContent="center" 
+          alignItems="center"
+          onClick={() => setPreviewImage(null)}
+        >
+          <Box position="relative" maxW="90vw" maxH="90vh" onClick={(e) => e.stopPropagation()}>
+            <IconButton 
+              aria-label="Close Preview" 
+              position="absolute" 
+              top="-40px" 
+              right="-40px" 
+              size="sm"
+              variant="ghost"
+              color="white"
+              bg="rgba(255,255,255,0.1)"
+              _hover={{ bg: "rgba(255,255,255,0.2)" }}
+              onClick={() => setPreviewImage(null)}
+            >
+              <MdClose size={24} />
+            </IconButton>
+            <img 
+              src={previewImage} 
+              alt="Preview" 
+              style={{ maxWidth: '100%', maxHeight: '90vh', objectFit: 'contain', borderRadius: '8px', boxShadow: '0 10px 40px rgba(0,0,0,0.5)' }} 
+            />
+          </Box>
+        </Box>,
+        document.body
+      )}
+
       {isHistoryOpen && createPortal(
         <Box 
           position="fixed" 
@@ -471,6 +714,11 @@ export function ChatNN({ currentCardId, ns }: { currentCardId?: string | null, n
           backdropFilter="blur(20px)"
           display="flex" 
           flexDirection="column"
+          // --- ДОБАВЛЕННЫЕ СТИЛИ ДЛЯ DRAG & DROP (Пункт 1) ---
+          opacity={isDraggingCard ? 0 : 1}
+          pointerEvents={isDraggingCard ? 'none' : 'auto'}
+          transition="opacity 0.15s ease-in-out"
+          // ---------------------------------------------------
         >
           <HStack 
             h="30px" 
@@ -490,30 +738,151 @@ export function ChatNN({ currentCardId, ns }: { currentCardId?: string | null, n
           </HStack>
 
           <Box position="relative" flex={1} p={2} overflow="hidden" display="flex">
-            <Textarea
-              ref={outputRef}
-              value={historyText}
-              onChange={(e) => setHistoryText(e.target.value)}
-              onContextMenu={handleContextMenu}
-              placeholder="Здесь появится история ваших запросов. Текст можно свободно редактировать..."
-              css={css`
-                flex: 1;
-                background: transparent;
-                border: none;
-                outline: none;
-                color: #e2e8f0;
-                font-family: 'Roboto Mono', monospace;
-                font-size: 13px;
-                line-height: 1.6;
-                resize: none;
-                padding: 10px;
-                scrollbar-width: thin;
-                &:focus { box-shadow: none; }
-              `}
-            />
+            <Box 
+  ref={outputRef} 
+  flex={1} 
+  p={2} 
+  overflowY="auto" 
+  display="flex" 
+  flexDirection="column"
+  css={css`
+    scrollbar-width: thin;
+    font-family: 'Roboto Mono', monospace;
+    font-size: 13px;
+    line-height: 1.6;
+  `}
+>
+  {getParsedHistory(historyText).map((part: any, idx: number) => {
+    if (part.type === 'card') {
+      return (
+        <Box
+          key={idx}
+          draggable
+          onDragStart={(e) => {
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('application/json', JSON.stringify({
+              type: 'ai_card',
+              id: part.id,
+              content: part.content
+            }));
+            // Прячем окно асинхронно, чтобы браузер успел отрисовать ghost-image карты
+            setTimeout(() => setIsDraggingCard(true), 0);
+          }}
+          onDragEnd={() => {
+            // При отпускании мыши, выключаем невидимость окна и закрываем его
+            setIsDraggingCard(false);
+            setIsHistoryOpen(false);
+          }}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setMenu({
+              isOpen: true, x: e.clientX, y: e.clientY,
+              type: 'card', cardId: part.id, cardContent: part.content,
+              chunkIndex: idx, selectionStart: 0, selectionEnd: 0, text: ''
+            });
+          }}
+          borderLeft="3px solid var(--chakra-colors-blue-500)"
+          bg="rgba(255,255,255,0.05)"
+          my={2}
+          p={2}
+          borderRadius="4px"
+          cursor="grab"
+        >
+          <Card id={part.id} content={part.content} options={{twoSides: false, stats: false}} />
+        </Box>
+      );
+    } else {
+      return (
+        <Textarea
+          key={idx}
+          id={`history-chunk-${idx}`} // <-- Добавляем ID для фокуса
+          value={part.content}
+          onChange={(e) => updateTextChunk(idx, e.target.value)}
+          placeholder={idx === 0 ? "Здесь появится история ваших запросов. Текст можно свободно редактировать..." : ""}
+          
+          // --- ДОБАВЛЯЕМ ОБРАБОТКУ КЛАВИШ УДАЛЕНИЯ (Пункт 2) ---
+          onKeyDown={(e) => {
+            const target = e.target as HTMLTextAreaElement;
+            // Стирание карты сверху (Backspace)
+            if (e.key === 'Backspace' && target.selectionStart === 0 && target.selectionEnd === 0) {
+              if (idx >= 2) { // 2 означает, что над нами есть карта (idx 1) и еще текст (idx 0)
+                e.preventDefault();
+                const parts = getParsedHistory(historyText);
+                parts.splice(idx - 1, 1);
+                setHistoryText(parts.map((p: any) => p.type === 'card' ? p.raw : p.content).join(''));
+                
+                // Возвращаем фокус на предыдущий текстовый блок
+                setTimeout(() => {
+                  const prev = document.getElementById(`history-chunk-${idx - 2}`) as HTMLTextAreaElement;
+                  if (prev) {
+                    prev.focus();
+                    prev.selectionStart = prev.value.length;
+                    prev.selectionEnd = prev.value.length;
+                  }
+                }, 0);
+              }
+            }
+            // Стирание карты снизу (Delete)
+            if (e.key === 'Delete' && target.selectionStart === target.value.length && target.selectionEnd === target.value.length) {
+              const parts = getParsedHistory(historyText);
+              if (idx < parts.length - 2) {
+                e.preventDefault();
+                parts.splice(idx + 1, 1);
+                setHistoryText(parts.map((p: any) => p.type === 'card' ? p.raw : p.content).join(''));
+              }
+            }
+          }}
+          // -----------------------------------------------------
+
+          onContextMenu={(e) => {
+// ... остальной код Textarea
+            const target = e.target as HTMLTextAreaElement;
+            const selStart = target.selectionStart;
+            const selEnd = target.selectionEnd;
+            const selectedText = target.value.substring(selStart, selEnd);
+            
+            if (selectedText.trim()) {
+              e.preventDefault();
+              setMenu({
+                isOpen: true, x: e.clientX, y: e.clientY,
+                type: 'text', text: selectedText, chunkIndex: idx,
+                selectionStart: selStart, selectionEnd: selEnd,
+                cardId: '', cardContent: ''
+              });
+            } else {
+              setMenu(prev => ({ ...prev, isOpen: false }));
+            }
+          }}
+          onInput={(e) => {
+            const target = e.target as HTMLTextAreaElement;
+            target.style.height = 'auto';
+            target.style.height = target.scrollHeight + 'px';
+          }}
+          css={css`
+            background: transparent;
+            border: none;
+            outline: none;
+            color: #e2e8f0;
+            resize: none;
+            overflow: hidden;
+            padding: 0;
+            min-height: 30px;
+            &:focus { box-shadow: none; }
+          `}
+          ref={(el) => {
+            if (el) {
+              el.style.height = 'auto';
+              el.style.height = el.scrollHeight + 'px';
+            }
+          }}
+        />
+      );
+    }
+  })}
+</Box>
           </Box>
 
-          {/* Ресайзеры как в MiniGraph */}
           <ResizeHandle cursor="ew-resize" top={'-10px'} bottom={0} left={'-10px'} w="10px" onDown={(e: any) => handlePointerDownDrag(e, 'w')} />
           <ResizeHandle cursor="ew-resize" top={'-10px'} bottom={0} right={'-10px'} w="10px" onDown={(e: any) => handlePointerDownDrag(e, 'e')} />
           <ResizeHandle cursor="ns-resize" left={0} right={0} top={'-10px'} h="10px" onDown={(e: any) => handlePointerDownDrag(e, 'n')} />
@@ -526,32 +895,38 @@ export function ChatNN({ currentCardId, ns }: { currentCardId?: string | null, n
         document.body
       )}
 
-      {/* Контекстное меню при выделении текста + правый клик */}
       {menu.isOpen && createPortal(
-        <Box 
-          css={contextMenuCSS} 
-          style={{ top: menu.y, left: menu.x }}
-          onMouseDown={(e) => e.stopPropagation()} 
-        >
-          <Box className="menu-item" onClick={() => {
-            createCard(menu.text);
-            setMenu({ ...menu, isOpen: false });
-          }}>
-            Сделать карту
-          </Box>
-          <Box className="menu-item" onClick={() => {
-            navigator.clipboard.writeText(menu.text);
-            setMenu({ ...menu, isOpen: false });
-          }}>
-            Копировать
-          </Box>
-        </Box>, document.body
-      )}
+  <Box 
+    css={contextMenuCSS} 
+    style={{ top: menu.y, left: menu.x }}
+    onMouseDown={(e) => e.stopPropagation()} 
+  >
+    {menu.type === 'text' ? (
+      <>
+        <Box className="menu-item" onClick={handleConvertToCard}>
+          Преобразовать в карту
+        </Box>
+        <Box className="menu-item" onClick={() => {
+          navigator.clipboard.writeText(menu.text);
+          setMenu({ ...menu, isOpen: false });
+        }}>
+          Копировать
+        </Box>
+      </>
+    ) : (
+      <>
+        <Box className="menu-item" onClick={handleAttachToGraph}>
+          Прикрепить к графу
+        </Box>
+      </>
+    )}
+  </Box>, document.body
+)}
     </>
   );
 }
 
-export const Feed = React.forwardRef(({initialSelection, autoStart, setMode, onActiveCardChange}: any, _ref: any) => {
+export const Feed = React.forwardRef(({initialSelection, autoStart, _setMode, onActiveCardChange}: any, ref: any) => {
   const { id, ns, repeats, setRepeats, groups } = useGraphCtx() as any;
   
   const [isTraining, setIsTraining] = useState(autoStart || false);
@@ -564,12 +939,13 @@ export const Feed = React.forwardRef(({initialSelection, autoStart, setMode, onA
 
   const [filters, setFilters] = useState({ new: true, due: true, learned: false });
   const [history, setHistory] = useState<{ id: string; status: 'remember' | 'forgot' }[]>([]);
-  const [queue, setQueue] = useState<string[]>([]);
+  const [queue, setQueue] = useState<string[]>(initialSelection || []);
   const repeatsRef = useRef(repeats || {});
   const historyRef = useRef(history);
   const activeCardRef = useRef<HTMLDivElement>(null);
 
-  // Сообщаем родительскому компоненту активную карту (для ИИ контекста)
+  // console.log('initialSelection',initialSelection)
+
   useEffect(() => {
     if (onActiveCardChange) {
       onActiveCardChange(queue.length > 0 ? queue[0] : null);
@@ -657,34 +1033,41 @@ export const Feed = React.forwardRef(({initialSelection, autoStart, setMode, onA
     const activeId = queue[0];
     const now = Date.now();
 
-    setRepeats((prev: any) => {
-      const next = { ...prev };
-      const prevData = parseRepeatData(next[activeId]);
-      const stages = [...prevData.stages];
+    // Быстрое локальное обновление для мгновенной реакции UI без полного ререндера графа
+    const nextRepeats = { ...repeatsRef.current };
+    const prevData = parseRepeatData(nextRepeats[activeId]);
+    const stages = [...prevData.stages];
 
-      if (direction === 'remember') {
-        if (stages.length === 0) {
-          stages.push(now);
-        } else {
-          const requiredInterval = INTERVALS[Math.min(stages.length, INTERVALS.length - 1)];
-          const timePassed = now - stages[stages.length - 1];
-          if (timePassed >= requiredInterval) {
-            stages.push(now);
-          }
-        }
+    if (direction === 'remember') {
+      if (stages.length === 0) {
+        stages.push(now);
       } else {
-        stages.length = 0;
+        const requiredInterval = INTERVALS[Math.min(stages.length, INTERVALS.length - 1)];
+        const timePassed = now - stages[stages.length - 1];
+        if (timePassed >= requiredInterval) {
+          stages.push(now);
+        }
       }
-      
-      next[activeId] = { stages, last: now };
-      return next;
-    });
+    } else {
+      stages.length = 0;
+    }
+    
+    nextRepeats[activeId] = { stages, last: now };
+    repeatsRef.current = nextRepeats; // Мгновенный синхронный апдейт локального рефа
+
+    // Откладываем тяжелый глобальный апдейт setRepeats в Event Loop
+    setTimeout(() => {
+        setRepeats(nextRepeats);
+    }, 10);
 
     setHistory(prev => [...prev, { id: activeId, status: direction }]);
     setQueue(prev => {
       const newQueue = prev.slice(1);
+      // ОПТИМИЗАЦИЯ СКОРОСТИ: Запрашиваем новые карты, только если очередь иссякает
+      if (newQueue.length >= 3) return newQueue;
+
       const nextRecentHistory =[...historyRef.current.map(h => h.id), activeId].slice(-10);
-      const nextCards = getNextCards(1, newQueue, nextRecentHistory);
+      const nextCards = getNextCards(4, newQueue, nextRecentHistory);
       return [...newQueue, ...nextCards];
     });
   }, [queue, getNextCards, setRepeats]);
@@ -815,6 +1198,18 @@ export const Feed = React.forwardRef(({initialSelection, autoStart, setMode, onA
     setQueue([]); 
   };
 
+  // console.log('queue', queue)
+
+  useImperativeHandle(ref, () => ({
+    updateContentToRepeat: (cardIds: string[]) => {
+      console.log("Feed: Updating content to repeat", cardIds);
+      setSelectedCards(new Set(cardIds));
+      setQueue(cardIds);
+      setIsTraining(true);
+      setHistory([]);
+    }
+  }), []);
+
   if (!isTraining) {
     return (
       <Box css={feedCSS} style={{ flexDirection: 'column' }}>
@@ -865,11 +1260,11 @@ export const Feed = React.forwardRef(({initialSelection, autoStart, setMode, onA
   return (
     <Box css={feedCSS}>
       <Box className="feed-container">
-        {/* Кнопка "назад" убрана из Feed, так как теперь есть переключение вкладок наверху */}
         <Box pt="20px" pb="10px"/>
 
-        {history.map((h: any, i: number) => (
-          <Box key={i} className="history-card">
+        {/* ОПТИМИЗАЦИЯ: Ограничиваем рендер 20 картами истории */}
+        {history.slice(-20).map((h: any, i: number) => (
+          <Box key={`${h.id}-${i}`} className="history-card">
             <Card id={h.id} content={ns[h.id]} options={{ twoSides: false, showStats: false }} />
             <Box className="status-dot" bg={h.status === 'remember' ? 'green.500' : 'red.500'} />
           </Box>
@@ -901,12 +1296,11 @@ export const Feed = React.forwardRef(({initialSelection, autoStart, setMode, onA
           </Box>
         )}
 
-        {queue.slice(1).map((id, i) => (
+        {queue.slice(1, 4).map((id, i) => (
           <Box key={`upcoming-${id}-${i}`} className="upcoming-card">
             <Card id={id} content={ns[id]} options={{ twoSides: false, stats: false }} />
           </Box>
         ))}
-        {/* Оставляем место снизу для ввода AI */}
         <Box minH="120px" />
       </Box>
     </Box>

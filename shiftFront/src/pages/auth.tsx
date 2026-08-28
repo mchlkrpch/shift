@@ -8,9 +8,9 @@ import { Navigate, Route, Routes, useNavigate, useSearchParams } from "react-rou
 import { FcGoogle } from "react-icons/fc";
 import store from "../storage";
 import { Profile } from "./profile";
-import { Header } from "../components/header";
+// import { Header } from "../components/header";
 import { Feed } from "./feed";
-import { Graph } from "../sh/graph/graphEditor";
+// import { Graph } from "../sh/graph/editor";
 import { GraphPage } from "./graph";
 
 export async function loginGoogle(){
@@ -94,7 +94,7 @@ export async function logOut(){
 export async function loginEmail(email: string, password: string) {
 	try {
 		await spaced_account.createEmailPasswordSession(email, password);
-		window.location.reload(); 
+		// window.location.reload();
 		const u = await fetch_user(spaced_account)
 		store.dispatch({
 			type: 'set_user',
@@ -115,6 +115,14 @@ function Auth() {
 	// register inputs
 	const usernameRef=useRef<HTMLInputElement>(null) as any;
 	const confirmPasswordRef=useRef<HTMLInputElement>(null) as any;
+
+	useEffect(() => {
+		// for testing
+		const searchParams = new URLSearchParams(window.location.search);
+		if (searchParams.get('e2e_test_login') === 'true') {
+			loginEmail('e2e@test.com', '12345678'); 
+		}
+	}, []);
 
 	return (
 		<>
@@ -206,6 +214,7 @@ function Auth() {
 						align="center"
 						rounded='2xl'
 						gapX={4}
+						id={'google-login'}
 						>
 						<Icon as={FcGoogle} boxSize={5} />
 						<Text>Continue with Google</Text>

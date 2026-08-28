@@ -1,0 +1,456 @@
+/** @jsxImportSource @emotion/react */
+import { css } from "@emotion/react";
+import { Box, Button, Spacer, Tabs } from "@chakra-ui/react";
+import { GraphCtx, useGraphCtx } from "../../../App";
+import { Card } from "../../card/card";
+import {
+  forwardRef,
+  memo,
+  useEffect,
+  useRef,
+  useState,
+  useImperativeHandle,
+  useCallback,
+  useMemo,
+} from "react";
+import { LuChevronDown, LuChevronRight, LuPilcrow } from "react-icons/lu";
+import { useVirtualizer } from '@tanstack/react-virtual';
+import { APPWRITE_CONFIG, gReq, spaced_account } from "../../../appwrite/service";
+import { BsDiagram2Fill } from "react-icons/bs";
+import { RiRepeat2Line, RiSaveFill } from "react-icons/ri";
+import { Clip } from "../../clip";
+import { FaShare } from "react-icons/fa";
+import { flattenBlocks, useTreeActions, useTreeKeyboard, useTreeSelection } from "./hooks";
+
+export const TREE_UI = {
+  colors: {
+    accent: '#0d99ff',                             
+    selectedBg: 'rgba(49, 130, 206, 0.25)',        
+    parentSelectedBg: 'rgba(49, 130, 206, 0.08)',  
+    groupDefault: '#555555',                       
+    sliceBg: 'rgba(255, 255, 255, 0.02)',          
+    highlightBg: 'rgba(255, 215, 0, 0.4)',         
+  },
+
+  indent: {
+    step: 20,           
+    base: 8,            
+  },
+  rowHeight: {
+    group: 32,          
+    card: 20,           
+  },
+
+  rowStyle: {
+    basePh: 7,
+    basePw: 4,
+    fontSize: 12,
+    radius: 6,
+  },
+
+  font: {
+    title: 11,          
+    numbering: 10,      
+  },
+  radius: {
+    block: '4px',       
+  },
+
+  groupStyle:{
+    fontSize: 14,
+    radius: 6,
+  },
+
+  groupRow: {
+    gap: 6,                                        
+    fontWeight: 500,                               
+    btnSize: 20,                                   
+    btnHoverBg: 'rgba(255, 255, 255, 0.1)',        
+    colorPickerSize: 14,                           
+    sliceSelectedBg: 'rgba(49, 130, 206, 0.15)',   
+    opacities: {
+      pilcrow: 0.4,                                
+      numbering: 0.4,                              
+      title: 0.8,                                  
+    }
+  }
+};
+
+const treeviewCSS = css`
+display:flex; flex:1; width: 100%; padding:10px; gap:10px; height:100%; overflow-y:auto;
+scrollbar-width: thin; scrollbar-color: color-mix(in srgb, white 40%, transparent) transparent;
+
+.indicator {
+  position:absolute; display:none; height:2px; background: ${TREE_UI.colors.accent}; z-index:100; pointer-events:none;
+}
+.indicator div {
+  position: absolute; left:-4px; top:-2.5px; width:7px; height:7px; border-radius:50%; border:1.5px solid ${TREE_UI.colors.accent}; background:#1e1e1e;
+}
+
+.tree-block-flat {
+  display: flex; flex-direction: row; align-items: flex-start;
+  width: 100%; 
+  border-radius: ${TREE_UI.rowStyle.radius}px;
+  border: 1.2px solid transparent;
+  box-sizing: border-box; 
+  transition: background-color 0.1s, border-color 0.1s; cursor: pointer;
+}
+.tree-block-flat[data-selected="true"] {
+  background-color: color-mix(in srgb, ${TREE_UI.colors.selectedBg} 70%, transparent);
+}
+
+.tree-block-flat[data-parent-selected="true"] {
+  background-color: ${TREE_UI.colors.parentSelectedBg};
+  border-left-color: rgba(49, 130, 206, 0.4);
+}
+.tree-block-flat.is-group[data-selected="true"] { border-color: rgba(49, 130, 206, 0.3); }
+
+.group-title-row { 
+  display: flex; align-items: center; 
+  gap: ${TREE_UI.groupRow.gap}px; 
+  font-size: ${TREE_UI.groupStyle.fontSize}px; 
+  font-weight: ${TREE_UI.groupRow.fontWeight}; 
+  width: 100%; 
+}
+.card-content-row { display: flex; flex: 1; min-width: 0; align-items: center; }
+
+.tree-group-btn { 
+  background: none; border: none; color: inherit; 
+  height: ${TREE_UI.groupRow.btnSize}px; 
+  width: ${TREE_UI.groupRow.btnSize}px; 
+  min-width: ${TREE_UI.groupRow.btnSize}px; 
+  padding: 0; display: flex; align-items: center; justify-content: center; cursor: pointer; 
+}
+.tree-group-btn:hover { background-color: ${TREE_UI.groupRow.btnHoverBg}; border-radius: ${TREE_UI.radius.block}; }
+
+.group-slice { transition: background-color 0.1s, border-color 0.1s; }
+.group-slice[data-group-selected="true"] {
+  background-color: ${TREE_UI.groupRow.sliceSelectedBg} !important;
+  z-index: 2 !important;
+}
+
+[data-is-top="true"]{
+  border-top-left-radius: ${TREE_UI.groupStyle.radius}px ${TREE_UI.groupStyle.radius}px;
+  border-top-right-radius: ${TREE_UI.groupStyle.radius}px ${TREE_UI.groupStyle.radius}px;
+}
+[data-is-bottom="true"]{
+  border-bottom-left-radius: ${TREE_UI.groupStyle.radius}px ${TREE_UI.groupStyle.radius}px;
+  border-bottom-right-radius: ${TREE_UI.groupStyle.radius}px ${TREE_UI.groupStyle.radius}px;
+}
+
+&:focus, &:focus-visible, &:focus-within { outline: none !important; box-shadow: none !important; }
+* { &:focus, &:focus-visible { outline: none !important; box-shadow: none !important; border-color: transparent !important; } }
+.tree-block-flat { &:focus, &:focus-visible, &:focus-within { outline: none !important; box-shadow: none !important; border: none; } }
+`;
+
+const headerCSS = css`
+width: 100%; align-items: center; justify-content: center;
+.headerTabs { display: flex; flex-direction: row; width: 100%; align-items: center; gap: 6px; }
+button { height: 20px; gap: 3px; font-weight: 500; padding: 0px 4px; }
+button .icon { height:13px; width:13px; }
+`;
+
+const HighlightText = ({ text, query }: { text: string, query: string }) => {
+  if (!query || !text) return <>{text}</>;
+  const parts = text.toString().split(new RegExp(`(${query})`, 'gi'));
+  return (
+    <span style={{ display: 'inline' }}>
+      {parts.map((part, i) => part.toLowerCase() === query.toLowerCase() ? (
+          <span key={i} style={{ backgroundColor: TREE_UI.colors.highlightBg, color: '#fff', borderRadius: '2px', padding: '0 1px' }}>{part}</span>
+        ) : (<span key={i}>{part}</span>)
+      )}
+    </span>
+  );
+};
+
+const flatNodeAreEqual = (prev: any, next: any) => {
+  const wasEditing = prev.editingId === prev.item.block.id && prev.item.block.type !== 'group';
+  const isEditing = next.editingId === next.item.block.id && next.item.block.type !== 'group';
+  if (prev.item.block !== next.item.block) return false;
+  if (prev.item.numbering !== next.item.numbering) return false;
+  if (prev.item.depth !== next.item.depth) return false;
+  if (wasEditing !== isEditing) return false;
+  if (prev.index !== next.index) return false;
+
+  const activeGroups = next.item.block.type === 'group' 
+    ? [...next.item.parentGroupIds, next.item.block.id] 
+    : next.item.parentGroupIds;
+  for (let groupId of activeGroups) {
+    const prevB = prev.groupBounds[groupId];
+    const nextB = next.groupBounds[groupId];
+    if (!prevB || !nextB) return false;
+    if (prevB.start !== nextB.start || prevB.end !== nextB.end || prevB.color !== nextB.color) return false;
+  }
+  return true;
+};
+
+const FlatBlockNode = memo(({ item, index, actions, groupBounds, editingId }: any) => {
+  const { block, depth, numbering, parentGroupIds } = item;
+  const isGroup = block.type === 'group';
+  const isEditingCard = editingId === block.id && !isGroup;
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [editName, setEditName] = useState(block.metainfo.title || block.id);
+
+  const rowIndent = depth * TREE_UI.indent.step + TREE_UI.indent.base;
+
+  useEffect(() => {
+    if (wrapperRef.current) {
+      wrapperRef.current.setAttribute('data-tree-id', block.id);
+      wrapperRef.current.setAttribute('data-parent-ids', parentGroupIds.join(','));
+      actions.syncSingleDOMNode(wrapperRef.current, block.id, parentGroupIds);
+    }
+  }, [block.id, parentGroupIds, actions]);
+
+  const activeGroups = isGroup ? [...parentGroupIds, block.id] : parentGroupIds;
+
+  const onRenameSubmit = () => {
+    setIsEditingTitle(false);
+    if (!editName || editName === block.metainfo.title) { setEditName(block.metainfo.title || block.id); return; }
+    actions.handleRenameGroup(block.id, editName);
+  };
+
+  const bounds = groupBounds[block.id];
+  const isBottom = bounds!==undefined? index === bounds.end : false;
+
+  return (
+    <div
+      ref={wrapperRef}
+      data-is-top={isGroup}
+      data-is-bottom={isBottom || isGroup && block.metainfo.collapsed}
+      className={`tree-block-flat ${isGroup ? 'is-group' : 'is-card'}`}
+      style={{ paddingLeft: `${rowIndent}px` }} 
+      draggable={!isEditingCard}
+      onDragStart={(e) => actions.onDragStart(e, block.id, block.type)}
+      onDragOver={(e) => actions.onDragOver(e, block.id, block.type)}
+      onDrop={(e) => actions.onDrop(e, block.id)}
+      onClickCapture={(e) => {
+        if (isEditingCard) return; 
+        if (e.ctrlKey || e.shiftKey || e.altKey) {
+          e.stopPropagation(); e.preventDefault();
+          if (e.altKey) actions.onAltClick(e, block.id, block.type);
+          else actions.onClick(e, block.id);
+        }
+      }}
+      onClick={(e) => { if (isEditingCard) return; actions.onClick(e, block.id); }}
+      onDoubleClick={(e) => {
+        if (isEditingCard) return; e.stopPropagation();
+        if (!isGroup) actions.onDoubleClickNode(block.id);
+      }}
+    >
+      {activeGroups.map((groupId:any) => {
+        const bounds = groupBounds[groupId];
+        if (!bounds) return null;
+        
+        const isBottom = index === bounds.end;
+        const isTop = index === bounds.start;
+
+        return (
+          <div 
+            key={groupId} className="group-slice" data-slice-group-id={groupId}
+            data-is-top={isTop}
+            data-is-bottom={isBottom || isGroup && block.metainfo.collapsed}
+            style={{
+              position: 'absolute', left: 0, right: 0, top: 0, bottom: 0,
+              backgroundColor: 'transparent',
+              pointerEvents: 'none', zIndex: 0
+            }} 
+          />
+        )
+      })}
+       <div style={{
+        position: 'relative', zIndex: 1, display: 'flex', width: '100%',
+        paddingLeft: `${rowIndent}px`,
+        paddingTop: `${TREE_UI.rowStyle.basePh}px`,
+        paddingBottom: `${TREE_UI.rowStyle.basePh}px`,
+        paddingRight: `${TREE_UI.rowStyle.basePw}px`,
+      }}>
+        {isGroup ? (
+          <div className="group-title-row">
+            <button className="tree-group-btn" onClick={(e) => { e.stopPropagation(); actions.onToggleGroup(block.id); }}>
+              {block.metainfo.collapsed ? <LuChevronRight className="smIcon" /> : <LuChevronDown className="smIcon" />}
+            </button>
+            <LuPilcrow style={{ opacity: TREE_UI.groupRow.opacities.pilcrow }} />
+            <span style={{ 
+              fontWeight: 400, 
+              fontSize: `${TREE_UI.font.numbering}px`, 
+              opacity: TREE_UI.groupRow.opacities.numbering, 
+              whiteSpace: 'nowrap' 
+            }}>{numbering}</span>
+
+            {isEditingTitle ? (
+              <input autoFocus value={editName} onChange={e => setEditName(e.target.value)} onBlur={onRenameSubmit} onClick={e => e.stopPropagation()}
+                onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') onRenameSubmit(); if (e.key === 'Escape') { setIsEditingTitle(false); setEditName(block.metainfo.title || block.id); } }}
+                style={{ flex: 1, background: 'rgba(0,0,0,0.3)', color: 'white', border: '1px solid gray', borderRadius: '3px', padding: '0 4px', fontSize: `${TREE_UI.rowStyle.fontSize}px` }}
+              />
+            ) : (
+              <div style={{ flex: 1, opacity: TREE_UI.groupRow.opacities.title }} onDoubleClick={(e) => { e.stopPropagation(); setIsEditingTitle(true); }}>
+                <HighlightText text={block.metainfo.title || block.id} query={actions.searchQuery} />
+              </div>
+            )}
+            <input type="color" value={block.metainfo.color?.slice(0, 7) || TREE_UI.colors.groupDefault} 
+                onChange={(e:any)=>{ e.stopPropagation(); actions.handleChangeGroupColor(block.id, e.target.value); }} onClick={(e:any)=>{ e.stopPropagation() }} 
+                style={{ 
+                  width: `${TREE_UI.groupRow.colorPickerSize}px`, 
+                  height: `${TREE_UI.groupRow.colorPickerSize}px`, 
+                  padding: 0, border: 'none', background: 'none', cursor: 'pointer', borderRadius: '50%' 
+                }} />
+          </div>
+        ) : (
+          <div className="card-content-row">
+            <Card id={block.id} content={block.metainfo.content||''} options={{ stats: false, twoSides: isEditingCard, padding: '0px', fontSize: TREE_UI.rowStyle.fontSize }} focus={isEditingCard} />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}, flatNodeAreEqual);
+
+export const TreeView = memo(forwardRef(({ _editingId }: any, ref: any) => {
+  const { id, blocks, selfRef, headerRef, searchRef, name, setNs } = useGraphCtx() as any;
+
+  const [curName, setCurName] = useState({ '0': name }) as any;
+  const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
+  const [blocksData, setBlocksData] = useState(blocks || []);
+  const [, setSelExport] = useState<string[]>([]);
+  const [, setAltPopup] = useState<any>(null);
+  const [, setIsSearchOpen] = useState(false);
+  
+  const debouncedSearch = "";
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const tabsRef = useRef(null) as any;
+  const editingNodeIdRef = useRef<string | null>(null);
+
+  useEffect(() => { editingNodeIdRef.current = editingNodeId; }, [editingNodeId]);
+
+  const flatTree = useMemo(() => flattenBlocks(blocksData), [blocksData]);
+  const groupBounds = useMemo(() => {
+    const bounds: any = {};
+    flatTree.forEach((item: any, index: number) => {
+      if (item.block.type === 'group') {
+        bounds[item.block.id] = { start: index, end: index, color: item.block.metainfo.color || TREE_UI.colors.groupDefault, depth: item.depth };
+      }
+      item.parentGroupIds.forEach((pid:any) => {
+        if (bounds[pid]) bounds[pid].end = Math.max(bounds[pid].end, index);
+      });
+    });
+    return bounds;
+  }, [flatTree]);
+
+  const selection = useTreeSelection(setSelExport);
+  const { selRef, cursorRef, lastSelectedId, syncDOMSelection, syncSingleDOMNode } = selection;
+
+  const actions = useTreeActions({
+    blocksData, setBlocksData, flatTree, 
+    selRef, cursorRef, lastSelectedId, syncDOMSelection, setSelExport, 
+    editingNodeId, setEditingNodeId, setAltPopup,
+    searchQuery: debouncedSearch, syncSingleDOMNode, scrollContainerRef
+  });
+
+  const rowVirtualizer = useVirtualizer({
+    count: flatTree.length,
+    getScrollElement: () => scrollContainerRef.current,
+    estimateSize: (index) => flatTree[index].block.type === 'group' ? TREE_UI.rowHeight.group : TREE_UI.rowHeight.card,
+    overscan: 15,
+  });
+
+  const scrollToNode = useCallback((nodeId: string, align: 'auto'|'start'|'center'|'end' = 'auto') => {
+    const idx = flatTree.findIndex((i: any) => i.block.id === nodeId);
+    if (idx !== -1) rowVirtualizer.scrollToIndex(idx, { align });
+  }, [flatTree, rowVirtualizer]);
+
+  const handleGlobalKeyDown = useTreeKeyboard({
+    flatTree, setBlocksData, selRef, cursorRef, lastSelectedId, syncDOMSelection, 
+    setSelExport, editingNodeIdRef, rowVirtualizer, setIsSearchOpen, searchRef, 
+    scrollToNode, setEditingNodeId
+  });
+
+  useEffect(() => {
+    const timer = setTimeout(async () => {
+      if (headerRef?.current?.resetContent) {
+        await headerRef.current.resetContent();
+        const dc = headerRef.current.getContent();
+        headerRef.current.setContent([dc[0], HeaderTabs, dc[2]]);
+      }
+    }, 0);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (blocks && blocks.length > 0 && blocksData.length === 0) setBlocksData(blocks);
+  }, [blocks]);
+
+  useEffect(() => { syncDOMSelection(); }, [flatTree, syncDOMSelection]);
+
+  useEffect(() => {
+    if (!editingNodeId) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      const editingRow = document.querySelector(`[data-tree-id="${editingNodeId}"]`);
+      if (editingRow && editingRow.contains(target)) return;
+      setTimeout(() => setEditingNodeId(null), 150);
+    };
+    const timer = setTimeout(() => window.addEventListener('mousedown', handleClickOutside, { capture: true }), 50);
+    return () => { clearTimeout(timer); window.removeEventListener('mousedown', handleClickOutside, { capture: true }); };
+  }, [editingNodeId]);
+
+  const saveGraph = useCallback(async () => {
+    const user = await spaced_account.get();
+    gReq.update(id, {
+      content: JSON.stringify(blocksData), groups: '[]',
+      name: curName['0'], collaborators: [], owner: user.$id
+    });
+  }, [id, curName, blocksData, selfRef]);
+
+  const HeaderTabs = (
+    <span css={headerCSS}>
+      <Tabs.Root className='headerTabs' value={selfRef.current?.getMode()||'eg'} variant="plain"
+        onValueChange={(e:any) => {
+          if (editingNodeId) { setTimeout(() => { selfRef.current.setMode(e.value); setEditingNodeId(null); }, 150); } 
+          else { selfRef.current.setMode(e.value); }
+        }}
+      >
+        <Tabs.Trigger className='tabsTrigger' value="eg"><BsDiagram2Fill /></Tabs.Trigger>
+        <Tabs.Trigger className='tabsTrigger' value="repeat" ml={'-6px'}><RiRepeat2Line /></Tabs.Trigger>
+
+        <GraphCtx.Provider value={{ selfRef: tabsRef, blocks: curName, setBlocks: setCurName, ns: curName, setNs: setNs }}>
+          <Box p={0} m={0} onClickCapture={(e:any) => { if (e.altKey) { actions.onAltClick(e, '__root__', 'root'); e.stopPropagation(); } }}>
+            <Card id={'0'} content={name as any} options={{twoSides:false, fontSize:12}}/>
+          </Box>
+        </GraphCtx.Provider>
+
+        <Spacer />
+        <Button variant={'ghost'} colorPalette={'green'} onClick={saveGraph}>
+          <RiSaveFill className={'icon'}/> save
+        </Button>
+        <Clip props={{h:'20px',variant:'ghost',p:'0',w:'20px',minW:'20px'}} copyIcon={<FaShare style={{width:'13px',height:'13px'}}/>} value={APPWRITE_CONFIG.BASE_URL+'/'+id} />
+      </Tabs.Root>
+    </span>
+  );
+
+  useImperativeHandle(ref, () => ({
+    scrollToNode,
+    getContainer: () => scrollContainerRef.current
+  }));
+
+  return (
+    <div css={treeviewCSS} ref={scrollContainerRef} onKeyDown={handleGlobalKeyDown}>
+      
+      {/* ИСПРАВЛЕНО: Добавлен отсутствующий DOM элемент индикатора для Drag & Drop */}
+      <div id="drop-indicator" className="indicator"><div></div></div>
+
+      <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, width:'100%', position:'relative' }}>
+        {rowVirtualizer.getVirtualItems().map((virtualItem:any) => {
+          const item = flatTree[virtualItem.index];
+          return (
+            <div key={item.block.id} ref={rowVirtualizer.measureElement} data-index={virtualItem.index} className="virtual-row-wrapper"
+              style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${virtualItem.start}px)`, display: 'block', transition: 'transform 0.05s ease-out' }}
+            >
+              <FlatBlockNode item={item} index={virtualItem.index} groupBounds={groupBounds} actions={actions} editingId={editingNodeId} />
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}));

@@ -9,6 +9,13 @@ interface SpEditorI {
 	id?:string,   // Appwrite ID of the graph
 	name?:string, // name of the graph
 	repeats?:any,setRepeats?:any,
+
+	minigraphRef?:any, setMinigraphRef?: any; // minigraph configure
+	headerRef?:any, setHeaderRef?: any; // for setup header special elements
+	// feedRef?:any, setFeedRef?: any;   // feed configure
+	// treeRef?:any, setTreeRef?: any; // treeview configure
+	selfRef:any,
+	blocks:any,setBlocks:any,
 }
 
 export const GraphCtx = createContext<SpEditorI|null>(null);

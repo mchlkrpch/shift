@@ -14,13 +14,15 @@ display: flex;
 width: 100%;
 justify-content: center;
 align-items: center;
-// border-bottom: 1px solid color-mix(in srgb, #ccc 10%, transparent);
+height: fit-content;
 
 .panel{
     margin: 0px 20px;
     gap: 10px;
     display:flex;
     flex-direction: row;
+	align-items: center;
+	justify-content: center;
 }
 
 .hItem{
@@ -93,6 +95,7 @@ export const Header=React.forwardRef((props:any,ref:any)=>{
         resetContent:async()=>setLocalContent(defaultContent),
         getContent:()=>localContent,
     }))
+    
     return (<>
         <div
             css={headerStyle}>

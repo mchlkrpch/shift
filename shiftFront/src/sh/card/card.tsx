@@ -663,6 +663,11 @@ export const Card = forwardRef(({
       if (options.onMove) options.onMove(1);
       return;
     }
+    if (e.key === 'Escape') {
+      // console.log("ESc!")
+      // setIsEdit(false);
+      
+    }
     // Логика выпадающего меню '/'
     if (mentionMenu.isOpen) {
       if (['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Enter'].includes(e.key)) {
@@ -748,12 +753,12 @@ export const Card = forwardRef(({
         (ch.children.length >= 1)
           ?[...ch.childNodes]
               .map((n: any) => {
-                console.log('n.id[onBlur]',n.id)
+                // console.log('n.id[onBlur]',n.id)
                 if (n.id&&n.className==='inlineCell') {
                   if(n.id.split(':').length==2) {
                     const parts = n.id.split(':');
                     const retText=`<id=${parts[0]}:${parts[1]}>`
-                    console.log('retText',retText)
+                    // console.log('retText',retText)
                     return retText
                   }
                 }
@@ -791,7 +796,7 @@ export const Card = forwardRef(({
         newCardsUpdates[finalId] = content;
       }
     }
-    console.log('newCardsUpdates',newCardsUpdates)
+    // console.log('newCardsUpdates',newCardsUpdates)
     setC(currentCardContent);
     const updatedNs = {
       ...ns,
@@ -1056,7 +1061,7 @@ export const Card = forwardRef(({
 
   // link inside card's code editor
   if (options?.inner===true) {
-    console.log('option!', options?.option)
+    // console.log('option!', options?.option)
     const option = options?.option?options?.option:0; 
     return (<span className='card_inline_link'>{fwdParts[option]}</span>)
   }

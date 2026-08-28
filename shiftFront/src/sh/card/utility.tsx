@@ -23,6 +23,7 @@ import 'highlight.js/styles/github-dark.css';
 import { Cell } from './cell';
 import { Box } from '@chakra-ui/react';
 import { Clip } from '../clip';
+// @ts-expect-error
 import dagre from 'dagre';
 
 export const SIDE_SPLIT_SYM: string = '@@@'
