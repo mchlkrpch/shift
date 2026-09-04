@@ -1,6 +1,6 @@
 import { forwardRef, memo, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { useGraphCtx } from "../../App";
-import { calcG } from "../card/utility";
+import { calcG, transformToOldGroups } from "../card/utility";
 import { Box, Button, HStack, IconButton, Spacer, Text } from "@chakra-ui/react";
 import Graphology from "graphology";
 import Sigma from "sigma";
@@ -523,7 +523,7 @@ export const Minigraph = memo(({
 	id, type,
 	targetNodes, targetGroups,
 	x, y,
-	ns, groups,
+	ns, flatTree, groups,
 	onClose, onDelete, onRepeat
 }: any) => {
     const rendererRef = useRef<any>(null);
@@ -547,7 +547,7 @@ export const Minigraph = memo(({
             };
             traverse(id);
         }
-        
+
         const mNs: any = {};
         visited.forEach(n => { mNs[n] = ns[n] || ''; });
 
@@ -559,7 +559,8 @@ export const Minigraph = memo(({
         }
         
         // Получаем расчеты из calcG (так же, как это делает основной Flow)
-        const [rNs, rEs] = calcG(mNs, mGroups, {x:1, y:1});
+		const reconstructedGroups = transformToOldGroups(flatTree);
+        const [rNs, rEs] = calcG(mNs, reconstructedGroups, {x:1, y:1});
 
         // 1. Очищаем узлы от суффиксов :0, :1, чтобы отображать единые базовые карточки.
         const baseNsMap = new Map();

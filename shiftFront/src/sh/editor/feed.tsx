@@ -367,9 +367,6 @@ export function ChatNN({ currentCardId, ns }: { currentCardId?: string | null, n
 
   const handleSend = async () => {
     if (!prompt.trim() && pastedImages.length === 0) return;
-    
-    console.log('m:', model);
-
     let finalPrompt = prompt;
     if (useContext && currentCardId && ns) {
       const graphContext = getContextForAi(currentCardId, ns);

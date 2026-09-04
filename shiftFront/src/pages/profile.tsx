@@ -57,7 +57,7 @@ import {
 import {
 	Clip
 } from '../sh/clip';
-import { ContextMenu, useContextMenu } from '../sh/menu';
+import { ContextMenu, useContextMenu } from '../sh/editor/contextMenu';
 
 export const unknownPhotoUrl: string = "https://i.postimg.cc/MKZzBCG2/spaced-gray.png";
 
@@ -183,7 +183,7 @@ export const InputStack=(props:any)=>{
 										gRef:el.ref,
 										id:'',
 										name:'',
-									}}>
+									} as any}>
 										<Card
 											ref={el.ref}
 											id={'0'}
@@ -361,7 +361,7 @@ const GraphItem = ({
 					gRef: null, 
 					id: g.$id, 
 					name: g.name 
-				}}>
+				} as any}>
                     <GraphPage mode={'brief'} name={g.name} id={g.$id}/>
                 </GraphCtx.Provider>
             </Box>
@@ -467,7 +467,6 @@ export function Profile(props:any){
 		user=store.getState().user;
 		userData=store.getState().userData;
 	}
-	console.log('userData',userData)
 
 	const [localUserData,setLocalUserData] = useState(userData);
 	const usernameRef = useRef<HTMLInputElement>(null);

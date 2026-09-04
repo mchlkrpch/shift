@@ -15,12 +15,14 @@ import {
 } from "react";
 import { LuChevronDown, LuChevronRight, LuPilcrow } from "react-icons/lu";
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { APPWRITE_CONFIG, gReq, spaced_account } from "../../../appwrite/service";
+import { APPWRITE_CONFIG, gReq } from "../../../appwrite/service";
 import { BsDiagram2Fill } from "react-icons/bs";
 import { RiRepeat2Line, RiSaveFill } from "react-icons/ri";
 import { Clip } from "../../clip";
 import { FaShare } from "react-icons/fa";
-import { flattenBlocks, useTreeActions, useTreeKeyboard, useTreeSelection } from "./hooks";
+import { flattenBlocks, removeMultipleBlocksImm, updateAndInsertImm, useTreeActions, useTreeKeyboard, useTreeSelection } from "./hooks";
+import { ContextMenu, useContextMenu } from "../contextMenu";
+import { Minigraph } from "../minigraph";
 
 export const TREE_UI = {
   colors: {
@@ -306,15 +308,16 @@ const FlatBlockNode = memo(({ item, index, actions, groupBounds, editingId }: an
   );
 }, flatNodeAreEqual);
 
-export const TreeView = memo(forwardRef(({ _editingId }: any, ref: any) => {
-  const { id, blocks, selfRef, headerRef, searchRef, name, setNs } = useGraphCtx() as any;
-
-  const [curName, setCurName] = useState({ '0': name }) as any;
+export const TreeView = memo(forwardRef(({}: any, ref: any) => {
+  const { id, blocks, selfRef, headerRef, searchRef, name } = useGraphCtx() as any;
+  // tree part
+	const curName = useRef(name);
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [blocksData, setBlocksData] = useState(blocks || []);
   const [, setSelExport] = useState<string[]>([]);
-  const [, setAltPopup] = useState<any>(null);
+  // const [, setAltPopup] = useState<any>(null);
   const [, setIsSearchOpen] = useState(false);
+	const blocksDataRef = useRef(blocksData);
   
   const debouncedSearch = "";
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -337,8 +340,10 @@ export const TreeView = memo(forwardRef(({ _editingId }: any, ref: any) => {
     return bounds;
   }, [flatTree]);
 
-  const selection = useTreeSelection(setSelExport);
+  const selection = useTreeSelection();
   const { selRef, cursorRef, lastSelectedId, syncDOMSelection, syncSingleDOMNode } = selection;
+
+  const [altPopup, setAltPopup] = useState<any>(null); // Для Minigraph
 
   const actions = useTreeActions({
     blocksData, setBlocksData, flatTree, 
@@ -350,7 +355,10 @@ export const TreeView = memo(forwardRef(({ _editingId }: any, ref: any) => {
   const rowVirtualizer = useVirtualizer({
     count: flatTree.length,
     getScrollElement: () => scrollContainerRef.current,
-    estimateSize: (index) => flatTree[index].block.type === 'group' ? TREE_UI.rowHeight.group : TREE_UI.rowHeight.card,
+    estimateSize: (index) => flatTree[index].block.type === 'group'
+      ? TREE_UI.rowHeight.group
+      : TREE_UI.rowHeight.card,
+    getItemKey: (index) => flatTree[index].block.id,
     overscan: 15,
   });
 
@@ -364,6 +372,49 @@ export const TreeView = memo(forwardRef(({ _editingId }: any, ref: any) => {
     setSelExport, editingNodeIdRef, rowVirtualizer, setIsSearchOpen, searchRef, 
     scrollToNode, setEditingNodeId
   });
+
+  // Menupart
+  const {open:openMenu, props:menuProps} = useContextMenu();
+  const menuItems = useMemo(() => [
+    { 
+      id: 'group', 
+      el: 'Group Selected', 
+      shortcut: 'Ctrl+G',
+      onClick: () => {
+        const event = new KeyboardEvent('keydown', { key: 'g', ctrlKey: true });
+        handleGlobalKeyDown(event as any);
+      }
+    },
+    { el: 'separator' },
+    { id: 'add_above', el: 'Add Card Above', shortcut: 'A', onClick: () => handleGlobalKeyDown({ key: 'a', preventDefault: ()=>{} } as any) },
+    { id: 'add_below', el: 'Add Card Below', shortcut: 'B', onClick: () => handleGlobalKeyDown({ key: 'b', preventDefault: ()=>{} } as any) },
+    { el: 'separator' },
+    { 
+      id: 'delete', 
+      el: 'Delete', 
+      danger: true, 
+      shortcut: 'Del',
+      onClick: () => handleGlobalKeyDown({ key: 'Delete', preventDefault: ()=>{} } as any) 
+    },
+  ], [handleGlobalKeyDown]);
+
+  const onContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    // Если кликнули не по выделенному, выделяем этот элемент
+    const target = e.target as HTMLElement;
+    const row = target.closest('.tree-block-flat');
+    if (row) {
+        const id = row.getAttribute('data-tree-id');
+        if (id && !selRef.current.has(id)) {
+            selRef.current.clear();
+            selRef.current.add(id);
+            cursorRef.current = id;
+            syncDOMSelection();
+        }
+    }
+    openMenu(e);
+  };
+
 
   useEffect(() => {
     const timer = setTimeout(async () => {
@@ -381,6 +432,9 @@ export const TreeView = memo(forwardRef(({ _editingId }: any, ref: any) => {
   }, [blocks]);
 
   useEffect(() => { syncDOMSelection(); }, [flatTree, syncDOMSelection]);
+	useEffect(() => {
+		blocksDataRef.current = blocksData;
+	}, [blocksData]);
 
   useEffect(() => {
     if (!editingNodeId) return;
@@ -394,13 +448,21 @@ export const TreeView = memo(forwardRef(({ _editingId }: any, ref: any) => {
     return () => { clearTimeout(timer); window.removeEventListener('mousedown', handleClickOutside, { capture: true }); };
   }, [editingNodeId]);
 
-  const saveGraph = useCallback(async () => {
-    const user = await spaced_account.get();
-    gReq.update(id, {
-      content: JSON.stringify(blocksData), groups: '[]',
-      name: curName['0'], collaborators: [], owner: user.$id
-    });
-  }, [id, curName, blocksData, selfRef]);
+  const saveGraph = useCallback(async (isAutoSave = false) => {
+		try {
+			console.log('blocksData',blocksDataRef.current)
+			const updatedFields = {
+				content: JSON.stringify(blocksDataRef.current),
+				name: curName.current,
+			};
+			await gReq.update(id, updatedFields);
+			if (!isAutoSave) {
+				console.log('Graph saved successfully');
+			}
+		} catch (error) {
+			console.error("Failed to save graph:", error);
+		}
+	}, [id, blocksData]);
 
   const HeaderTabs = (
     <span css={headerCSS}>
@@ -413,14 +475,18 @@ export const TreeView = memo(forwardRef(({ _editingId }: any, ref: any) => {
         <Tabs.Trigger className='tabsTrigger' value="eg"><BsDiagram2Fill /></Tabs.Trigger>
         <Tabs.Trigger className='tabsTrigger' value="repeat" ml={'-6px'}><RiRepeat2Line /></Tabs.Trigger>
 
-        <GraphCtx.Provider value={{ selfRef: tabsRef, blocks: curName, setBlocks: setCurName, ns: curName, setNs: setNs }}>
+        <GraphCtx.Provider value={{ selfRef: tabsRef, blocks: curName, setBlocks: (p:any)=>{curName.current = p['0']}, ns: curName,
+					setNs: async(p:any)=>{
+						console.log("?",p)
+						curName.current = p['0'];
+					} }}>
           <Box p={0} m={0} onClickCapture={(e:any) => { if (e.altKey) { actions.onAltClick(e, '__root__', 'root'); e.stopPropagation(); } }}>
-            <Card id={'0'} content={name as any} options={{twoSides:false, fontSize:12}}/>
+            <Card id={'0'} content={curName.current as any} options={{twoSides:false, fontSize:12}}/>
           </Box>
         </GraphCtx.Provider>
 
         <Spacer />
-        <Button variant={'ghost'} colorPalette={'green'} onClick={saveGraph}>
+        <Button variant={'ghost'} colorPalette={'green'} onClick={saveGraph as any}>
           <RiSaveFill className={'icon'}/> save
         </Button>
         <Clip props={{h:'20px',variant:'ghost',p:'0',w:'20px',minW:'20px'}} copyIcon={<FaShare style={{width:'13px',height:'13px'}}/>} value={APPWRITE_CONFIG.BASE_URL+'/'+id} />
@@ -428,29 +494,79 @@ export const TreeView = memo(forwardRef(({ _editingId }: any, ref: any) => {
     </span>
   );
 
+	const computedNs = useMemo(() => {
+  const dict: Record<string, string> = {};
+  const traverse = (blocks: any[]) => {
+			blocks.forEach(b => {
+				// Сохраняем контент карточек и заголовки групп
+				dict[b.id] = b.metainfo?.content || b.metainfo?.title || '';
+				if (b.children) traverse(b.children);
+			});
+		};
+		traverse(blocksData);
+		return dict;
+	}, [blocksData]);
+
+	// 2. Глобальная функция обновления контента карточки
+	const updateCardContent = useCallback((id: string, newContent: string, additionalBlocks: any[] = []) => {
+		setBlocksData((prev: any[]) => {
+			return updateAndInsertImm(prev, id, newContent, additionalBlocks);
+		});
+	}, []);
+
+	// 3. Обновляем контекст, который пойдет вниз к Карточкам
+	const treeGraphCtx = useMemo(() => ({
+		...useGraphCtx(), // Берем верхний контекст (где лежит appwrite id и т.д.)
+		ns: computedNs,   // Переопределяем ns на вычисляемый
+		updateCardContent // Пробрасываем нашу новую функцию!
+	}), [computedNs, updateCardContent]);
+
   useImperativeHandle(ref, () => ({
     scrollToNode,
     getContainer: () => scrollContainerRef.current
   }));
 
   return (
-    <div css={treeviewCSS} ref={scrollContainerRef} onKeyDown={handleGlobalKeyDown}>
-      
-      {/* ИСПРАВЛЕНО: Добавлен отсутствующий DOM элемент индикатора для Drag & Drop */}
-      <div id="drop-indicator" className="indicator"><div></div></div>
+		<GraphCtx.Provider value={treeGraphCtx}>
+			<div
+        css={treeviewCSS}
+        ref={scrollContainerRef}
+        onKeyDown={handleGlobalKeyDown}
+        onContextMenu={onContextMenu}
+      >
+				<div id="drop-indicator" className="indicator"><div></div></div>
 
-      <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, width:'100%', position:'relative' }}>
-        {rowVirtualizer.getVirtualItems().map((virtualItem:any) => {
-          const item = flatTree[virtualItem.index];
-          return (
-            <div key={item.block.id} ref={rowVirtualizer.measureElement} data-index={virtualItem.index} className="virtual-row-wrapper"
-              style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${virtualItem.start}px)`, display: 'block', transition: 'transform 0.05s ease-out' }}
-            >
-              <FlatBlockNode item={item} index={virtualItem.index} groupBounds={groupBounds} actions={actions} editingId={editingNodeId} />
-            </div>
-          );
-        })}
-      </div>
-    </div>
+        {altPopup && (
+          <Minigraph
+            {...altPopup} 
+            ns={computedNs}
+            flatTree={flatTree}
+            groups={groupBounds}
+            onClose={() => setAltPopup(null)}
+            onDelete={() => {
+                // Логика удаления через дерево
+                const ids = new Set(altPopup.targetNodes) as any;
+                setBlocksData((prev: any) => removeMultipleBlocksImm(prev, ids));
+                setAltPopup(null);
+            }}
+          />
+        )}
+
+        <ContextMenu {...menuProps} items={menuItems} />
+
+				<div style={{ height: `${rowVirtualizer.getTotalSize()}px`, width:'100%', position:'relative' }}>
+					{rowVirtualizer.getVirtualItems().map((virtualItem:any) => {
+						const item = flatTree[virtualItem.index];
+						return (
+							<div key={item.block.id} ref={rowVirtualizer.measureElement} data-index={virtualItem.index} className="virtual-row-wrapper"
+								style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${virtualItem.start}px)`, display: 'block', transition: 'transform 0.05s ease-out' }}
+							>
+								<FlatBlockNode item={item} index={virtualItem.index} groupBounds={groupBounds} actions={actions} editingId={editingNodeId} />
+							</div>
+						);
+					})}
+				</div>
+			</div>
+		</GraphCtx.Provider>
   );
 }));

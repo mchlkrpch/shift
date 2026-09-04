@@ -129,7 +129,7 @@ export const Editor=forwardRef(({}:any,ref:any)=>{
       className={'graphTabs'}
     >
       <Header ref={headerRef}/>
-      <Separator h={'10px'}/>
+      {/* <Separator h={'10px'}/> */}
 
       <Tabs.Content value={'eg'}
         overflowY={'hidden'}

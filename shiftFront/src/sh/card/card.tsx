@@ -555,7 +555,7 @@ export const Card = forwardRef(({
   if (content === undefined) return <></>;
 
   const gCtx=useGraphCtx()as any;
-  const{ns,setNs}=gCtx;
+  const{ns,updateCardContent}=gCtx;
   // content to displays
   const [c,setC]=useState(content||'empty');
   // if hovered - display upper tools
@@ -652,60 +652,6 @@ export const Card = forwardRef(({
     return opts;
   }, [ns, mentionMenu.query, insertMention]);
 
-  const localOnKeyDown = (e:React.KeyboardEvent) => {
-    if (e.altKey && e.key === 'ArrowUp') {
-      e.preventDefault();
-      if (options.onMove) options.onMove(-1);
-      return;
-    }
-    if (e.altKey && e.key === 'ArrowDown') {
-      e.preventDefault();
-      if (options.onMove) options.onMove(1);
-      return;
-    }
-    if (e.key === 'Escape') {
-      // console.log("ESc!")
-      // setIsEdit(false);
-      
-    }
-    // Логика выпадающего меню '/'
-    if (mentionMenu.isOpen) {
-      if (['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Enter'].includes(e.key)) {
-        // Мы предотвращаем дефолт, чтобы каретка в contentEditable не прыгала
-        // и чтобы Enter не переносил строку, когда мы в меню.
-        // Дальше глобальный листенер ContextMenu перехватит этот евент.
-        e.preventDefault(); 
-      } else if (e.key === 'Escape') {
-        e.preventDefault();
-        // Escape тоже перехватывается ContextMenu (чтобы подняться наверх), 
-        // так что здесь мы просто стопаем нативный прыжок фокуса
-      } else if (e.key === 'Backspace') {
-        if (mentionMenu.query.length === 0) {
-          setMentionMenu(prev => ({ ...prev, isOpen: false }));
-        } else {
-          setMentionMenu(prev => ({ ...prev, query: prev.query.slice(0, -1) }));
-        }
-      } else if (e.key.length === 1) { // Если введена буква/символ
-        setMentionMenu(prev => ({ ...prev, query: prev.query + e.key }));
-      }
-    } else if (e.key === '/') {
-      setTimeout(() => {
-        const sel = window.getSelection();
-        if (sel && sel.rangeCount > 0) {
-          const range = sel.getRangeAt(0).cloneRange();
-          const rect = range.getBoundingClientRect();
-          setMentionMenu({
-            isOpen: true,
-            query: '',
-            x: rect.left,
-            y: rect.bottom+5,
-            range: range 
-          });
-        }
-      }, 10);
-    }
-  };
-
 
   // list[str]: of forward sides of card-group
   const fwdParts = groupTp==='multiple_bwd'? c
@@ -748,71 +694,125 @@ export const Card = forwardRef(({
   const isHTML_set = useRef(false);
 
   const onBlurCb = async () => {
-    const newC: string =[...inputRef.current.children]
-      .map((ch: any) => (
-        (ch.children.length >= 1)
-          ?[...ch.childNodes]
-              .map((n: any) => {
-                // console.log('n.id[onBlur]',n.id)
-                if (n.id&&n.className==='inlineCell') {
-                  if(n.id.split(':').length==2) {
-                    const parts = n.id.split(':');
-                    const retText=`<id=${parts[0]}:${parts[1]}>`
-                    // console.log('retText',retText)
-                    return retText
-                  }
-                }
-                return (
-                  n.nodeType === Node.TEXT_NODE ? (
-                    n.textContent
-                  ) : (n.className === 'inlineCell') ? (
-                    `<id=${n.id}>` // <-- БЕРЕТСЯ ID ИМЕННО ЭТОЙ ЯЧЕЙКИ 
-                  ) : n.textContent
-                )
-              })
-              .join('')
-          : ch.innerText
-      ))
+    const newC: string = [...inputRef.current.children]
+      .map((ch: any) => {
+        if (ch.children.length >= 1) {
+          return [...ch.childNodes].map((n: any) => {
+            if (n.id && n.className === 'inlineCell') {
+              const parts = n.id.split(':');
+              return parts.length === 2 ? `<id=${parts[0]}:${parts[1]}>` : `<id=${n.id}>`;
+            }
+            return n.nodeType === Node.TEXT_NODE ? n.textContent : n.textContent;
+          }).join('');
+        }
+        return ch.innerText;
+      })
       .join('\n');
+
     const chunks = newC.split('~~~');
     const currentCardContent = chunks[0];
     const currentCardId = path[path.length-1];
-    const newCardsUpdates: Record<string, string> = {};
-    newCardsUpdates[currentCardId] = currentCardContent;
+
+    // Парсим карточки, которые юзер хочет создать пачкой (через ~~~)
+    const newBlocksToInsert: any[] = [];
+    
     for (let i = 1; i < chunks.length; i++) {
       const chunk = chunks[i];
       const newlineIndex = chunk.indexOf('\n');
-      let id = '';
-      let content = '';
+      let newId = '', newText = '';
+      
       if (newlineIndex === -1) {
-        id = chunk;
+        newId = chunk;
       } else {
-        id = chunk.substring(0, newlineIndex).trim();
-        content = chunk.substring(newlineIndex + 1);
+        newId = chunk.substring(0, newlineIndex).trim();
+        newText = chunk.substring(newlineIndex + 1);
       }
 
-      const finalId = resolveCardId(id, content);
+      const finalId = resolveCardId(newId, newText);
       if (finalId) {
-        newCardsUpdates[finalId] = content;
+        // Формируем структуру блока для дерева
+        newBlocksToInsert.push({ 
+          id: finalId, 
+          type: 'card', 
+          metainfo: { content: newText } 
+        });
       }
     }
-    // console.log('newCardsUpdates',newCardsUpdates)
+
+    // 1. Обновляем локальный стейт (чтобы UI моргнул мгновенно)
     setC(currentCardContent);
-    const updatedNs = {
-      ...ns,
-      ...newCardsUpdates
-    };
-    if (options.onCardsCreated && Object.keys(newCardsUpdates).length > 1) {
-      const newlyCreatedIds = Object.keys(newCardsUpdates).filter(
-        cid => cid !== currentCardId && !Object.keys(ns).includes(cid)
-      );
-      if (newlyCreatedIds.length > 0) {
-        options.onCardsCreated(newlyCreatedIds);
-      }
+    
+    // 2. ОТПРАВЛЯЕМ ИЗМЕНЕНИЯ В ЦЕНТРАЛЬНОЕ ДЕРЕВО (Singular Source of Truth)
+    if (updateCardContent) {
+      updateCardContent(currentCardId, currentCardContent, newBlocksToInsert);
+    } else {
+      console.warn("updateCardContent is missing in GraphCtx!");
     }
-    setNs(updatedNs);
+
+    // 3. Вызываем внешний хук (если кто-то ждет новых ID)
+    if (options.onCardsCreated && newBlocksToInsert.length > 0) {
+      options.onCardsCreated(newBlocksToInsert.map(b => b.id));
+    }
+
     if (options.twoSides === false) {
       setIsEdit(false);
+    }
+  };
+
+
+  const localOnKeyDown = (e:React.KeyboardEvent) => {
+    if (e.altKey && e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (options.onMove) options.onMove(-1);
+      return;
+    }
+    if (e.altKey && e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (options.onMove) options.onMove(1);
+      return;
+    }
+    if (e.key === 'Escape') {
+      // console.log("ESc!")
+      if (isEdit) {
+        onBlurCb()
+        setIsEdit(false);
+      }
+    }
+    // Логика выпадающего меню '/'
+    if (mentionMenu.isOpen) {
+      if (['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Enter'].includes(e.key)) {
+        // Мы предотвращаем дефолт, чтобы каретка в contentEditable не прыгала
+        // и чтобы Enter не переносил строку, когда мы в меню.
+        // Дальше глобальный листенер ContextMenu перехватит этот евент.
+        e.preventDefault(); 
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        // Escape тоже перехватывается ContextMenu (чтобы подняться наверх), 
+        // так что здесь мы просто стопаем нативный прыжок фокуса
+      } else if (e.key === 'Backspace') {
+        if (mentionMenu.query.length === 0) {
+          setMentionMenu(prev => ({ ...prev, isOpen: false }));
+        } else {
+          setMentionMenu(prev => ({ ...prev, query: prev.query.slice(0, -1) }));
+        }
+      } else if (e.key.length === 1) { // Если введена буква/символ
+        setMentionMenu(prev => ({ ...prev, query: prev.query + e.key }));
+      }
+    } else if (e.key === '/') {
+      setTimeout(() => {
+        const sel = window.getSelection();
+        if (sel && sel.rangeCount > 0) {
+          const range = sel.getRangeAt(0).cloneRange();
+          const rect = range.getBoundingClientRect();
+          setMentionMenu({
+            isOpen: true,
+            query: '',
+            x: rect.left,
+            y: rect.bottom+5,
+            range: range 
+          });
+        }
+      }, 10);
     }
   };
 
@@ -852,7 +852,7 @@ export const Card = forwardRef(({
                 <Box pl={'4px'} m={0}>
                   <CardPath path={path}/>
                 </Box>)}
-              <Sh value={fwdParts[option]}/>
+              <Sh value={fwdParts[option]||'empty'}/>
             </Box>
           </Accordion.ItemTrigger>
 
@@ -1061,7 +1061,6 @@ export const Card = forwardRef(({
 
   // link inside card's code editor
   if (options?.inner===true) {
-    // console.log('option!', options?.option)
     const option = options?.option?options?.option:0; 
     return (<span className='card_inline_link'>{fwdParts[option]}</span>)
   }

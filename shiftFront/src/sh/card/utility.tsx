@@ -172,7 +172,7 @@ const CodeBlock = ({ node, inline, className, children, ...props }: any) => {
     );
   }
   return (
-    <Box as="code" bg="gray.100" px={1} py={0.5} borderRadius="sm" fontSize="0.9em" {...props}>
+    <Box as="code" bg="whiteAlpha.200" px={1} py={0.5} borderRadius="sm" fontSize="0.9em" {...props}>
       {children}
     </Box>
   );
@@ -396,13 +396,32 @@ export const calcEs = (datas: DataTp[]) => {
 export const NodeWidth = 160;
 export const NodeHeight = 36;
 
-export function calculateHierarchy(groups: Record<string, {color: string, nodes: string[]}>) {
-  const sortedGroups = Object.entries(groups || {}).sort((a,b) => a[1].nodes.length - b[1].nodes.length);
+export function transformToOldGroups(flatTree: any[]) {
+  const oldGroups: Record<string, string[]> = {};
+
+  flatTree.forEach((item) => {
+    // Нас интересуют только карточки (ноды)
+    if (item.block.type === 'card') {
+      // Каждая карточка знает список своих родителей (групп)
+      item.parentGroupIds.forEach((groupId: string) => {
+        if (!oldGroups[groupId]) {
+          oldGroups[groupId] = [];
+        }
+        oldGroups[groupId].push(item.block.id);
+      });
+    }
+  });
+
+  return oldGroups;
+}
+
+export function calculateHierarchy(groups: any) {
+  const sortedGroups = Object.entries(groups||{}).sort((a: any,b: any) => (a.end-a.start) - (b.end-b.start));
   const nodeToGroup: Record<string, string> = {};
   const groupToGroup: Record<string, string> = {};
-
   sortedGroups.forEach(([gName, gData]) => {
-    gData.nodes.forEach(nodeId => {
+    // example of output: gn: Leonard story {start: 9, end: 12, color: '#3ab3b026', depth: 1}
+    gData.forEach((nodeId:any) => {
       if (nodeToGroup[nodeId]) {
         const smallerGroup = nodeToGroup[nodeId];
         let current = smallerGroup;

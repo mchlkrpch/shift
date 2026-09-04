@@ -39,6 +39,18 @@ const isDescendant = (block: Block, targetId: string): boolean => {
   return false;
 };
 
+const isKey = (kk: any, key: string) => {
+  const k = kk.toLowerCase();
+  const map: Record<string, string[]> = {
+    'f': ['f', 'а'],
+    'g': ['g', 'п'],
+    'a': ['a', 'ф'],
+    'b': ['b', 'и'],
+    's': ['s', 'ы'],
+  };
+  return map[key]?.includes(k) || k === key;
+};
+
 const toggleCollapseImm = (blocks: Block[], id: string): Block[] => {
   let changed = false;
   const res = blocks.map(b => {
@@ -52,7 +64,7 @@ const toggleCollapseImm = (blocks: Block[], id: string): Block[] => {
   return changed ? res : blocks;
 };
 
-const removeMultipleBlocksImm = (blocks: Block[], idsToDelete: Set<string>): Block[] => {
+export const removeMultipleBlocksImm = (blocks: Block[], idsToDelete: Set<string>): Block[] => {
   let changed = false;
   const res: Block[] = [];
   for (const b of blocks) {
@@ -99,6 +111,97 @@ const removeBlockImm = (blocks: Block[], id: string, removedArr: Block[]): Block
   return changed ? res : blocks;
 };
 
+
+export const updateAndInsertImm = (
+  blocks: any[], 
+  targetId: string, 
+  newContent: string, 
+  newBlocks: any[]
+): any[] => {
+  let changed = false;
+  const res = blocks.flatMap(b => {
+    if (b.id === targetId) {
+      changed = true;
+      const updatedBlock = { ...b, metainfo: { ...b.metainfo, content: newContent } };
+      // Возвращаем обновленную карточку и сразу за ней - новые (созданные через ~~~)
+      return [updatedBlock, ...newBlocks]; 
+    }
+    if (b.children) {
+      const newChildren = updateAndInsertImm(b.children, targetId, newContent, newBlocks);
+      if (newChildren !== b.children) {
+        changed = true;
+        return [{ ...b, children: newChildren }];
+      }
+    }
+    return [b];
+  });
+  return changed ? res : blocks;
+};
+
+export const groupSelectedBlocksImm = (blocks: Block[], selectedIds: Set<string>): Block[] => {
+  if (selectedIds.size === 0) return blocks;
+
+  const selectedBlocks: Block[] = [];
+
+  // 1. Собираем объекты блоков в том же порядке, в котором они лежат в дереве сверху вниз
+  const findAndCollect = (list: Block[]) => {
+    list.forEach(b => {
+      if (selectedIds.has(b.id)) {
+        selectedBlocks.push(b);
+        // Если мы уже берем родителя целиком, нам не нужно отдельно пушить его детей,
+        // даже если они тоже выделены. Они перенесутся внутрь родителя.
+      } else if (b.children) {
+        findAndCollect(b.children);
+      }
+    });
+  };
+  findAndCollect(blocks);
+
+  if (selectedBlocks.length === 0) return blocks;
+
+  const newGroup: Block = {
+    id: `group_${Date.now()}`,
+    type: 'group',
+    metainfo: { title: 'New Group', collapsed: false, color: '#555555' },
+    children: selectedBlocks
+  };
+
+  // 2. Идем по дереву, удаляем выбранные элементы, 
+  // а на место САМОГО ПЕРВОГО встреченного вставляем нашу новую группу.
+  let isGroupInserted = false;
+
+  const insertAndRemove = (list: Block[]): Block[] => {
+    let changed = false;
+    const res: Block[] = [];
+
+    for (const b of list) {
+      if (selectedIds.has(b.id)) {
+        changed = true;
+        // Если это первый выделенный элемент, который мы встретили - ставим группу вместо него
+        if (!isGroupInserted) {
+          res.push(newGroup);
+          isGroupInserted = true;
+        }
+        // В противном случае мы просто ничего не пушим в `res` (удаляем элемент)
+      } else {
+        if (b.children) {
+          const newChildren = insertAndRemove(b.children);
+          if (newChildren !== b.children) {
+            changed = true;
+            res.push({ ...b, children: newChildren });
+            continue; // идем к следующему элементу цикла
+          }
+        }
+        res.push(b);
+      }
+    }
+    return changed ? res : list;
+  };
+
+  return insertAndRemove(blocks);
+};
+
+
 const insertBlocksImm = (
   blocks: Block[], 
   targetId: string, 
@@ -137,7 +240,7 @@ export const flattenBlocks = (blocks: Block[], depth = 0, prefix = '', parentGro
   return result;
 };
 
-export const useTreeSelection = (setSelExport: (ids: string[]) => void) => {
+export const useTreeSelection = () => {
   const selRef = useRef<Set<string>>(new Set());
   const cursorRef = useRef<string | null>(null);
   const lastSelectedId = useRef<string | null>(null);
@@ -269,7 +372,6 @@ export const useTreeActions = ({
     onDrop: (e: React.DragEvent, dropzoneId: string) => {
       e.preventDefault(); e.stopPropagation();
       
-      // ИСПРАВЛЕНО: Безопасное скрытие индикатора
       const indicator = document.getElementById('drop-indicator');
       if (indicator) indicator.style.display = 'none';
       
@@ -322,20 +424,35 @@ export const useTreeKeyboard = ({
 }: any) => {
 
   const handleGlobalKeyDown = useCallback(async (e: React.KeyboardEvent) => {
-    // ИСПРАВЛЕНО: Закрытие карточки по Escape ДО проверок на ввод
     if (e.key === 'Escape') {
       if (editingNodeIdRef.current) {
         e.preventDefault();
         setEditingNodeId(null);
         if (document.activeElement instanceof HTMLElement) {
-          document.activeElement.blur(); // Снимаем фокус с ввода, чтобы работали шорткаты
+          document.activeElement.blur(); 
         }
         return;
       }
     }
 
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
+    if ((e.ctrlKey || e.metaKey) && isKey(e.key, 'f')) {
       e.preventDefault(); setIsSearchOpen(true); setTimeout(() => searchRef.current?.focus(), 50);
+    }
+
+    if ((e.ctrlKey || e.metaKey) && isKey(e.key, 'g')) { // Группировка
+      e.preventDefault();
+      if (selRef.current.size > 0) {
+        setBlocksData((prev: Block[]) => {
+            const newTree = groupSelectedBlocksImm(prev, selRef.current);
+            // Находим ID новой группы (он будет в начале или можно его вернуть из функции)
+            return newTree;
+        });
+        // Очистка выделения после группировки
+        setTimeout(() => {
+          selRef.current.clear();
+          syncDOMSelection();
+        }, 50);
+      }
     }
     
     const target = e.target as HTMLElement;
@@ -405,49 +522,71 @@ export const useTreeKeyboard = ({
         }
       }
 
+      // --- 1. МГНОВЕННАЯ ВИЗУАЛИЗАЦИЯ DOM ---
       const wrappers = document.querySelectorAll('.virtual-row-wrapper');
       let cumulativeShift = 0;
+      
       wrappers.forEach((wrapper: any) => {
         const innerNode = wrapper.querySelector('.tree-block-flat');
         if (!innerNode) return;
         const id = innerNode.getAttribute('data-tree-id');
+        
         if (idsToDelete.has(id)) {
-          cumulativeShift += wrapper.offsetHeight; wrapper.style.display = 'none';
+          cumulativeShift += wrapper.offsetHeight;
+          // ВАЖНО: Не используем display: 'none', это триггерит перерасчет виртуализатора.
+          // Прячем визуально и отключаем клики.
+          wrapper.style.opacity = '0';
+          wrapper.style.pointerEvents = 'none';
         } else if (cumulativeShift > 0) {
           const currentTransform = wrapper.style.transform;
           const match = currentTransform.match(/translateY\(([-\d.]+)px\)/);
           if (match) {
             const currentY = parseFloat(match[1]);
+            // Сдвигаем элементы с учетом transition (0.05s)
             wrapper.style.transform = `translateY(${currentY - cumulativeShift}px)`;
           }
         }
       });
 
+      // --- 2. ОБНОВЛЕНИЕ ВЫДЕЛЕНИЯ ---
       selRef.current.clear();
       cursorRef.current = nextCursorId;
       if (nextCursorId) selRef.current.add(nextCursorId);
       syncDOMSelection();
+      
+      // --- 3. СИНХРОНИЗАЦИЯ С REACT И VIRTUALIZER ---
+      // Ждем 50ms - ровно столько, сколько идет ваша CSS анимация (0.05s).
+      // Убираем startTransition, чтобы React обновил дерево синхронно и без рывков.
       setTimeout(() => {
-        startTransition(() => {
-          setBlocksData((prev: Block[]) => removeMultipleBlocksImm(prev, idsToDelete as Set<string>));
-          setSelExport(nextCursorId ? [nextCursorId] : []);
+        setBlocksData((prev: Block[]) => removeMultipleBlocksImm(prev, idsToDelete as Set<string>));
+        setSelExport(nextCursorId ? [nextCursorId] : []);
+        
+        // Очищаем инлайн стили после рендера, чтобы вернуть контроль виртуализатору
+        requestAnimationFrame(() => {
+          document.querySelectorAll('.virtual-row-wrapper').forEach((w: any) => {
+             w.style.opacity = '';
+             w.style.pointerEvents = '';
+          });
         });
-      }, 10);
+      }, 50); // <-- Изменено с 10 на 50
+      
       return;
     }
 
-    if ((e.key.toLowerCase() === 'a' || e.key.toLowerCase() === 'b') && !e.ctrlKey && !e.metaKey) {
+    if ((isKey(e.key, 'a') || isKey(e.key, 'b')) && !e.ctrlKey && !e.metaKey) {
       e.preventDefault();
-      const isAbove = e.key.toLowerCase() === 'a';
+      const isAbove = isKey(e.key, 'a');
       const targetId = cursorRef.current || (selRef.current.size > 0 ? Array.from(selRef.current)[0] : null) as any;
       const newId = `id_${Date.now()}`;
       const newBlock: Block = { id: newId, type: 'card', metainfo: { content: '' } };
-      
+
       setBlocksData((prev: Block[]) => {
-        if (!targetId) return prev;
+        if (!targetId) {
+          return isAbove ? [newBlock, ...prev] : [...prev, newBlock];
+        }
         return insertBlocksImm(prev, targetId, [newBlock], isAbove ? 'top' : 'bottom');
       });
-      
+
       setTimeout(() => {
         cursorRef.current = newId;
         selRef.current.clear(); 

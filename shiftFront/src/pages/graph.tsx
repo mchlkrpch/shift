@@ -263,15 +263,11 @@ export const GraphPage = ({mode,id,name}: any) => {
                     if (data) {
                         setName(data.name);
                         setGraphData(data);
-                        
                         // Парсим с попыткой прочитать новый формат
                         const { blocks, ns, groups, format } = parseGraphContent(
                             data.content, 
                             data.groups || '{}'
                         );
-                        
-                        console.log('[GraphPage] Loaded format:', format, 'Blocks:', blocks.length);
-                        
                         // setNs(ns);
                         // setCurGroups(groups);
                         setCurBlocks(blocks);
@@ -293,7 +289,7 @@ export const GraphPage = ({mode,id,name}: any) => {
         return <Box w={'100%'} onClick={()=>{
             History.push(`/${id}`)
         }}>
-            <Sh value={name}/>
+            <Sh value={name||'empty'}/>
         </Box>
     }
 
