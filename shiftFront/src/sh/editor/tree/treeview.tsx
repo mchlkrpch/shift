@@ -89,6 +89,58 @@ scrollbar-width: thin; scrollbar-color: color-mix(in srgb, white 40%, transparen
   position: absolute; left:-4px; top:-2.5px; width:7px; height:7px; border-radius:50%; border:1.5px solid ${TREE_UI.colors.accent}; background:#1e1e1e;
 }
 
+.virtual-row-wrapper[data-optimistic-hidden="true"] {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+// .virtual-row-wrapper {
+//   transition: none !important; /* Убираем transition для мгновенности */
+// }
+
+// /* Опционально: плавная анимация только для обычных скроллов */
+// .virtual-row-wrapper:not([style*="opacity: 0"]) {
+//   transition: transform 0.05s ease-out;
+// }
+
+// .is-toggling .virtual-row-wrapper {
+//   transition: none !important;
+// }
+// .virtual-row-wrapper {
+//   transition: transform 0.05s ease-out;
+// }
+
+// /* Убираем transition во время toggle */
+// .is-toggling .virtual-row-wrapper {
+//   transition: none !important;
+// }
+
+// /* Мгновенное скрытие */
+// .virtual-row-wrapper[style*="opacity: 0"] {
+//   transition: opacity 0.05s ease-out !important;
+// }
+
+
+// .virtual-row-wrapper {
+//   transition: transform 0.05s ease-out;
+// }
+.virtual-row-wrapper {
+  min-height: 20px;
+  height: auto !important;
+  transition: transform 0.05s ease-out;
+}
+
+.tree-block-flat {
+  min-height: 20px;
+  height: auto;
+}
+.is-toggling .virtual-row-wrapper {
+  transition: none !important;
+}
+.virtual-row-wrapper[style*="opacity: 0"] {
+  transition: opacity 0.05s ease-out !important;
+}
+
 .tree-block-flat {
   display: flex; flex-direction: row; align-items: flex-start;
   width: 100%; 
@@ -108,7 +160,8 @@ scrollbar-width: thin; scrollbar-color: color-mix(in srgb, white 40%, transparen
 .tree-block-flat.is-group[data-selected="true"] { border-color: rgba(49, 130, 206, 0.3); }
 
 .group-title-row { 
-  display: flex; align-items: center; 
+  display: flex;
+  align-items: flex-start;
   gap: ${TREE_UI.groupRow.gap}px; 
   font-size: ${TREE_UI.groupStyle.fontSize}px; 
   font-weight: ${TREE_UI.groupRow.fontWeight}; 
@@ -152,6 +205,7 @@ button { height: 20px; gap: 3px; font-weight: 500; padding: 0px 4px; }
 button .icon { height:13px; width:13px; }
 `;
 
+
 const HighlightText = ({ text, query }: { text: string, query: string }) => {
   if (!query || !text) return <>{text}</>;
   const parts = text.toString().split(new RegExp(`(${query})`, 'gi'));
@@ -171,8 +225,12 @@ const flatNodeAreEqual = (prev: any, next: any) => {
   if (prev.item.block !== next.item.block) return false;
   if (prev.item.numbering !== next.item.numbering) return false;
   if (prev.item.depth !== next.item.depth) return false;
+  if (prev.item.titleSegments !== next.item.titleSegments) return false; 
   if (wasEditing !== isEditing) return false;
   if (prev.index !== next.index) return false;
+  // if (prev.summary !== next.summary) return false;
+  if (prev.item.titleWithChildren !== next.item.titleWithChildren) return false;
+  if (prev.isCollapsedState !== next.isCollapsedState) return false;
 
   const activeGroups = next.item.block.type === 'group' 
     ? [...next.item.parentGroupIds, next.item.block.id] 
@@ -186,13 +244,18 @@ const flatNodeAreEqual = (prev: any, next: any) => {
   return true;
 };
 
-const FlatBlockNode = memo(({ item, index, actions, groupBounds, editingId }: any) => {
+const FlatBlockNode = memo(({ item, index, actions, groupBounds, editingId, isCollapsedState }: any) => {
   const { block, depth, numbering, parentGroupIds } = item;
   const isGroup = block.type === 'group';
   const isEditingCard = editingId === block.id && !isGroup;
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editName, setEditName] = useState(block.metainfo.title || block.id);
+  const [optColor, setOptColor] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (optColor !== null && block.metainfo.color === optColor) setOptColor(null);
+  }, [block.metainfo.color, optColor]);
 
   const rowIndent = depth * TREE_UI.indent.step + TREE_UI.indent.base;
 
@@ -208,18 +271,66 @@ const FlatBlockNode = memo(({ item, index, actions, groupBounds, editingId }: an
 
   const onRenameSubmit = () => {
     setIsEditingTitle(false);
-    if (!editName || editName === block.metainfo.title) { setEditName(block.metainfo.title || block.id); return; }
+    if (!editName || editName === block.metainfo.title) { 
+      setEditName(block.metainfo.title || block.id); 
+      return; 
+    }
+    
+    // Мгновенное косметическое обновление текста в обход цикла рендера тяжелого дерева.
+    // requestAnimationFrame нужен, чтобы дождаться пока React заменит <input> обратно на <span>
+    requestAnimationFrame(() => {
+      if (wrapperRef.current) {
+        const titleNode = wrapperRef.current.querySelector('.group-title-text');
+        if (titleNode) titleNode.textContent = editName;
+      }
+    });
+
+    // Фоновое обновление реального стейта
     actions.handleRenameGroup(block.id, editName);
   };
 
+  const handleColorChange = useCallback((e: any) => {
+    e.stopPropagation();
+    const val = e.target.value;
+    setOptColor(val);
+    actions.handleChangeGroupColor(block.id, val);
+  }, [block.id, actions]);
+
+  // const displayTitle = block.metainfo.title ?? block.id;
+  // const displayTitleRef = useRef(block.metainfo.title ?? block.id) as any;
+  // const displayTitle = (isGroup && isCollapsedState) 
+  //   ? (item.titleWithChildren || block.metainfo.title || block.id)
+  //   : (block.metainfo.title ?? block.id);
+  const displaySegments = (isGroup && isCollapsedState) 
+    ? (item.titleSegments || [{ text: block.metainfo.title || block.id, isGroup: true }])
+    : [{ text: block.metainfo.title ?? block.id, isGroup: true }];
+
+  // ... (ниже в JSX разметке, в режиме чтения группы)
+    
+  // const displayTitleRef = useRef(block.metainfo.title ?? block.id) as any;
+  const displayColor = optColor ?? block.metainfo.color ?? TREE_UI.colors.groupDefault;
+
   const bounds = groupBounds[block.id];
-  const isBottom = bounds!==undefined? index === bounds.end : false;
+  const isBottom = bounds !== undefined ? index === bounds.end : false;
+
+  const SegmentedTitle = ({ segments, query }: { segments: any[], query: string }) => {
+    return (
+      <span style={{ display: 'inline' }}>
+        {segments.map((seg, i) => (
+          <span key={i} style={{ fontWeight: seg.isGroup ? 600 : 400 }}>
+            <HighlightText text={seg.text} query={query} />
+            {i < segments.length - 1 ? ', ' : ''}
+          </span>
+        ))}
+      </span>
+    );
+  };
 
   return (
     <div
       ref={wrapperRef}
       data-is-top={isGroup}
-      data-is-bottom={isBottom || isGroup && block.metainfo.collapsed}
+      data-is-bottom={isBottom || (isGroup && block.metainfo.collapsed)}
       className={`tree-block-flat ${isGroup ? 'is-group' : 'is-card'}`}
       style={{ paddingLeft: `${rowIndent}px` }} 
       draggable={!isEditingCard}
@@ -251,7 +362,7 @@ const FlatBlockNode = memo(({ item, index, actions, groupBounds, editingId }: an
           <div 
             key={groupId} className="group-slice" data-slice-group-id={groupId}
             data-is-top={isTop}
-            data-is-bottom={isBottom || isGroup && block.metainfo.collapsed}
+            data-is-bottom={isBottom || (isGroup && block.metainfo.collapsed)}
             style={{
               position: 'absolute', left: 0, right: 0, top: 0, bottom: 0,
               backgroundColor: 'transparent',
@@ -270,15 +381,21 @@ const FlatBlockNode = memo(({ item, index, actions, groupBounds, editingId }: an
         {isGroup ? (
           <div className="group-title-row">
             <button className="tree-group-btn" onClick={(e) => { e.stopPropagation(); actions.onToggleGroup(block.id); }}>
-              {block.metainfo.collapsed ? <LuChevronRight className="smIcon" /> : <LuChevronDown className="smIcon" />}
+              {isCollapsedState ? <LuChevronRight className="smIcon" /> : <LuChevronDown className="smIcon" />}
             </button>
-            <LuPilcrow style={{ opacity: TREE_UI.groupRow.opacities.pilcrow }} />
-            <span style={{ 
-              fontWeight: 400, 
-              fontSize: `${TREE_UI.font.numbering}px`, 
-              opacity: TREE_UI.groupRow.opacities.numbering, 
-              whiteSpace: 'nowrap' 
-            }}>{numbering}</span>
+            
+            <div style={{ display: 'flex', alignItems: 'center', height: `${TREE_UI.groupRow.btnSize}px` }}>
+              <LuPilcrow style={{ opacity: TREE_UI.groupRow.opacities.pilcrow }} />
+            </div>
+            
+            <div style={{ display: 'flex', alignItems: 'center', height: `${TREE_UI.groupRow.btnSize}px` }}>
+              <span style={{ 
+                fontWeight: 400, 
+                fontSize: `${TREE_UI.font.numbering}px`, 
+                opacity: TREE_UI.groupRow.opacities.numbering, 
+                whiteSpace: 'nowrap' 
+              }}>{numbering}</span>
+            </div>
 
             {isEditingTitle ? (
               <input autoFocus value={editName} onChange={e => setEditName(e.target.value)} onBlur={onRenameSubmit} onClick={e => e.stopPropagation()}
@@ -286,17 +403,28 @@ const FlatBlockNode = memo(({ item, index, actions, groupBounds, editingId }: an
                 style={{ flex: 1, background: 'rgba(0,0,0,0.3)', color: 'white', border: '1px solid gray', borderRadius: '3px', padding: '0 4px', fontSize: `${TREE_UI.rowStyle.fontSize}px` }}
               />
             ) : (
-              <div style={{ flex: 1, opacity: TREE_UI.groupRow.opacities.title }} onDoubleClick={(e) => { e.stopPropagation(); setIsEditingTitle(true); }}>
-                <HighlightText text={block.metainfo.title || block.id} query={actions.searchQuery} />
+              <div style={{ flex: 1, opacity: TREE_UI.groupRow.opacities.title, whiteSpace: 'pre-wrap', wordBreak: 'break-word', paddingTop: '1px', position: 'relative' }} onDoubleClick={(e) => { e.stopPropagation(); setIsEditingTitle(true); }}>
+                
+                {/* React-часть: скрывается ванильным JS на время анимации */}
+                <span className="group-title-text react-content" style={{ display: 'inline' }}>
+                  <SegmentedTitle segments={displaySegments} query={actions.searchQuery} />
+                </span>
+
+                {/* Ванильная часть: пустая, JS закидывает сюда HTML на мгновение */}
+                <span className="vanilla-overlay" style={{ display: 'none' }}></span>
+
               </div>
             )}
-            <input type="color" value={block.metainfo.color?.slice(0, 7) || TREE_UI.colors.groupDefault} 
-                onChange={(e:any)=>{ e.stopPropagation(); actions.handleChangeGroupColor(block.id, e.target.value); }} onClick={(e:any)=>{ e.stopPropagation() }} 
-                style={{ 
-                  width: `${TREE_UI.groupRow.colorPickerSize}px`, 
-                  height: `${TREE_UI.groupRow.colorPickerSize}px`, 
-                  padding: 0, border: 'none', background: 'none', cursor: 'pointer', borderRadius: '50%' 
-                }} />
+
+            
+            <input type="color" value={displayColor.slice(0, 7)} 
+              onChange={handleColorChange} onClick={(e:any)=>{ e.stopPropagation() }} 
+              style={{ 
+                width: `${TREE_UI.groupRow.colorPickerSize}px`, 
+                height: `${TREE_UI.groupRow.colorPickerSize}px`, 
+                padding: 0, border: 'none', background: 'none', cursor: 'pointer', borderRadius: '50%',
+                marginTop: '3px'
+              }} />
           </div>
         ) : (
           <div className="card-content-row">
@@ -325,11 +453,19 @@ export const TreeView = memo(forwardRef(({}: any, ref: any) => {
   const editingNodeIdRef = useRef<string | null>(null);
 
   useEffect(() => { editingNodeIdRef.current = editingNodeId; }, [editingNodeId]);
+  const { flatTree, groupBounds, computedNs } = useMemo(() => {
+    const nsDict: Record<string, string> = {};
+    const traverseNs = (blocks: any[]) => {
+      blocks.forEach(b => {
+        nsDict[b.id] = b.metainfo?.content || b.metainfo?.title || '';
+        if (b.children) traverseNs(b.children);
+      });
+    };
+    traverseNs(blocksData);
 
-  const flatTree = useMemo(() => flattenBlocks(blocksData), [blocksData]);
-  const groupBounds = useMemo(() => {
+    const flat = flattenBlocks(blocksData);
     const bounds: any = {};
-    flatTree.forEach((item: any, index: number) => {
+    flat.forEach((item: any, index: number) => {
       if (item.block.type === 'group') {
         bounds[item.block.id] = { start: index, end: index, color: item.block.metainfo.color || TREE_UI.colors.groupDefault, depth: item.depth };
       }
@@ -337,29 +473,57 @@ export const TreeView = memo(forwardRef(({}: any, ref: any) => {
         if (bounds[pid]) bounds[pid].end = Math.max(bounds[pid].end, index);
       });
     });
-    return bounds;
-  }, [flatTree]);
+
+    return { flatTree: flat, groupBounds: bounds, computedNs: nsDict };
+  }, [blocksData]);
 
   const selection = useTreeSelection();
   const { selRef, cursorRef, lastSelectedId, syncDOMSelection, syncSingleDOMNode } = selection;
 
   const [altPopup, setAltPopup] = useState<any>(null); // Для Minigraph
 
+  const rowVirtualizer = useVirtualizer({
+    count: flatTree.length,
+    getScrollElement: () => scrollContainerRef.current,
+    estimateSize: (index) => {
+      const item = flatTree[index];
+      
+      if (item.block.type === 'group') {
+        // Для групп используем реальное измерение из DOM
+        const row = document.querySelector(`[data-tree-id="${item.block.id}"]`) as HTMLElement;
+        if (row) {
+          const height = row.getBoundingClientRect().height;
+          return Math.max(height, TREE_UI.rowHeight.group);
+        }
+        return TREE_UI.rowHeight.group;
+      }
+      
+      // Для карточек ОБЯЗАТЕЛЬНО измеряем реальную высоту
+      const row = document.querySelector(`[data-tree-id="${item.block.id}"]`) as HTMLElement;
+      if (row) {
+        const height = row.getBoundingClientRect().height;
+        return Math.max(height, TREE_UI.rowHeight.card);
+      }
+      
+      // Fallback для еще не отрендеренных карточек
+      return TREE_UI.rowHeight.card;
+    },
+    getItemKey: (index) => flatTree[index].block.id,
+    overscan: 15,
+    measureElement: (el:any) => {
+      // ✅ Принудительно измеряем реальную высоту после рендера
+      if (!el) return undefined;
+      const height = el.getBoundingClientRect().height;
+      return height;
+    },
+  });
+
   const actions = useTreeActions({
     blocksData, setBlocksData, flatTree, 
     selRef, cursorRef, lastSelectedId, syncDOMSelection, setSelExport, 
     editingNodeId, setEditingNodeId, setAltPopup,
-    searchQuery: debouncedSearch, syncSingleDOMNode, scrollContainerRef
-  });
-
-  const rowVirtualizer = useVirtualizer({
-    count: flatTree.length,
-    getScrollElement: () => scrollContainerRef.current,
-    estimateSize: (index) => flatTree[index].block.type === 'group'
-      ? TREE_UI.rowHeight.group
-      : TREE_UI.rowHeight.card,
-    getItemKey: (index) => flatTree[index].block.id,
-    overscan: 15,
+    searchQuery: debouncedSearch, syncSingleDOMNode, scrollContainerRef,
+    rowVirtualizer:rowVirtualizer,
   });
 
   const scrollToNode = useCallback((nodeId: string, align: 'auto'|'start'|'center'|'end' = 'auto') => {
@@ -370,7 +534,7 @@ export const TreeView = memo(forwardRef(({}: any, ref: any) => {
   const handleGlobalKeyDown = useTreeKeyboard({
     flatTree, setBlocksData, selRef, cursorRef, lastSelectedId, syncDOMSelection, 
     setSelExport, editingNodeIdRef, rowVirtualizer, setIsSearchOpen, searchRef, 
-    scrollToNode, setEditingNodeId
+    scrollToNode, setEditingNodeId, onToggleGroup: actions.onToggleGroup,
   });
 
   // Menupart
@@ -494,31 +658,16 @@ export const TreeView = memo(forwardRef(({}: any, ref: any) => {
     </span>
   );
 
-	const computedNs = useMemo(() => {
-  const dict: Record<string, string> = {};
-  const traverse = (blocks: any[]) => {
-			blocks.forEach(b => {
-				// Сохраняем контент карточек и заголовки групп
-				dict[b.id] = b.metainfo?.content || b.metainfo?.title || '';
-				if (b.children) traverse(b.children);
-			});
-		};
-		traverse(blocksData);
-		return dict;
-	}, [blocksData]);
-
-	// 2. Глобальная функция обновления контента карточки
 	const updateCardContent = useCallback((id: string, newContent: string, additionalBlocks: any[] = []) => {
 		setBlocksData((prev: any[]) => {
 			return updateAndInsertImm(prev, id, newContent, additionalBlocks);
 		});
 	}, []);
 
-	// 3. Обновляем контекст, который пойдет вниз к Карточкам
 	const treeGraphCtx = useMemo(() => ({
-		...useGraphCtx(), // Берем верхний контекст (где лежит appwrite id и т.д.)
-		ns: computedNs,   // Переопределяем ns на вычисляемый
-		updateCardContent // Пробрасываем нашу новую функцию!
+		...useGraphCtx(),
+		ns: computedNs,
+		updateCardContent
 	}), [computedNs, updateCardContent]);
 
   useImperativeHandle(ref, () => ({
@@ -557,13 +706,19 @@ export const TreeView = memo(forwardRef(({}: any, ref: any) => {
 				<div style={{ height: `${rowVirtualizer.getTotalSize()}px`, width:'100%', position:'relative' }}>
 					{rowVirtualizer.getVirtualItems().map((virtualItem:any) => {
 						const item = flatTree[virtualItem.index];
-						return (
-							<div key={item.block.id} ref={rowVirtualizer.measureElement} data-index={virtualItem.index} className="virtual-row-wrapper"
-								style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${virtualItem.start}px)`, display: 'block', transition: 'transform 0.05s ease-out' }}
-							>
-								<FlatBlockNode item={item} index={virtualItem.index} groupBounds={groupBounds} actions={actions} editingId={editingNodeId} />
-							</div>
-						);
+            const optToggle = (actions.optimisticToggles as any)[item.block.id];
+            const isCollapsedState = item.block.type === 'group' && 
+              (optToggle !== undefined ? optToggle : item.block.metainfo.collapsed);
+            return (
+              <div key={item.block.id} ref={rowVirtualizer.measureElement} data-index={virtualItem.index} className="virtual-row-wrapper"
+                style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${virtualItem.start}px)`, display: 'block' }}
+              >
+                <FlatBlockNode
+                  item={item} index={virtualItem.index} groupBounds={groupBounds} actions={actions} 
+                  editingId={editingNodeId} isCollapsedState={isCollapsedState} 
+                />
+              </div>
+            );
 					})}
 				</div>
 			</div>

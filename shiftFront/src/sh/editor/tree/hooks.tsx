@@ -3,7 +3,8 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef
+  useRef,
+  useState
 } from "react";
 
 export type Block = {
@@ -23,6 +24,32 @@ export type FlatItem = {
   depth: number;
   numbering: string;
   parentGroupIds: string[];
+  titleSegments?: TitleSegment[];
+};
+export type TitleSegment = { text: string; isGroup: boolean };
+
+export const getGroupWithChildrenSegments = (block: any): TitleSegment[] => {
+  const segments: TitleSegment[] = [];
+  
+  const baseName = block.metainfo?.title || block.id;
+  segments.push({ text: baseName, isGroup: true });
+
+  const collect = (b: any) => {
+    if (!b.children) return;
+    b.children.forEach((child: any) => {
+      if (child.type === 'group') {
+        segments.push({ text: child.metainfo?.title || child.id, isGroup: true });
+        collect(child);
+      }
+      if (child.type === 'card') {
+        let cardText = child.metainfo?.content.split('@@@')[0] || child.id;
+        if (typeof cardText === 'string') cardText = cardText.replace(/\n/g, ' ').trim();
+        segments.push({ text: cardText, isGroup: false });
+      }
+    });
+  };
+  collect(block);
+  return segments;
 };
 
 const findBlock = (blocks: Block[], id: string): Block | null => {
@@ -51,13 +78,57 @@ const isKey = (kk: any, key: string) => {
   return map[key]?.includes(k) || k === key;
 };
 
+
 const toggleCollapseImm = (blocks: Block[], id: string): Block[] => {
   let changed = false;
+
   const res = blocks.map(b => {
-    if (b.id === id) { changed = true; return { ...b, metainfo: { ...b.metainfo, collapsed: !b.metainfo.collapsed } }; }
+    // Нашли нужную группу
+    if (b.id === id) {
+      changed = true;
+
+      return {
+        ...b,
+        metainfo: {
+          ...b.metainfo,
+          collapsed: !b.metainfo.collapsed,
+        },
+      };
+    }
+
+    // Ищем группу рекурсивно внутри children
     if (b.children) {
-      const newC = toggleCollapseImm(b.children, id);
-      if (newC !== b.children) { changed = true; return { ...b, children: newC }; }
+      const newChildren = toggleCollapseImm(b.children, id);
+
+      if (newChildren !== b.children) {
+        changed = true;
+
+        return {
+          ...b,
+          children: newChildren,
+        };
+      }
+    }
+
+    return b;
+  });
+
+  return changed ? res : blocks;
+};
+
+export const updateBlockMetainfoImm = (blocks: Block[], id: string, metainfoUpdate: Partial<Block['metainfo']>): Block[] => {
+  let changed = false;
+  const res = blocks.map(b => {
+    if (b.id === id) {
+      changed = true;
+      return { ...b, metainfo: { ...b.metainfo, ...metainfoUpdate } };
+    }
+    if (b.children) {
+      const newC = updateBlockMetainfoImm(b.children, id, metainfoUpdate);
+      if (newC !== b.children) {
+        changed = true;
+        return { ...b, children: newC };
+      }
     }
     return b;
   });
@@ -228,11 +299,19 @@ const insertBlocksImm = (
   return changed ? res : blocks;
 };
 
+
 export const flattenBlocks = (blocks: Block[], depth = 0, prefix = '', parentGroupIds: string[] = []): FlatItem[] => {
   let result: FlatItem[] = [];
   blocks.forEach((b, i) => {
     const num = prefix ? `${prefix}.${i + 1}` : `${i + 1}`;
-    result.push({ block: b, depth, numbering: num, parentGroupIds });
+    
+    let titleSegments = undefined;
+    if (b.type === 'group') {
+      titleSegments = getGroupWithChildrenSegments(b);
+    }
+
+    result.push({ block: b, depth, numbering: num, parentGroupIds, titleSegments });
+    
     if (b.type === 'group' && !b.metainfo.collapsed && b.children) {
       result.push(...flattenBlocks(b.children, depth + 1, num, [...parentGroupIds, b.id]));
     }
@@ -275,18 +354,269 @@ export const useTreeActions = ({
   blocksData, setBlocksData, flatTree, 
   selRef, cursorRef, lastSelectedId, syncDOMSelection, setSelExport,
   editingNodeId, setEditingNodeId, setAltPopup,
-  searchQuery, syncSingleDOMNode, scrollContainerRef
+  searchQuery, syncSingleDOMNode, scrollContainerRef,rowVirtualizer 
 }: any) => {
   const dropTargetRef = useRef<{ id: string, pos: 'top'|'bottom'|'inside' } | null>(null);
+  const [optimisticToggles, setOptimisticToggles] = useState<Set<string>>(new Set());
 
   return useMemo(() => ({
     checkIsSelected: (id: string) => selRef.current.has(id),
     syncSingleDOMNode,
     searchQuery,
+    optimisticToggles,
     onDoubleClickNode: (clickedId: string) => { setEditingNodeId(clickedId); },
-    onToggleGroup: (groupId: string) => { setBlocksData((prev: Block[]) => toggleCollapseImm(prev, groupId)); },
-    handleChangeGroupColor: (_groupId: string, _color: string) => {},
-    handleRenameGroup: (_groupId: string, _title: string) => {},
+    onToggleGroup: (groupId: string) => {
+      const item = flatTree.find((f: any) => f.block.id === groupId);
+      if (!item) return;
+      const isCollapsed = item.block.metainfo.collapsed;
+      const container = scrollContainerRef.current;
+      
+      const escapeHtml = (str: string) => str.toString()
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+      
+      const measureGroupHeight = (segments: any[]): number => {
+        const groupRow = document.querySelector(`[data-tree-id="${groupId}"]`) as HTMLElement;
+        if (!groupRow) return 32;
+        const clone = groupRow.cloneNode(true) as HTMLElement;
+        clone.style.position = 'absolute';
+        clone.style.visibility = 'hidden';
+        clone.style.pointerEvents = 'none';
+        clone.style.zIndex = '-9999';
+        clone.style.left = '0';
+        clone.style.top = '0';
+        clone.style.width = `${groupRow.getBoundingClientRect().width}px`;
+        clone.style.height = 'auto';
+        clone.style.transition = 'none';
+        const vanilla = clone.querySelector('.vanilla-overlay') as HTMLElement;
+        const reactContent = clone.querySelector('.react-content') as HTMLElement;
+        if (vanilla && reactContent) {
+          reactContent.style.display = 'none';
+          vanilla.style.display = 'inline';
+          vanilla.innerHTML = segments.map((seg: any, i: number) => {
+            const fw = seg.isGroup ? '600' : '400';
+            const comma = i < segments.length - 1 ? ', ' : '';
+            return `<span style="font-weight: ${fw}">${escapeHtml(seg.text)}${comma}</span>`;
+          }).join('');
+        }
+        const tempWrapper = document.createElement('div');
+        tempWrapper.style.position = 'absolute';
+        tempWrapper.style.visibility = 'hidden';
+        tempWrapper.appendChild(clone);
+        const appendTarget = container || document.body;
+        appendTarget.appendChild(tempWrapper);
+        const height = clone.getBoundingClientRect().height;
+        appendTarget.removeChild(tempWrapper);
+        return Math.max(height, 32); 
+      };
+      
+      const applyVanillaText = (targetId: string, isNowCollapsed: boolean) => {
+        const row = document.querySelector(`[data-tree-id="${targetId}"]`);
+        if (!row) return null;
+        const reactContent = row.querySelector('.react-content') as HTMLElement;
+        const vanillaOverlay = row.querySelector('.vanilla-overlay') as HTMLElement;
+        if (reactContent && vanillaOverlay) {
+          reactContent.style.display = 'none';
+          vanillaOverlay.style.display = 'inline';
+          const nextSegments = isNowCollapsed 
+              ? (item.titleSegments || [{ text: item.block.metainfo.title || item.block.id, isGroup: true }])
+              : [{ text: item.block.metainfo.title || item.block.id, isGroup: true }];
+          vanillaOverlay.innerHTML = nextSegments.map((seg: any, i: number) => {
+              const fw = seg.isGroup ? '600' : '400';
+              const comma = i < nextSegments.length - 1 ? ', ' : '';
+              return `<span style="font-weight: ${fw}">${escapeHtml(seg.text)}${comma}</span>`;
+          }).join('');
+        }
+        const arrowSvg = row.querySelector('.tree-group-btn svg') as HTMLElement;
+        if (arrowSvg) {
+          arrowSvg.style.transition = 'none';
+          arrowSvg.style.transform = isNowCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)';
+        }
+        return row;
+      };
+      
+      const cleanupVanillaDOM = (targetId: string) => {
+        const row = document.querySelector(`[data-tree-id="${targetId}"]`);
+        if (row) {
+            const rc = row.querySelector('.react-content') as HTMLElement;
+            const vo = row.querySelector('.vanilla-overlay') as HTMLElement;
+            const arr = row.querySelector('.tree-group-btn svg') as HTMLElement;
+            if (rc) rc.style.display = '';
+            if (vo) { vo.style.display = 'none'; vo.innerHTML = ''; }
+            if (arr) { arr.style.transition = ''; arr.style.transform = ''; }
+        }
+      };
+      
+      if (!isCollapsed) {
+        // ===== COLLAPSE (СВОРАЧИВАНИЕ) =====
+        const idsToHide = new Set<string>();
+        flatTree.forEach((f: any) => {
+          if (f.parentGroupIds.includes(groupId)) idsToHide.add(f.block.id);
+        });
+        if (idsToHide.size === 0) {
+          setBlocksData((prev: Block[]) => toggleCollapseImm(prev, groupId));
+          return;
+        }
+        const nextSegments = item.titleSegments || [{ 
+          text: item.block.metainfo.title || item.block.id, 
+          isGroup: true 
+        }];
+        const groupRow = document.querySelector(`[data-tree-id="${groupId}"]`) as HTMLElement;
+        const currentHeight = groupRow?.closest('.virtual-row-wrapper')?.getBoundingClientRect().height || 32;
+        const futureHeight = measureGroupHeight(nextSegments);
+        const groupHeightChange = futureHeight - currentHeight;
+        
+        applyVanillaText(groupId, true);
+        
+        const groupWrapper = groupRow?.closest('.virtual-row-wrapper') as HTMLElement;
+        if (groupWrapper && groupHeightChange !== 0) {
+          groupWrapper.style.height = `${futureHeight}px`;
+        }
+        
+        const wrappers = Array.from(document.querySelectorAll('.virtual-row-wrapper')) as HTMLElement[];
+        const shiftMap = new Map<HTMLElement, { hide: boolean; shift: number }>();
+        let cumulativeShift = 0;
+        let passedGroup = false;
+        wrappers.forEach((wrapper) => {
+          const innerNode = wrapper.querySelector('.tree-block-flat');
+          if (!innerNode) return;
+          const id = innerNode.getAttribute('data-tree-id');
+          if (id === groupId) {
+            passedGroup = true;
+            return;
+          }
+          if (idsToHide.has(id!)) {
+            const height = wrapper.getBoundingClientRect().height;
+            shiftMap.set(wrapper, { hide: true, shift: cumulativeShift });
+            cumulativeShift += height;
+          } else if (cumulativeShift > 0) {
+            const adjustedShift = passedGroup 
+              ? cumulativeShift - groupHeightChange 
+              : cumulativeShift;
+            shiftMap.set(wrapper, { hide: false, shift: adjustedShift });
+          }
+        });
+        
+        wrappers.forEach((wrapper) => {
+          const data = shiftMap.get(wrapper);
+          if (!data) return;
+
+          if (data.hide) {
+            wrapper.style.cssText += '; opacity: 0; pointer-events: none;';
+          } else {
+            const currentTransform = wrapper.style.transform;
+            const match = currentTransform.match(/translateY\(([-\d.]+)px\)/);
+            if (match) {
+              const currentY = parseFloat(match[1]);
+              wrapper.style.cssText += `; transition: none; transform: translateY(${currentY - data.shift}px);`;
+            }
+          }
+        });
+        
+        if (container) container.offsetHeight;
+        requestAnimationFrame(() => {
+          setBlocksData((prev: Block[]) => toggleCollapseImm(prev, groupId));
+          requestAnimationFrame(() => {
+            wrappers.forEach((w) => {
+              w.style.opacity = '';
+              w.style.pointerEvents = '';
+              w.style.transition = '';
+            });
+            cleanupVanillaDOM(groupId);
+            if (rowVirtualizer) {
+              const groupIndex = flatTree.findIndex((f: any) => f.block.id === groupId);
+              if (groupIndex !== -1) {
+                rowVirtualizer.measureElement(
+                  document.querySelector(`[data-index="${groupIndex}"]`)
+                );
+                for (let i = 1; i <= 5; i++) {
+                  const nextEl = document.querySelector(`[data-index="${groupIndex + i}"]`);
+                  if (nextEl) rowVirtualizer.measureElement(nextEl);
+                }
+              }
+            }
+          });
+        });
+      } else {
+        // ===== UNCOLLAPSE (РАЗВОРАЧИВАНИЕ) — ОПТИМИЗИРОВАННОЕ =====
+        const collapsedSegments = [{ 
+          text: item.block.metainfo.title || item.block.id, 
+          isGroup: true 
+        }];
+        
+        const groupRow = document.querySelector(`[data-tree-id="${groupId}"]`) as HTMLElement;
+        const currentHeight = groupRow?.closest('.virtual-row-wrapper')?.getBoundingClientRect().height || 32;
+        const futureHeight = measureGroupHeight(collapsedSegments);
+        const groupHeightChange = currentHeight - futureHeight;
+        
+        // 1. Мгновенно меняем текст и стрелку
+        applyVanillaText(groupId, false);
+        
+        const groupWrapper = groupRow?.closest('.virtual-row-wrapper') as HTMLElement;
+        if (groupWrapper && groupHeightChange !== 0) {
+          groupWrapper.style.transition = 'none';
+          groupWrapper.style.height = `${futureHeight}px`;
+        }
+        
+        // 2. Обновляем стейт БЕЗ flushSync (асинхронно)
+        setBlocksData((prev: Block[]) => toggleCollapseImm(prev, groupId));
+        
+        // 3. В следующем кадре React уже отрендерит строки
+        requestAnimationFrame(() => {
+          // Получаем все новые строки
+          const newRows = document.querySelectorAll(`[data-parent-ids*="${groupId}"]`);
+          
+          // Мгновенно показываем их (они уже в DOM)
+          newRows.forEach((row: any) => {
+            const wrapper = row.closest('.virtual-row-wrapper');
+            if (wrapper) {
+              wrapper.style.transition = 'none';
+              wrapper.style.opacity = '1';
+              wrapper.style.pointerEvents = 'auto';
+            }
+          });
+          
+          // Сбрасываем стили группы
+          if (groupWrapper) {
+            groupWrapper.style.height = '';
+            groupWrapper.style.transition = '';
+          }
+          
+          cleanupVanillaDOM(groupId);
+          
+          // Измеряем строки для виртуализатора
+          if (rowVirtualizer) {
+            const groupIndex = flatTree.findIndex((f: any) => f.block.id === groupId);
+            if (groupIndex !== -1) {
+              const groupEl = document.querySelector(`[data-index="${groupIndex}"]`);
+              if (groupEl) rowVirtualizer.measureElement(groupEl);
+              
+              // Измеряем следующие 20 строк
+              for (let i = 1; i <= 20; i++) {
+                const el = document.querySelector(`[data-index="${groupIndex + i}"]`);
+                if (el) rowVirtualizer.measureElement(el);
+              }
+            }
+          }
+        });
+      }
+    },
+
+
+
+    handleChangeGroupColor: (groupId: string, color: string) => {
+      startTransition(() => {
+        setBlocksData((prev: Block[]) => updateBlockMetainfoImm(prev, groupId, { color }));
+      });
+    },
+    handleRenameGroup: (groupId: string, title: string) => {
+      startTransition(() => {
+        setBlocksData((prev: Block[]) => updateBlockMetainfoImm(prev, groupId, { title }));
+      });
+    },
     onClick: (e: React.MouseEvent, clickedId: string) => {
       if (editingNodeId && editingNodeId !== clickedId) setEditingNodeId(null);
       cursorRef.current = clickedId;
@@ -420,11 +750,12 @@ export const useTreeActions = ({
 export const useTreeKeyboard = ({
   flatTree, setBlocksData, selRef, cursorRef, lastSelectedId, syncDOMSelection, 
   setSelExport, editingNodeIdRef, rowVirtualizer, setIsSearchOpen, searchRef, 
-  scrollToNode, setEditingNodeId
+  scrollToNode, setEditingNodeId, onToggleGroup
 }: any) => {
 
   const handleGlobalKeyDown = useCallback(async (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
+      let handled = false;
       if (editingNodeIdRef.current) {
         e.preventDefault();
         setEditingNodeId(null);
@@ -433,6 +764,16 @@ export const useTreeKeyboard = ({
         }
         return;
       }
+
+      if (cursorRef.current || selRef.current.size > 0) {
+        e.preventDefault();
+        cursorRef.current = null;
+        selRef.current.clear();
+        syncDOMSelection();
+        handled = true;
+      }
+
+      if (handled) return;
     }
 
     if ((e.ctrlKey || e.metaKey) && isKey(e.key, 'f')) {
@@ -457,27 +798,103 @@ export const useTreeKeyboard = ({
     
     const target = e.target as HTMLElement;
     const isTyping = ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable;
-    
+
+
+
     if (isTyping) return;
     if (target.isContentEditable && editingNodeIdRef.current) return;
 
+
+
+    // if (e.key === 'Enter') {
+    //   e.preventDefault();
+    //   const targetId = cursorRef.current || (selRef.current.size > 0 ? Array.from(selRef.current as Set<string>)[0] : null);
+    //   if (targetId) {
+    //     const item = flatTree.find((f: any) => f.block.id === targetId);
+    //     if (item) {
+    //         if (item.block.type === 'group') {
+    //             const isCollapsed = item.block.metainfo.collapsed;
+    //             // Выбираем сегменты текста
+    //             const nextSegments = isCollapsed 
+    //                 ? [{ text: item.block.metainfo.title || item.block.id, isGroup: true }]
+    //                 : (item.titleSegments || [{ text: item.block.metainfo.title || item.block.id, isGroup: true }]);
+    //             // Мгновенно инжектируем HTML, чтобы обойти лаг рендера (50мс)
+    //             const row = document.querySelector(`[data-tree-id="${targetId}"]`);
+    //             if (row) {
+    //               const titleNode = row.querySelector('.group-title-text');
+    //               if (titleNode) {
+    //                 const escapeHtml = (str: string) => str.toString().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+    //                 titleNode.innerHTML = `<span style="display: inline;">` + nextSegments.map((seg: any, i: number) => {
+    //                     const fw = seg.isGroup ? '600' : '400';
+    //                     const comma = i < nextSegments.length - 1 ? ', ' : '';
+    //                     return `<span style="font-weight: ${fw}">${escapeHtml(seg.text)}${comma}</span>`;
+    //                 }).join('') + `</span>`;
+    //               }
+    //             }
+    //             onToggleGroup(targetId);
+    //         } else {
+    //             setEditingNodeId(targetId);
+    //             scrollToNode(targetId);
+    //         }
+    //     }
+    //   }
+    //   return;
+    // }
+    // if (e.key === 'Enter') {
+    //   e.preventDefault();
+    //   const targetId = cursorRef.current || (selRef.current.size > 0 ? Array.from(selRef.current as Set<string>)[0] : null);
+    //   if (targetId) {
+    //     const item = flatTree.find((f: any) => f.block.id === targetId);
+    //     if (item) {
+    //         if (item.block.type === 'group') {
+    //           const isCollapsed = item.block.metainfo.collapsed;
+    //           const nextSegments = isCollapsed 
+    //                 ? [{ text: item.block.metainfo.title || item.block.id, isGroup: true }]
+    //                 : (item.titleSegments || [{ text: item.block.metainfo.title || item.block.id, isGroup: true }]);
+    //             // Никакого innerHTML! onToggleGroup сам всё сделает безопасно и мгновенно.
+    //             const row = document.querySelector(`[data-tree-id="${targetId}"]`);
+    //             if (row) {
+    //               const titleNode = row.querySelector('.group-title-text');
+    //               if (titleNode) {
+    //                 const escapeHtml = (str: string) => str.toString().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+    //                 titleNode.innerHTML = `<span style="display: inline;">` + nextSegments.map((seg: any, i: number) => {
+    //                     const fw = seg.isGroup ? '600' : '400';
+    //                     const comma = i < nextSegments.length - 1 ? ', ' : '';
+    //                     return `<span style="font-weight: ${fw}">${escapeHtml(seg.text)}${comma}</span>`;
+    //                 }).join('') + `</span>`;
+    //               }
+    //             }
+    //             onToggleGroup(targetId);
+    //         } else {
+    //             setEditingNodeId(targetId);
+    //             scrollToNode(targetId);
+    //         }
+    //     }
+    //   }
+    //   return;
+    // }
+
+
+
     if (e.key === 'Enter') {
-        e.preventDefault();
-        const targetId = cursorRef.current || (selRef.current.size > 0 ? Array.from(selRef.current as Set<string>)[0] : null);
-        
-        if (targetId) {
-            const item = flatTree.find((f: any) => f.block.id === targetId);
-            if (item) {
-                if (item.block.type === 'group') {
-                    setBlocksData((prev: Block[]) => toggleCollapseImm(prev, targetId));
-                } else {
-                    setEditingNodeId(targetId);
-                    scrollToNode(targetId);
-                }
+      e.preventDefault();
+      const targetId = cursorRef.current || (selRef.current.size > 0 ? Array.from(selRef.current as Set<string>)[0] : null);
+      if (targetId) {
+        const item = flatTree.find((f: any) => f.block.id === targetId);
+        if (item) {
+            if (item.block.type === 'group') {
+                // Вся ванильная магия теперь инкапсулирована тут:
+                onToggleGroup(targetId);
+            } else {
+                setEditingNodeId(targetId);
+                scrollToNode(targetId);
             }
         }
-        return;
+      }
+      return;
     }
+
+
 
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
@@ -504,15 +921,20 @@ export const useTreeKeyboard = ({
       return;
     }
 
+
+
     if (e.key === 'Delete' || e.key === 'Backspace') {
       e.preventDefault(); 
       if (selRef.current.size === 0) return;
-      
       const idsToDelete = new Set(selRef.current);
+      flatTree.forEach((item: any) => {
+        if (item.parentGroupIds.some((pid: string) => idsToDelete.has(pid))) {
+          idsToDelete.add(item.block.id);
+        }
+      });
       let nextCursorId = null;
       const sortedSelected = Array.from(idsToDelete as Set<string>).map(id => flatTree.findIndex((f:any) => f.block.id === id)).sort((a,b)=>a-b);
       const lastDeletedIdx = sortedSelected[sortedSelected.length - 1];
-      
       for (let i = lastDeletedIdx + 1; i < flatTree.length; i++) {
         if (!idsToDelete.has(flatTree[i].block.id)) { nextCursorId = flatTree[i].block.id; break; }
       }
@@ -521,16 +943,12 @@ export const useTreeKeyboard = ({
           if (!idsToDelete.has(flatTree[i].block.id)) { nextCursorId = flatTree[i].block.id; break; }
         }
       }
-
-      // --- 1. МГНОВЕННАЯ ВИЗУАЛИЗАЦИЯ DOM ---
       const wrappers = document.querySelectorAll('.virtual-row-wrapper');
       let cumulativeShift = 0;
-      
       wrappers.forEach((wrapper: any) => {
         const innerNode = wrapper.querySelector('.tree-block-flat');
         if (!innerNode) return;
         const id = innerNode.getAttribute('data-tree-id');
-        
         if (idsToDelete.has(id)) {
           cumulativeShift += wrapper.offsetHeight;
           // ВАЖНО: Не используем display: 'none', это триггерит перерасчет виртуализатора.
@@ -547,8 +965,6 @@ export const useTreeKeyboard = ({
           }
         }
       });
-
-      // --- 2. ОБНОВЛЕНИЕ ВЫДЕЛЕНИЯ ---
       selRef.current.clear();
       cursorRef.current = nextCursorId;
       if (nextCursorId) selRef.current.add(nextCursorId);
@@ -560,18 +976,17 @@ export const useTreeKeyboard = ({
       setTimeout(() => {
         setBlocksData((prev: Block[]) => removeMultipleBlocksImm(prev, idsToDelete as Set<string>));
         setSelExport(nextCursorId ? [nextCursorId] : []);
-        
-        // Очищаем инлайн стили после рендера, чтобы вернуть контроль виртуализатору
         requestAnimationFrame(() => {
           document.querySelectorAll('.virtual-row-wrapper').forEach((w: any) => {
              w.style.opacity = '';
              w.style.pointerEvents = '';
           });
         });
-      }, 50); // <-- Изменено с 10 на 50
-      
+      }, 50);
       return;
     }
+
+
 
     if ((isKey(e.key, 'a') || isKey(e.key, 'b')) && !e.ctrlKey && !e.metaKey) {
       e.preventDefault();
@@ -579,14 +994,12 @@ export const useTreeKeyboard = ({
       const targetId = cursorRef.current || (selRef.current.size > 0 ? Array.from(selRef.current)[0] : null) as any;
       const newId = `id_${Date.now()}`;
       const newBlock: Block = { id: newId, type: 'card', metainfo: { content: '' } };
-
       setBlocksData((prev: Block[]) => {
         if (!targetId) {
           return isAbove ? [newBlock, ...prev] : [...prev, newBlock];
         }
         return insertBlocksImm(prev, targetId, [newBlock], isAbove ? 'top' : 'bottom');
       });
-
       setTimeout(() => {
         cursorRef.current = newId;
         selRef.current.clear(); 
@@ -597,13 +1010,17 @@ export const useTreeKeyboard = ({
       }, 50);
       return;
     }
-  }, [flatTree, syncDOMSelection, setBlocksData, rowVirtualizer, scrollToNode]);
+  }, [flatTree, syncDOMSelection, setBlocksData, rowVirtualizer, scrollToNode, onToggleGroup]);
+
+
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => { handleGlobalKeyDown(e as any); };
     document.addEventListener('keydown', handleKeyDown, { capture: true });
     return () => document.removeEventListener('keydown', handleKeyDown, { capture: true });
   }, [handleGlobalKeyDown]);
+
+
 
   return handleGlobalKeyDown;
 };
