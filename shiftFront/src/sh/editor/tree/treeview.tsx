@@ -20,27 +20,27 @@ import { BsDiagram2Fill } from "react-icons/bs";
 import { RiRepeat2Line, RiSaveFill } from "react-icons/ri";
 import { Clip } from "../../clip";
 import { FaShare } from "react-icons/fa";
-import { flattenBlocks, removeMultipleBlocksImm, updateAndInsertImm, useTreeActions, useTreeKeyboard, useTreeSelection } from "./hooks";
+import { flattenBlocks, flattenBlocksComplete, removeMultipleBlocksImm, updateAndInsertImm, useTreeActions, useTreeKeyboard, useTreeSelection } from "./hooks";
 import { ContextMenu, useContextMenu } from "../contextMenu";
 import { Minigraph } from "../minigraph";
 
 export const TREE_UI = {
   colors: {
-    accent: '#0d99ff',                             
-    selectedBg: 'rgba(49, 130, 206, 0.25)',        
-    parentSelectedBg: 'rgba(49, 130, 206, 0.08)',  
-    groupDefault: '#555555',                       
-    sliceBg: 'rgba(255, 255, 255, 0.02)',          
-    highlightBg: 'rgba(255, 215, 0, 0.4)',         
+    accent: '#0d99ff',
+    selectedBg: 'rgba(49, 130, 206, 0.25)',
+    parentSelectedBg: 'rgba(49, 130, 206, 0.08)',
+    groupDefault: '#555555',
+    sliceBg: 'rgba(255, 255, 255, 0.02)',
+    highlightBg: 'rgba(255, 215, 0, 0.4)',
   },
 
   indent: {
-    step: 20,           
-    base: 8,            
+    step: 25,
+    base: 2,
   },
   rowHeight: {
-    group: 32,          
-    card: 20,           
+    group: 32,
+    card: 20,
   },
 
   rowStyle: {
@@ -51,11 +51,11 @@ export const TREE_UI = {
   },
 
   font: {
-    title: 11,          
-    numbering: 10,      
+    title: 11,
+    numbering: 10,
   },
   radius: {
-    block: '4px',       
+    block: '4px',
   },
 
   groupStyle:{
@@ -64,16 +64,16 @@ export const TREE_UI = {
   },
 
   groupRow: {
-    gap: 6,                                        
-    fontWeight: 500,                               
-    btnSize: 20,                                   
-    btnHoverBg: 'rgba(255, 255, 255, 0.1)',        
-    colorPickerSize: 14,                           
-    sliceSelectedBg: 'rgba(49, 130, 206, 0.15)',   
+    gap: 6,
+    fontWeight: 500,
+    btnSize: 20,
+    btnHoverBg: 'rgba(255, 255, 255, 0.1)',
+    colorPickerSize: 14,
+    sliceSelectedBg: 'rgba(49, 130, 206, 0.15)',
     opacities: {
-      pilcrow: 0.4,                                
-      numbering: 0.4,                              
-      title: 0.8,                                  
+      pilcrow: 0.4,
+      numbering: 0.4,
+      title: 1.0,
     }
   }
 };
@@ -93,37 +93,6 @@ scrollbar-width: thin; scrollbar-color: color-mix(in srgb, white 40%, transparen
   opacity: 0 !important;
   pointer-events: none !important;
 }
-
-// .virtual-row-wrapper {
-//   transition: none !important; /* Убираем transition для мгновенности */
-// }
-
-// /* Опционально: плавная анимация только для обычных скроллов */
-// .virtual-row-wrapper:not([style*="opacity: 0"]) {
-//   transition: transform 0.05s ease-out;
-// }
-
-// .is-toggling .virtual-row-wrapper {
-//   transition: none !important;
-// }
-// .virtual-row-wrapper {
-//   transition: transform 0.05s ease-out;
-// }
-
-// /* Убираем transition во время toggle */
-// .is-toggling .virtual-row-wrapper {
-//   transition: none !important;
-// }
-
-// /* Мгновенное скрытие */
-// .virtual-row-wrapper[style*="opacity: 0"] {
-//   transition: opacity 0.05s ease-out !important;
-// }
-
-
-// .virtual-row-wrapper {
-//   transition: transform 0.05s ease-out;
-// }
 .virtual-row-wrapper {
   min-height: 20px;
   height: auto !important;
@@ -157,12 +126,16 @@ scrollbar-width: thin; scrollbar-color: color-mix(in srgb, white 40%, transparen
   background-color: ${TREE_UI.colors.parentSelectedBg};
   border-left-color: rgba(49, 130, 206, 0.4);
 }
-.tree-block-flat.is-group[data-selected="true"] { border-color: rgba(49, 130, 206, 0.3); }
+.tree-block-flat.is-group[data-selected="true"] {
+  // border-color: rgba(49, 130, 206, 0.3);
+  background-color: transparent;
+}
 
 .group-title-row { 
   display: flex;
   align-items: flex-start;
-  gap: ${TREE_UI.groupRow.gap}px; 
+  // gap: ${TREE_UI.groupRow.gap}px;
+  gap: 0;
   font-size: ${TREE_UI.groupStyle.fontSize}px; 
   font-weight: ${TREE_UI.groupRow.fontWeight}; 
   width: 100%; 
@@ -172,15 +145,20 @@ scrollbar-width: thin; scrollbar-color: color-mix(in srgb, white 40%, transparen
 .tree-group-btn { 
   background: none; border: none; color: inherit; 
   height: ${TREE_UI.groupRow.btnSize}px; 
-  width: ${TREE_UI.groupRow.btnSize}px; 
-  min-width: ${TREE_UI.groupRow.btnSize}px; 
-  padding: 0; display: flex; align-items: center; justify-content: center; cursor: pointer; 
+  min-width: ${TREE_UI.groupRow.btnSize}px;
+  padding: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: 50px;
 }
-.tree-group-btn:hover { background-color: ${TREE_UI.groupRow.btnHoverBg}; border-radius: ${TREE_UI.radius.block}; }
+.tree-group-btn:hover { background-color: ${TREE_UI.groupRow.btnHoverBg}; }
 
 .group-slice { transition: background-color 0.1s, border-color 0.1s; }
 .group-slice[data-group-selected="true"] {
-  background-color: ${TREE_UI.groupRow.sliceSelectedBg} !important;
+  // background-color: ${TREE_UI.groupRow.sliceSelectedBg} !important;
+  background-color: color-mix(in srgb, ${TREE_UI.groupRow.sliceSelectedBg} 40%, transparent) !important;
   z-index: 2 !important;
 }
 
@@ -244,7 +222,7 @@ const flatNodeAreEqual = (prev: any, next: any) => {
   return true;
 };
 
-const FlatBlockNode = memo(({ item, index, actions, groupBounds, editingId, isCollapsedState }: any) => {
+const FlatBlockNode = memo(({ item, index, actions, groupBounds, editingId, isCollapsedState,cardRefsMap }: any) => {
   const { block, depth, numbering, parentGroupIds } = item;
   const isGroup = block.type === 'group';
   const isEditingCard = editingId === block.id && !isGroup;
@@ -280,8 +258,14 @@ const FlatBlockNode = memo(({ item, index, actions, groupBounds, editingId, isCo
     // requestAnimationFrame нужен, чтобы дождаться пока React заменит <input> обратно на <span>
     requestAnimationFrame(() => {
       if (wrapperRef.current) {
-        const titleNode = wrapperRef.current.querySelector('.group-title-text');
-        if (titleNode) titleNode.textContent = editName;
+        const reactNode = wrapperRef.current.querySelector('.react-content');
+        const vanillaNode = wrapperRef.current.querySelector('.vanilla-overlay');
+        
+        if (reactNode && vanillaNode) {
+          reactNode.style.display = 'none'; // Временно прячем React-содержимое
+          vanillaNode.style.display = 'inline'; // Показываем ванильный слой
+          vanillaNode.textContent = editName; // Безопасно меняем текст ванильного слоя
+        }
       }
     });
 
@@ -296,18 +280,11 @@ const FlatBlockNode = memo(({ item, index, actions, groupBounds, editingId, isCo
     actions.handleChangeGroupColor(block.id, val);
   }, [block.id, actions]);
 
-  // const displayTitle = block.metainfo.title ?? block.id;
-  // const displayTitleRef = useRef(block.metainfo.title ?? block.id) as any;
-  // const displayTitle = (isGroup && isCollapsedState) 
-  //   ? (item.titleWithChildren || block.metainfo.title || block.id)
-  //   : (block.metainfo.title ?? block.id);
+
   const displaySegments = (isGroup && isCollapsedState) 
     ? (item.titleSegments || [{ text: block.metainfo.title || block.id, isGroup: true }])
     : [{ text: block.metainfo.title ?? block.id, isGroup: true }];
 
-  // ... (ниже в JSX разметке, в режиме чтения группы)
-    
-  // const displayTitleRef = useRef(block.metainfo.title ?? block.id) as any;
   const displayColor = optColor ?? block.metainfo.color ?? TREE_UI.colors.groupDefault;
 
   const bounds = groupBounds[block.id];
@@ -317,7 +294,10 @@ const FlatBlockNode = memo(({ item, index, actions, groupBounds, editingId, isCo
     return (
       <span style={{ display: 'inline' }}>
         {segments.map((seg, i) => (
-          <span key={i} style={{ fontWeight: seg.isGroup ? 600 : 400 }}>
+          <span key={i} style={seg.isGroup
+              ? { fontWeight: 600, opacity: 1.0 }
+              : { fontWeight: 300, opacity: 0.6 }
+            }>
             <HighlightText text={seg.text} query={query} />
             {i < segments.length - 1 ? ', ' : ''}
           </span>
@@ -325,6 +305,8 @@ const FlatBlockNode = memo(({ item, index, actions, groupBounds, editingId, isCo
       </span>
     );
   };
+
+  const MT_BUTTON_MT: number = 2;
 
   return (
     <div
@@ -380,22 +362,60 @@ const FlatBlockNode = memo(({ item, index, actions, groupBounds, editingId, isCo
       }}>
         {isGroup ? (
           <div className="group-title-row">
-            <button className="tree-group-btn" onClick={(e) => { e.stopPropagation(); actions.onToggleGroup(block.id); }}>
-              {isCollapsedState ? <LuChevronRight className="smIcon" /> : <LuChevronDown className="smIcon" />}
+            <button
+              className="tree-group-btn"
+              onClick={(e) => { e.stopPropagation(); actions.onToggleGroup(block.id); }}
+              style={{
+                marginRight: '10px',
+                marginTop: '2px',
+              }}
+            >
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                height: `${TREE_UI.groupRow.btnSize}px`,
+                marginTop: '2px',
+              }}>
+                <LuPilcrow style={{
+                  opacity: TREE_UI.groupRow.opacities.pilcrow,
+                  marginLeft: '-2px',
+                  height: '12px',
+                  }}
+                />
+              </div>
+              
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                height: `${TREE_UI.groupRow.btnSize}px`,
+                marginTop: '2px',
+                marginLeft: '-1px'
+              }}>
+                <span style={{ 
+                  fontWeight: 400, 
+                  fontSize: `12px`, 
+                  opacity: TREE_UI.groupRow.opacities.numbering, 
+                  whiteSpace: 'nowrap',
+                }}>{numbering}</span>
+              </div>
+              {isCollapsedState
+                ? <LuChevronRight
+                    style={{
+                      opacity: TREE_UI.groupRow.opacities.pilcrow,
+                      marginTop: `${MT_BUTTON_MT}px`,
+                      marginLeft: '2px',
+                    }}
+                    className="smIcon"
+                  />
+                : <LuChevronDown
+                    style={{
+                      opacity: TREE_UI.groupRow.opacities.pilcrow,
+                      marginTop: `${MT_BUTTON_MT}px`,
+                      marginLeft: '2px',
+                    }}
+                    className="smIcon"
+                  />}
             </button>
-            
-            <div style={{ display: 'flex', alignItems: 'center', height: `${TREE_UI.groupRow.btnSize}px` }}>
-              <LuPilcrow style={{ opacity: TREE_UI.groupRow.opacities.pilcrow }} />
-            </div>
-            
-            <div style={{ display: 'flex', alignItems: 'center', height: `${TREE_UI.groupRow.btnSize}px` }}>
-              <span style={{ 
-                fontWeight: 400, 
-                fontSize: `${TREE_UI.font.numbering}px`, 
-                opacity: TREE_UI.groupRow.opacities.numbering, 
-                whiteSpace: 'nowrap' 
-              }}>{numbering}</span>
-            </div>
 
             {isEditingTitle ? (
               <input autoFocus value={editName} onChange={e => setEditName(e.target.value)} onBlur={onRenameSubmit} onClick={e => e.stopPropagation()}
@@ -404,15 +424,10 @@ const FlatBlockNode = memo(({ item, index, actions, groupBounds, editingId, isCo
               />
             ) : (
               <div style={{ flex: 1, opacity: TREE_UI.groupRow.opacities.title, whiteSpace: 'pre-wrap', wordBreak: 'break-word', paddingTop: '1px', position: 'relative' }} onDoubleClick={(e) => { e.stopPropagation(); setIsEditingTitle(true); }}>
-                
-                {/* React-часть: скрывается ванильным JS на время анимации */}
                 <span className="group-title-text react-content" style={{ display: 'inline' }}>
                   <SegmentedTitle segments={displaySegments} query={actions.searchQuery} />
                 </span>
-
-                {/* Ванильная часть: пустая, JS закидывает сюда HTML на мгновение */}
                 <span className="vanilla-overlay" style={{ display: 'none' }}></span>
-
               </div>
             )}
 
@@ -428,7 +443,19 @@ const FlatBlockNode = memo(({ item, index, actions, groupBounds, editingId, isCo
           </div>
         ) : (
           <div className="card-content-row">
-            <Card id={block.id} content={block.metainfo.content||''} options={{ stats: false, twoSides: isEditingCard, padding: '0px', fontSize: TREE_UI.rowStyle.fontSize }} focus={isEditingCard} />
+            <Card
+              id={block.id}
+              content={block.metainfo.content||''}
+              options={{ open: true, stats: false, twoSides: isEditingCard, padding: '0px', fontSize: TREE_UI.rowStyle.fontSize }}
+              focus={isEditingCard}
+              ref={(el: any) => {
+                if (el) {
+                  cardRefsMap.current.set(block.id, el);
+                } else {
+                  cardRefsMap.current.delete(block.id);
+                }
+              }}
+            />
           </div>
         )}
       </div>
@@ -437,7 +464,8 @@ const FlatBlockNode = memo(({ item, index, actions, groupBounds, editingId, isCo
 }, flatNodeAreEqual);
 
 export const TreeView = memo(forwardRef(({}: any, ref: any) => {
-  const { id, blocks, selfRef, headerRef, searchRef, name } = useGraphCtx() as any;
+  const graphCtx = useGraphCtx();
+  const { id, blocks, selfRef, headerRef, searchRef, name } = graphCtx as any;
   // tree part
 	const curName = useRef(name);
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
@@ -451,9 +479,10 @@ export const TreeView = memo(forwardRef(({}: any, ref: any) => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const tabsRef = useRef(null) as any;
   const editingNodeIdRef = useRef<string | null>(null);
+  const cardRefsMap = useRef<Map<string, any>>(new Map());
 
   useEffect(() => { editingNodeIdRef.current = editingNodeId; }, [editingNodeId]);
-  const { flatTree, groupBounds, computedNs } = useMemo(() => {
+  const { flatTree, groupBounds, computedNs, fullFlatTree } = useMemo(() => {
     const nsDict: Record<string, string> = {};
     const traverseNs = (blocks: any[]) => {
       blocks.forEach(b => {
@@ -463,18 +492,35 @@ export const TreeView = memo(forwardRef(({}: any, ref: any) => {
     };
     traverseNs(blocksData);
 
+    // Для UI - обычное дерево с учетом collapsed
     const flat = flattenBlocks(blocksData);
+    
+    // ✅ Для Minigraph - полное дерево без учета collapsed
+    const fullFlat = flattenBlocksComplete(blocksData);
+    
     const bounds: any = {};
-    flat.forEach((item: any, index: number) => {
+    
+    // ✅ Строим bounds на основе ПОЛНОГО дерева
+    fullFlat.forEach((item: any, index: number) => {
       if (item.block.type === 'group') {
-        bounds[item.block.id] = { start: index, end: index, color: item.block.metainfo.color || TREE_UI.colors.groupDefault, depth: item.depth };
+        bounds[item.block.id] = { 
+          start: index, 
+          end: index, 
+          color: item.block.metainfo.color || TREE_UI.colors.groupDefault, 
+          depth: item.depth 
+        };
       }
       item.parentGroupIds.forEach((pid:any) => {
         if (bounds[pid]) bounds[pid].end = Math.max(bounds[pid].end, index);
       });
     });
 
-    return { flatTree: flat, groupBounds: bounds, computedNs: nsDict };
+    return { 
+      flatTree: flat,           // Для отображения UI
+      fullFlatTree: fullFlat,   // Для Minigraph
+      groupBounds: bounds, 
+      computedNs: nsDict 
+    };
   }, [blocksData]);
 
   const selection = useTreeSelection();
@@ -535,6 +581,7 @@ export const TreeView = memo(forwardRef(({}: any, ref: any) => {
     flatTree, setBlocksData, selRef, cursorRef, lastSelectedId, syncDOMSelection, 
     setSelExport, editingNodeIdRef, rowVirtualizer, setIsSearchOpen, searchRef, 
     scrollToNode, setEditingNodeId, onToggleGroup: actions.onToggleGroup,
+    cardRefsMap: cardRefsMap,
   });
 
   // Menupart
@@ -614,7 +661,8 @@ export const TreeView = memo(forwardRef(({}: any, ref: any) => {
 
   const saveGraph = useCallback(async (isAutoSave = false) => {
 		try {
-			console.log('blocksData',blocksDataRef.current)
+			// console.log('blocksData',blocksDataRef.current)
+      // console.log('curName',curName);
 			const updatedFields = {
 				content: JSON.stringify(blocksDataRef.current),
 				name: curName.current,
@@ -629,7 +677,7 @@ export const TreeView = memo(forwardRef(({}: any, ref: any) => {
 	}, [id, blocksData]);
 
   const HeaderTabs = (
-    <span css={headerCSS}>
+    <span key="header-tabs" css={headerCSS}>
       <Tabs.Root className='headerTabs' value={selfRef.current?.getMode()||'eg'} variant="plain"
         onValueChange={(e:any) => {
           if (editingNodeId) { setTimeout(() => { selfRef.current.setMode(e.value); setEditingNodeId(null); }, 150); } 
@@ -645,7 +693,11 @@ export const TreeView = memo(forwardRef(({}: any, ref: any) => {
 						curName.current = p['0'];
 					} }}>
           <Box p={0} m={0} onClickCapture={(e:any) => { if (e.altKey) { actions.onAltClick(e, '__root__', 'root'); e.stopPropagation(); } }}>
-            <Card id={'0'} content={curName.current as any} options={{twoSides:false, fontSize:12}}/>
+            <Card
+              id={'0'}
+              content={curName.current as any}
+              options={{twoSides:false, fontSize:12, onBlur: (newVal:any)=>curName.current=newVal}}
+              />
           </Box>
         </GraphCtx.Provider>
 
@@ -665,10 +717,11 @@ export const TreeView = memo(forwardRef(({}: any, ref: any) => {
 	}, []);
 
 	const treeGraphCtx = useMemo(() => ({
-		...useGraphCtx(),
-		ns: computedNs,
-		updateCardContent
-	}), [computedNs, updateCardContent]);
+    ...graphCtx,
+    ns: computedNs,
+    updateCardContent,
+    fullFlatTree  // ✅ Экспортируем для использования в других компонентах
+  }), [computedNs, updateCardContent, fullFlatTree]);
 
   useImperativeHandle(ref, () => ({
     scrollToNode,
@@ -685,7 +738,7 @@ export const TreeView = memo(forwardRef(({}: any, ref: any) => {
       >
 				<div id="drop-indicator" className="indicator"><div></div></div>
 
-        {altPopup && (
+        {/* {altPopup && (
           <Minigraph
             {...altPopup} 
             ns={computedNs}
@@ -699,11 +752,26 @@ export const TreeView = memo(forwardRef(({}: any, ref: any) => {
                 setAltPopup(null);
             }}
           />
+        )} */}
+
+        {altPopup && (
+          <Minigraph
+            {...altPopup} 
+            ns={computedNs}
+            flatTree={fullFlatTree}  // ✅ Используем полное дерево
+            groups={groupBounds}
+            onClose={() => setAltPopup(null)}
+            onDelete={() => {
+                const ids = new Set(altPopup.targetNodes) as any;
+                setBlocksData((prev: any) => removeMultipleBlocksImm(prev, ids));
+                setAltPopup(null);
+            }}
+          />
         )}
 
         <ContextMenu {...menuProps} items={menuItems} />
 
-				<div style={{ height: `${rowVirtualizer.getTotalSize()}px`, width:'100%', position:'relative' }}>
+				<div style={{ height: `${rowVirtualizer.getTotalSize() + 700}px`, width:'100%', position:'relative' }}>
 					{rowVirtualizer.getVirtualItems().map((virtualItem:any) => {
 						const item = flatTree[virtualItem.index];
             const optToggle = (actions.optimisticToggles as any)[item.block.id];
@@ -715,7 +783,8 @@ export const TreeView = memo(forwardRef(({}: any, ref: any) => {
               >
                 <FlatBlockNode
                   item={item} index={virtualItem.index} groupBounds={groupBounds} actions={actions} 
-                  editingId={editingNodeId} isCollapsedState={isCollapsedState} 
+                  editingId={editingNodeId} isCollapsedState={isCollapsedState}
+                  cardRefsMap={cardRefsMap}
                 />
               </div>
             );

@@ -309,11 +309,50 @@ export const flattenBlocks = (blocks: Block[], depth = 0, prefix = '', parentGro
     if (b.type === 'group') {
       titleSegments = getGroupWithChildrenSegments(b);
     }
-
     result.push({ block: b, depth, numbering: num, parentGroupIds, titleSegments });
-    
     if (b.type === 'group' && !b.metainfo.collapsed && b.children) {
       result.push(...flattenBlocks(b.children, depth + 1, num, [...parentGroupIds, b.id]));
+    }
+  });
+  return result;
+};
+
+
+export const flattenBlocksComplete = (
+  blocks: Block[], 
+  depth = 0, 
+  prefix = '', 
+  parentGroupIds: string[] = []
+): FlatItem[] => {
+  let result: FlatItem[] = [];
+  blocks.forEach((b, i) => {
+    const num = prefix ? `${prefix}.${i + 1}` : `${i + 1}`;
+    
+    let titleSegments = undefined;
+    if (b.type === 'group') {
+      titleSegments = getGroupWithChildrenSegments(b);
+    }
+
+    result.push({ 
+      block: b, 
+      depth, 
+      numbering: num, 
+      parentGroupIds, 
+      titleSegments 
+    });
+    
+    // ✅ ВСЕГДА обходим детей, игнорируя collapsed
+    if (b.children && b.children.length > 0) {
+      const childParentIds = b.type === 'group' 
+        ? [...parentGroupIds, b.id] 
+        : parentGroupIds;
+      
+      result.push(...flattenBlocksComplete(
+        b.children, 
+        depth + 1, 
+        num, 
+        childParentIds
+      ));
     }
   });
   return result;
@@ -357,7 +396,7 @@ export const useTreeActions = ({
   searchQuery, syncSingleDOMNode, scrollContainerRef,rowVirtualizer 
 }: any) => {
   const dropTargetRef = useRef<{ id: string, pos: 'top'|'bottom'|'inside' } | null>(null);
-  const [optimisticToggles, setOptimisticToggles] = useState<Set<string>>(new Set());
+  const [optimisticToggles, _setOptimisticToggles] = useState<Set<string>>(new Set());
 
   return useMemo(() => ({
     checkIsSelected: (id: string) => selRef.current.has(id),
@@ -750,7 +789,7 @@ export const useTreeActions = ({
 export const useTreeKeyboard = ({
   flatTree, setBlocksData, selRef, cursorRef, lastSelectedId, syncDOMSelection, 
   setSelExport, editingNodeIdRef, rowVirtualizer, setIsSearchOpen, searchRef, 
-  scrollToNode, setEditingNodeId, onToggleGroup
+  scrollToNode, setEditingNodeId, onToggleGroup,cardRefsMap 
 }: any) => {
 
   const handleGlobalKeyDown = useCallback(async (e: React.KeyboardEvent) => {
@@ -803,6 +842,76 @@ export const useTreeKeyboard = ({
 
     if (isTyping) return;
     if (target.isContentEditable && editingNodeIdRef.current) return;
+
+    if (e.key === 'ArrowRight' && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey) {
+      e.preventDefault();
+      const targetId = cursorRef.current || (selRef.current.size > 0 ? Array.from(selRef.current)[0] : null);
+      if (targetId) {
+        const item = flatTree.find((f: any) => f.block.id === targetId);
+        if (item) {
+          if (item.block.type === 'group') {
+            // Для группы - разворачиваем/переходим к детям
+            if (item.block.metainfo.collapsed) {
+              onToggleGroup(targetId);
+            } else {
+              const childIdx = flatTree.findIndex((f: any) => 
+                f.parentGroupIds.includes(targetId) && f.depth === item.depth + 1
+              );
+              if (childIdx !== -1) {
+                const childId = flatTree[childIdx].block.id;
+                cursorRef.current = childId;
+                selRef.current.clear();
+                selRef.current.add(childId);
+                lastSelectedId.current = childId;
+                syncDOMSelection();
+                rowVirtualizer.scrollToIndex(childIdx, { align: 'auto' });
+              }
+            }
+          } else {
+            // ✅ Для карточки - открываем обратную сторону
+            const cardRef = cardRefsMap.current.get(targetId);
+            if (cardRef && cardRef.toggleHide) {
+              cardRef.toggleHide(false); // показать обратную сторону
+            }
+          }
+        }
+      }
+      return;
+    }
+
+    if (e.key === 'ArrowLeft' && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey) {
+      e.preventDefault();
+      const targetId = cursorRef.current || (selRef.current.size > 0 ? Array.from(selRef.current)[0] : null);
+      if (targetId) {
+        const item = flatTree.find((f: any) => f.block.id === targetId);
+        if (item) {
+          if (item.block.type === 'group') {
+            // Для группы - сворачиваем/переходим к родителю
+            if (!item.block.metainfo.collapsed) {
+              onToggleGroup(targetId);
+            } else if (item.parentGroupIds.length > 0) {
+              const parentId = item.parentGroupIds[item.parentGroupIds.length - 1];
+              const parentIdx = flatTree.findIndex((f: any) => f.block.id === parentId);
+              if (parentIdx !== -1) {
+                cursorRef.current = parentId;
+                selRef.current.clear();
+                selRef.current.add(parentId);
+                lastSelectedId.current = parentId;
+                syncDOMSelection();
+                rowVirtualizer.scrollToIndex(parentIdx, { align: 'auto' });
+              }
+            }
+          } else {
+            // ✅ Для карточки - скрываем обратную сторону
+            const cardRef = cardRefsMap.current.get(targetId);
+            if (cardRef && cardRef.toggleHide) {
+              cardRef.toggleHide(true); // скрыть обратную сторону
+            }
+          }
+        }
+      }
+      return;
+    }
 
 
 

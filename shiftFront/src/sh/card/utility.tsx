@@ -182,17 +182,24 @@ const headingStyles: React.CSSProperties = {
   marginBottom: '0.4em',
   fontWeight: 600,
 };
-export const shComponents:Components={
+export const shComponents: Components = {
   h1: ({ node, ...props }:any) => <h1 style={{ ...headingStyles, fontSize: '2em', borderBottom: '1px solid #ddd' }} {...props} />,
   h2: ({ node, ...props }) => <h2 style={{ ...headingStyles, fontSize: '1.5em', borderBottom: '1px solid #eee' }} {...props} />,
   h3: ({ node, ...props }) => <h3 style={{ ...headingStyles, fontSize: '1.25em' }} {...props} />,
   h4: ({ node, ...props }) => <h4 style={{ ...headingStyles, fontSize: '1em' }} {...props} />,
   h5: ({ node, ...props }) => <h5 style={{ ...headingStyles, fontSize: '0.875em', color: '#555' }} {...props} />,
   h6: ({ node, ...props }) => <h6 style={{ ...headingStyles, fontSize: '0.85em', color: '#666' }} {...props} />,
+  
   ul: ({ node, ...props }) => <ul style={{ paddingLeft: '20px', listStyleType: 'disc' }} {...props} />,
-  ol: ({ node, ...props }) => <ol style={{ paddingLeft: '0px' }} {...props} />,
+  
+  // ИЗМЕНЕНИЯ ЗДЕСЬ: добавляем отступ и тип маркера (decimal - обычные цифры)
+  ol: ({ node, ...props }) => <ol style={{ paddingLeft: '20px', listStyleType: 'decimal' }} {...props} />,
+  
   p: ({ node, ...props }) => <p style={{ marginLeft: '4px', padding: '0px 0px', lineHeight: 'normal' }} {...props} />,
+  
+  // Элемент списка (li) остаётся без изменений, он будет работать и для ul, и для ol
   li: ({ node, ...props }) => <li style={{ marginBottom: '0.4em' }} {...props} />,
+  
   code: CodeBlock,
 };
 

@@ -746,7 +746,9 @@ export const Card = forwardRef(({
     if (updateCardContent) {
       updateCardContent(currentCardId, currentCardContent, newBlocksToInsert);
     } else {
+      // console.log('options:',options.onBlur)
       console.warn("updateCardContent is missing in GraphCtx!");
+      options.onBlur(currentCardContent)
     }
 
     // 3. Вызываем внешний хук (если кто-то ждет новых ID)
@@ -828,16 +830,6 @@ export const Card = forwardRef(({
       >
         <Accordion.Item value={fwdParts[option]}>
           <Accordion.ItemTrigger className='optionsTrigger'>
-            {fwdParts.length>1&&(
-              <Accordion.ItemIndicator mr={'5px'} >
-                <Box
-                  p={'0px'}
-                >
-                  {/* <Box w={'5px'} h={'5px'} bgColor={'whiteAlpha.300'} borderRadius={'5px'}/> */}
-                  <LuScan size={'4px'} style={{height: '8px', minHeight: '8px', minWidth: '8px'}} opacity={0.3}/>
-                </Box>
-              </Accordion.ItemIndicator>
-            )}
             <Box w={'100%'} fontWeight={600} onClick={(e:any)=>{
                 e.stopPropagation()
                 e.preventDefault()
@@ -854,6 +846,16 @@ export const Card = forwardRef(({
                 </Box>)}
               <Sh value={fwdParts[option]||'empty'}/>
             </Box>
+            {fwdParts.length>1&&(
+              <Accordion.ItemIndicator mr={'5px'} >
+                <Box
+                  p={'0px'}
+                >
+                  {/* <Box w={'5px'} h={'5px'} bgColor={'whiteAlpha.300'} borderRadius={'5px'}/> */}
+                  <LuScan size={'4px'} style={{height: '8px', minHeight: '8px', minWidth: '8px'}} opacity={0.3}/>
+                </Box>
+              </Accordion.ItemIndicator>
+            )}
           </Accordion.ItemTrigger>
 
           <Accordion.ItemContent gap={0} p={0}>
@@ -1057,6 +1059,7 @@ export const Card = forwardRef(({
   useImperativeHandle(ref,()=>({
     focus: async()=>await setIsEdit(true),
     getContent: ()=>c,
+    toggleHide: (shouldHide: boolean) => setHide(shouldHide),
   }));
 
   // link inside card's code editor
