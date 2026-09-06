@@ -86,23 +86,33 @@ export function SpAvatar(props:any) {
 }
 
 
-const profileStyle=css`
+const profileWrapperCSS = css`
+position: relative;
+width: 100%;
+height: 100vh; /* Жестко фиксируем высоту по экрану */
+display: flex;
+flex-direction: column;
+overflow: hidden; /* Отключаем глобальный скролл страницы */
+
 display: flex;
 flex-direction: column;
 align-items: center;
 width: 100%;
-max-width: 450px;
-margin-left: auto;
-margin-right: auto;
+flex: 1; /* Занимает всю высоту внутри wrapper */
+overflow-y: auto; /* Включаем скролл ИМЕННО ЗДЕСЬ */
+scrollbar-width: none;
 
 .profilePg {
-	margin-top: 25px;
-	width :100%;
-	max-width: 100%;
-	mx:10px;
-	gap: 20px;
-	overflow-y: auto;
-	scrollbar-width: none;
+/* Добавляем верхний отступ, чтобы контент не прятался под абсолютным хедером при загрузке */
+padding-top: 60px; 
+
+width: 100%;
+max-width: 450px;
+padding-left: 10px;
+padding-right: 10px;
+display: flex;
+flex-direction: column;
+gap: 20px;
 }
 `;
 
@@ -125,6 +135,7 @@ align-items: stretch;
 input{
 	border: none;
 	outline: none;
+	padding: 0;
 }
 
 .body {
@@ -166,8 +177,11 @@ export const InputStack=(props:any)=>{
 				{props.els.map((el:any,i:number)=>{
 					if (el.tp === 'input') {
 						return (
-							<Box p={0}m={0} key={i} w={'100%'} alignItems={'center'} display={'flex'} flexDirection={'column'}>
+							<Box p={'5px 10px'} m={0} key={i} w={'100%'} alignItems={'start'} display={'flex'} flexDirection={'column'}>
 								{i!==0&&<Separator w={'95%'}/>}
+								<Text opacity={'0.3'} fontSize={'10px'}>
+									{el.p}
+								</Text>
 								<Input key={i} ref={el.ref} defaultValue={el.d} placeholder={el.p}/>
 							</Box>
 						)
@@ -178,6 +192,9 @@ export const InputStack=(props:any)=>{
 							<Box className={'body'} key={i}>
 								{i!==0&&<Separator w={'95%'}/>}
 								<Box m={0} alignItems={'start'} w={'100%'} p={'5px 10px'}>
+									<Text opacity={'0.3'} fontSize={'10px'}>
+										{el.p}
+									</Text>
 									<GraphCtx.Provider value={{
 										ns:localNs,setNs:setLocalNs,
 										gRef:el.ref,
@@ -491,7 +508,7 @@ export function Profile(props:any){
 			return (
 				<>
 					<Header ref={headerRef}/>
-					<div css={profileStyle}>
+					<div css={profileWrapperCSS}>
 						<VStack className='profilePg'>
 							<SpAvatar
 								src={localUserData.photo_url}
@@ -517,9 +534,9 @@ export function Profile(props:any){
 
 							<InputStack
 								els={[
-									{ref:usernameRef,p:'username',   d:localUserData.username,  tp:'input'},
-									{ref:avatarRef,  p:'avatar link',d:localUserData.photo_url, tp:'input'},
-									{ref:bioRef,     p:'about you',  d:localUserData.bio, tp:'card'}
+									{ref:usernameRef,p:'Username',   d:localUserData.username,  tp:'input'},
+									{ref:avatarRef,  p:'Avatar link',d:localUserData.photo_url, tp:'input'},
+									{ref:bioRef,     p:'About you',  d:localUserData.bio, tp:'card'}
 								]} />
 	
 							<HStack p={'0px 10px'} m={0} w={'100%'} mb={'-15px'}>
@@ -590,6 +607,7 @@ export function Profile(props:any){
 									log out
 								</Button>
 							</HStack>
+							<div style={{minHeight: '200px'}}/>
 						</VStack>
 					</div>
 				</>

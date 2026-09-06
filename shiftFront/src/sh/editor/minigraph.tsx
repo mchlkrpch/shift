@@ -6,7 +6,7 @@ import Graphology from "graphology";
 import Sigma from "sigma";
 import { MdClose, MdDelete } from "react-icons/md";
 import { createPortal } from "react-dom";
-import { getCardState } from "./feed";
+import { getCardState } from "./feed/feed";
 import { SIDE_SPLIT_SYM } from "../card/utility";
 import { drawRoundRect, rgba2hex } from "./utility";
 

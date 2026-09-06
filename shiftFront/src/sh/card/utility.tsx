@@ -26,9 +26,11 @@ import { Clip } from '../clip';
 // @ts-expect-error
 import dagre from 'dagre';
 
-export const SIDE_SPLIT_SYM: string = '@@@'
-export const OPTION_SPLIT_SYM: string = '==='
-export const CARD_SPLIT_SYM: string = '~~~'
+export const SIDE_SPLIT_SYM: string = '@@@';
+export const OPTION_SPLIT_SYM: string = '===';
+export const CARD_SPLIT_SYM: string = '~~~';
+const MASK_USC = '\uE000';
+const MASK_AST = '\uE001';
 
 export const Sh=({value}:any)=>{
   // @ts-expect-error
@@ -36,13 +38,24 @@ export const Sh=({value}:any)=>{
     const {id}=props
     return <Cell id={id}/>;
   }
+
+  // МАСКИРОВКА: Прячем _ и * внутри формул от Markdown-парсера
+  const safeValue = typeof value === 'string'
+    ? value.replace(/\$([\s\S]+?)\$/g, (match) => {
+        return match
+          .replace(/_/g, MASK_USC)
+          .replace(/\*/g, MASK_AST);
+      })
+    : value;
+
   return (
     <ReactMarkdown
       remarkPlugins={[shRemark,remarkGfm]}
       rehypePlugins={[rehypeRaw,rehypeKatex,rehypeHighlight]}
       components={shComponents}
     >
-      {value}
+      {/* Передаем замаскированный текст */}
+      {safeValue}
     </ReactMarkdown>
   )
 }
@@ -204,7 +217,8 @@ export const shComponents: Components = {
 };
 
 const LINK_REGEX_EXPR: RegExp = /<id=([^>]+?)>/g;
-const MATH_REGEX_EXPR: RegExp = /\$([^<>]*?)\$/g;
+// const MATH_REGEX_EXPR: RegExp = /\$([^<>]*?)\$/g;
+const MATH_REGEX_EXPR: RegExp = /\$([\s\S]+?)\$/g; 
 const splitPattern = (
   s: string,
   p: any,
@@ -257,17 +271,22 @@ export const shRemark: Plugin<[], Root> = () => {
             ans.push({type: 'text', value: s.slice(pI,sI)});
           },
           (ans:any,data:string) => {
+            // РАЗМАСКИРОВКА: возвращаем _ и * на свои места
+            const cleanData = data
+              .replace(new RegExp(MASK_USC, 'g'), '_')
+              .replace(new RegExp(MASK_AST, 'g'), '*');
+
             ans.push({
               data: {
-                hChildren:[{type:'text',value:data}],
+                hChildren:[{type:'text',value:cleanData}],
                 hName: 'code',
                 hProperties: {
-                  className:['lambuage-math', 'math-inline']
+                  className:['language-math', 'math-inline']
                 }
               },
               position: {},
               type: 'inlineMath',
-              value: data
+              value: cleanData // Отдаем чистую формулу в KaTeX
             });
           },
         );

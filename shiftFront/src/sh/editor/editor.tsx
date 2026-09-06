@@ -8,12 +8,10 @@ import {
 } from 'react';
 import {
   Box,
-  Separator,
   Tabs,
 } from "@chakra-ui/react";
 import '@xyflow/react/dist/style.css';
-import { Minigraph } from "./minigraph";
-import { Feed, ChatNN } from "./feed"; 
+import { Feed } from "./feed/feed";
 import { ContextMenu, useContextMenu } from "./contextMenu";
 import { Header } from "../../components/header";
 import { TreeView } from "./tree/treeview";
@@ -30,7 +28,12 @@ width: 100%;
 min-height: 0;
 flex-direction: column;
 
-.thinButton { height: 20px; gap: 3px; padding:0px 10px; }
+
+.thinButton {
+  height: 20px;
+  gap: 3px;
+  padding:0px 10px;
+}
 
 .graphTabs {
   width: 100%; display: flex; flex-direction:column; gap:0; min-height:0; flex:1; margin: 0;
@@ -41,6 +44,10 @@ flex-direction: column;
   flex-direction: column;
   outline: none;
   overflow-y: hidden;
+}
+
+[data-part="content"] {
+  padding: 0;
 }
 
 .tabsTrigger {
@@ -84,9 +91,7 @@ const Search = forwardRef(({init_input_str}:any, ref:any)=>{
         onKeyDown={(e:any) => {
           if (e.key === 'Escape') {
             e.stopPropagation();
-            // setIsSearchOpen(false);
             setSearchInput("");
-            // setDebouncedSearch("");
           }
         }}
       />
@@ -99,23 +104,25 @@ export const Editor=forwardRef(({}:any,ref:any)=>{
   const {headerRef,searchRef}=useGraphCtx() as any;
   const [isSearchOpen, _setIsSearchOpen] = useState(false);
   const feedRef = useRef(null);
-  const minigraphRef = useRef(null) as any;
   const treeRef=useRef(null) as any;
-
   const { open: _openMenu, close: _closeMenu, props: menuProps } = useContextMenu();
-  const minigraphProps=useState<{
-    isOpen:boolean,
-    id:any,type:string,
-    targetNodes:string[],targetGroups:string[],
-    x:number,y:number,
-    ns:any,groups:any,
-    onClose:any,onDelete:any,onRepeat:any,
-  }>({isOpen:false,} as any) as any;
+  // const minigraphRef = useRef(null) as any;
+  // const minigraphProps=useState<{
+  //   isOpen:boolean,
+  //   id:any,type:string,
+  //   targetNodes:string[],targetGroups:string[],
+  //   x:number,y:number,
+  //   ns:any,groups:any,
+  //   onClose:any,onDelete:any,onRepeat:any,
+  // }>({isOpen:false,} as any) as any;
 
   useImperativeHandle(ref,()=>({
     setPopup: ()=>{},
     setHeader: ()=>{},
-    setMode: setMode,
+    setMode: (m:any)=>{
+      setMode(m)
+      // console.log('m:',m)
+    },
     getMode: ()=>mode,
   }));
 
@@ -129,33 +136,19 @@ export const Editor=forwardRef(({}:any,ref:any)=>{
       className={'graphTabs'}
     >
       <Header ref={headerRef}/>
-      {/* <Separator h={'10px'}/> */}
-
       <Tabs.Content value={'eg'}
         overflowY={'hidden'}
       >
         {isSearchOpen && (<Search ref={searchRef}/>)}
 
-        <ChatNN/>
-
-        {mode === 'eg' && (
-          <TreeView ref={treeRef} />
-        )}
-        
-        {mode === 'repeat' && (
-          <Feed ref={feedRef} />
-        )}
+        <TreeView ref={treeRef} />
 
         <ContextMenu {...menuProps} items={[]} />
-        
-        {minigraphProps.isOpen && (
-          <Minigraph
-            ref={minigraphRef}
-            {...minigraphProps}
-          />
-        )}
       </Tabs.Content>
 
+      <Tabs.Content value={'repeat'} overflowY={'hidden'} style={{ flex: 1, minHeight: 0 }}>
+        <Feed ref={feedRef} />
+      </Tabs.Content>
     </Tabs.Root>
   )
 });
