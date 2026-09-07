@@ -8,7 +8,7 @@ import React, {
   useMemo,
   useImperativeHandle
 } from "react";
-import { useGraphCtx } from "../../../App";
+import { useGraphCtx } from "../../App";
 import {
   Box,
   HStack,
@@ -16,9 +16,9 @@ import {
   Button,
   Spacer,
 } from "@chakra-ui/react";
-import { Card } from "../../card/card";
-import { uReq } from "../../../appwrite/service";
-import { calculateHierarchy } from "../../card/utility";
+import { Card } from "../card/card";
+import { uReq } from "../../appwrite/service";
+import { calculateHierarchy } from "../card/utility";
 
 // ==========================================
 // НАСТРОЙКИ ГЕОМЕТРИИ И АНИМАЦИИ
@@ -90,6 +90,7 @@ position: relative;
 .indicator-line {
   margin-left: 20px;
   top: 5px;
+
   height: 5px;
   width: 5px;
 
@@ -658,7 +659,6 @@ export const Feed = React.forwardRef(({}: any, ref: any) => {
   return (
     <Box css={feedCSS}>
       <Box ref={scrollRef} className="feed-container" style={{ position: 'relative' }}>
-        
         {feedList.length === 0 && (
           <Box display="flex" justifyContent="center" alignItems="center" h="100%" color="gray.500">
              Загрузка карточек...
@@ -681,8 +681,8 @@ export const Feed = React.forwardRef(({}: any, ref: any) => {
                 }}
               >
                 <div 
-                   className="indicator-line"
-                   data-forgotten={isForgotten}
+                  className="indicator-line"
+                  data-forgotten={isForgotten}
                 />
 
                 <Box

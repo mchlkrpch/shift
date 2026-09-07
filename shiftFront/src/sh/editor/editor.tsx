@@ -11,7 +11,7 @@ import {
   Tabs,
 } from "@chakra-ui/react";
 import '@xyflow/react/dist/style.css';
-import { Feed } from "./feed/feed";
+import { Feed } from "./feed";
 import { ContextMenu, useContextMenu } from "./contextMenu";
 import { Header } from "../../components/header";
 import { TreeView } from "./tree/treeview";
