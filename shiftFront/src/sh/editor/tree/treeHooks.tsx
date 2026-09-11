@@ -363,18 +363,19 @@ export const useTreeSelection = () => {
   const cursorRef = useRef<string | null>(null);
   const lastSelectedId = useRef<string | null>(null);
 
-  const syncSingleDOMNode = useCallback((row: HTMLDivElement, blockId: string) => {
-    const isSel = selRef.current.has(blockId);
+  const syncSingleDOMNode = useCallback((row: HTMLDivElement, blockId: string, editingNodeId?: string | null) => {
+    const isEditing = editingNodeId === blockId;
+    const isSel = selRef.current.has(blockId) && !isEditing;
     const isCursor = cursorRef.current === blockId;
     row.setAttribute('data-selected', String(isSel));
     row.setAttribute('data-cursor', String(isCursor));
   }, []);
 
-  const syncDOMSelection = useCallback(() => {
+  const syncDOMSelection = useCallback((editingNodeId?: string | null) => {
     const rows = document.querySelectorAll('.tree-block-flat'); 
     rows.forEach((row: any) => {
       const blockId = row.getAttribute('data-tree-id');
-      if (blockId) syncSingleDOMNode(row, blockId);
+      if (blockId) syncSingleDOMNode(row, blockId, editingNodeId);
     });
     const slices = document.querySelectorAll('.group-slice');
     slices.forEach((slice: any) => {
@@ -538,7 +539,7 @@ export const useTreeActions = ({
             shiftMap.set(wrapper, { hide: false, shift: adjustedShift });
           }
         });
-        
+
         wrappers.forEach((wrapper) => {
           const data = shiftMap.get(wrapper);
           if (!data) return;
@@ -792,6 +793,45 @@ export const useTreeKeyboard = ({
   scrollToNode, setEditingNodeId, onToggleGroup,cardRefsMap 
 }: any) => {
 
+  useEffect(() => {
+    const handleAIResponse = (e: CustomEvent) => {
+      const { content } = e.detail;
+      const targetId = cursorRef.current || (selRef.current.size > 0 ? Array.from(selRef.current)[0] : null);
+      
+      const newId = `ai_card_${Date.now()}`;
+      const newBlock: Block = { 
+        id: newId, 
+        type: 'card', 
+        metainfo: { content } 
+      };
+
+      setBlocksData((prev: Block[]) => {
+        if (!targetId) {
+          // Если нет курсора, добавляем в конец
+          return [...prev, newBlock];
+        }
+        // Добавляем под текущий курсор
+        return insertBlocksImm(prev, targetId, [newBlock], 'bottom');
+      });
+
+      // Переводим фокус на новую карточку
+      setTimeout(() => {
+        cursorRef.current = newId;
+        selRef.current.clear();
+        selRef.current.add(newId);
+        lastSelectedId.current = newId;
+        syncDOMSelection();
+        scrollToNode(newId, 'center');
+        
+        // Опционально: автоматически открываем для редактирования
+        // setEditingNodeId(newId);
+      }, 100);
+    };
+
+    window.addEventListener('ai-response-received', handleAIResponse as EventListener);
+    return () => window.removeEventListener('ai-response-received', handleAIResponse as EventListener);
+  }, [setBlocksData, cursorRef, selRef, lastSelectedId, syncDOMSelection, scrollToNode]);
+
   const handleGlobalKeyDown = useCallback(async (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
       let handled = false;
@@ -915,76 +955,6 @@ export const useTreeKeyboard = ({
 
 
 
-    // if (e.key === 'Enter') {
-    //   e.preventDefault();
-    //   const targetId = cursorRef.current || (selRef.current.size > 0 ? Array.from(selRef.current as Set<string>)[0] : null);
-    //   if (targetId) {
-    //     const item = flatTree.find((f: any) => f.block.id === targetId);
-    //     if (item) {
-    //         if (item.block.type === 'group') {
-    //             const isCollapsed = item.block.metainfo.collapsed;
-    //             // Выбираем сегменты текста
-    //             const nextSegments = isCollapsed 
-    //                 ? [{ text: item.block.metainfo.title || item.block.id, isGroup: true }]
-    //                 : (item.titleSegments || [{ text: item.block.metainfo.title || item.block.id, isGroup: true }]);
-    //             // Мгновенно инжектируем HTML, чтобы обойти лаг рендера (50мс)
-    //             const row = document.querySelector(`[data-tree-id="${targetId}"]`);
-    //             if (row) {
-    //               const titleNode = row.querySelector('.group-title-text');
-    //               if (titleNode) {
-    //                 const escapeHtml = (str: string) => str.toString().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
-    //                 titleNode.innerHTML = `<span style="display: inline;">` + nextSegments.map((seg: any, i: number) => {
-    //                     const fw = seg.isGroup ? '600' : '400';
-    //                     const comma = i < nextSegments.length - 1 ? ', ' : '';
-    //                     return `<span style="font-weight: ${fw}">${escapeHtml(seg.text)}${comma}</span>`;
-    //                 }).join('') + `</span>`;
-    //               }
-    //             }
-    //             onToggleGroup(targetId);
-    //         } else {
-    //             setEditingNodeId(targetId);
-    //             scrollToNode(targetId);
-    //         }
-    //     }
-    //   }
-    //   return;
-    // }
-    // if (e.key === 'Enter') {
-    //   e.preventDefault();
-    //   const targetId = cursorRef.current || (selRef.current.size > 0 ? Array.from(selRef.current as Set<string>)[0] : null);
-    //   if (targetId) {
-    //     const item = flatTree.find((f: any) => f.block.id === targetId);
-    //     if (item) {
-    //         if (item.block.type === 'group') {
-    //           const isCollapsed = item.block.metainfo.collapsed;
-    //           const nextSegments = isCollapsed 
-    //                 ? [{ text: item.block.metainfo.title || item.block.id, isGroup: true }]
-    //                 : (item.titleSegments || [{ text: item.block.metainfo.title || item.block.id, isGroup: true }]);
-    //             // Никакого innerHTML! onToggleGroup сам всё сделает безопасно и мгновенно.
-    //             const row = document.querySelector(`[data-tree-id="${targetId}"]`);
-    //             if (row) {
-    //               const titleNode = row.querySelector('.group-title-text');
-    //               if (titleNode) {
-    //                 const escapeHtml = (str: string) => str.toString().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
-    //                 titleNode.innerHTML = `<span style="display: inline;">` + nextSegments.map((seg: any, i: number) => {
-    //                     const fw = seg.isGroup ? '600' : '400';
-    //                     const comma = i < nextSegments.length - 1 ? ', ' : '';
-    //                     return `<span style="font-weight: ${fw}">${escapeHtml(seg.text)}${comma}</span>`;
-    //                 }).join('') + `</span>`;
-    //               }
-    //             }
-    //             onToggleGroup(targetId);
-    //         } else {
-    //             setEditingNodeId(targetId);
-    //             scrollToNode(targetId);
-    //         }
-    //     }
-    //   }
-    //   return;
-    // }
-
-
-
     if (e.key === 'Enter') {
       e.preventDefault();
       const targetId = cursorRef.current || (selRef.current.size > 0 ? Array.from(selRef.current as Set<string>)[0] : null);
@@ -1012,19 +982,44 @@ export const useTreeKeyboard = ({
       
       if (cursorRef.current) {
         const idx = flatTree.findIndex((f:any) => f.block.id === cursorRef.current);
-        if (idx !== -1) nextIdx = e.key === 'ArrowDown' ? Math.min(idx + 1, flatTree.length - 1) : Math.max(idx - 1, 0);
+        if (idx !== -1) {
+          if (e.key === 'ArrowDown' && idx === flatTree.length - 1) {
+            // Вызываем логику создания карты ниже (как при 'b')
+            const targetId = cursorRef.current;
+            const newId = `id_${Date.now()}`;
+            const newBlock: Block = { id: newId, type: 'card', metainfo: { content: '' } };
+            setBlocksData((prev: Block[]) => {
+              if (!targetId) return [...prev, newBlock];
+              return insertBlocksImm(prev, targetId, [newBlock], 'bottom');
+            });
+            setTimeout(() => {
+              cursorRef.current = newId;
+              selRef.current.clear(); 
+              selRef.current.add(newId);
+              setEditingNodeId(newId);
+              syncDOMSelection();
+              scrollToNode(newId);
+            }, 50);
+            return;
+          }
+          nextIdx = e.key === 'ArrowDown' 
+            ? Math.min(idx + 1, flatTree.length - 1) 
+            : Math.max(idx - 1, 0);
+        }
       } else {
         const visibleItems = rowVirtualizer.getVirtualItems();
         if (visibleItems.length > 0) nextIdx = visibleItems[0].index;
       }
-
       const nextId = flatTree[nextIdx].block.id;
       cursorRef.current = nextId;
-      
-      if (!e.shiftKey) { selRef.current.clear(); selRef.current.add(nextId); lastSelectedId.current = nextId; } 
-      else { selRef.current.add(nextId); }
-      
-      syncDOMSelection();
+      if (!e.shiftKey) { 
+        selRef.current.clear(); 
+        selRef.current.add(nextId); 
+        lastSelectedId.current = nextId; 
+      } else { 
+        selRef.current.add(nextId); 
+      }
+      syncDOMSelection(editingNodeIdRef.current);
       startTransition(() => setSelExport(Array.from(selRef.current)));
       rowVirtualizer.scrollToIndex(nextIdx, { align: 'auto' });
       return;

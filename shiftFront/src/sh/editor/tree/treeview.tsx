@@ -1,6 +1,6 @@
 /** @jsxImportSource @emotion/react */
 import { css } from "@emotion/react";
-import { Box, Button, Separator, Spacer, Tabs, VStack } from "@chakra-ui/react";
+import { Box, Button, Spacer, Tabs, VStack } from "@chakra-ui/react";
 import { GraphCtx, useGraphCtx } from "../../../App";
 import { Card } from "../../card/card";
 import {
@@ -31,7 +31,9 @@ import {
 } from "./treeHooks";
 import { ContextMenu, useContextMenu } from "../contextMenu";
 import { Minigraph } from "../minigraph";
-import { ChatNN } from "../aichat";
+import { ChatNN } from "../../aichat/aichat";
+import { ID } from "appwrite";
+import { VisualWebClipper } from "../visualWebClipper";
 
 export const TREE_UI = {
   colors: {
@@ -117,6 +119,11 @@ scrollbar-width: thin; scrollbar-color: color-mix(in srgb, white 40%, transparen
   border: 1.2px solid transparent;
   box-sizing: border-box; 
   transition: background-color 0.1s, border-color 0.1s; cursor: pointer;
+  user-select: none;
+}
+
+.group-title-text, .vanilla-overlay, .card-content-row {
+  user-select: text;
 }
 
 .tree-block-flat[data-selected="true"] {
@@ -168,11 +175,12 @@ scrollbar-width: thin; scrollbar-color: color-mix(in srgb, white 40%, transparen
 `;
 
 const headerCSS = css`
+height: fit-content;
 width: 100%;
 align-items:
 center;
-justify-content: center;
-
+justify-content: flex-end;
+margin-bottom: 40px;
 
 .headerTabs {
   display: flex;
@@ -195,19 +203,20 @@ justify-content: center;
 `;
 
 const HighlightText = ({ text, query }: { text: string, query: string }) => {
-  if (!query || !text) return <>{text}</>;
+  if (!query || !text) {
+    return <>{text}</>;
+  }
+
   const parts = text.toString().split(new RegExp(`(${query})`, 'gi'));
   
   return (
-    <span style={{ display: 'inline' }}>
-      {parts.map((part, i) => part.toLowerCase() === query.toLowerCase() ? (
-        <span key={i} style={{ backgroundColor: TREE_UI.colors.highlightBg, color: '#fff', borderRadius: '2px', padding: '0 1px' }}>
+      parts.map((part, i) => part.toLowerCase() === query.toLowerCase() ? (
+        <p key={i} style={{ backgroundColor: TREE_UI.colors.highlightBg, color: '#fff', borderRadius: '2px', padding: '0 1px' }}>
           {part}
-        </span>
+        </p>
       ) : (
-        <span key={i}>{part}</span>
-      ))}
-    </span>
+        <p key={i}>{part}</p>
+      ))
   );
 };
 
@@ -257,9 +266,41 @@ const FlatBlockNode = memo(({ item, index, actions, groupBounds, editingId, isCo
     if (wrapperRef.current) {
       wrapperRef.current.setAttribute('data-tree-id', block.id);
       wrapperRef.current.setAttribute('data-parent-ids', parentGroupIds.join(','));
-      actions.syncSingleDOMNode(wrapperRef.current, block.id, parentGroupIds);
+      actions.syncSingleDOMNode(wrapperRef.current, block.id, parentGroupIds, editingId); // ✅ Передаем editingId
     }
-  }, [block.id, parentGroupIds, actions]);
+  }, [block.id, parentGroupIds, actions, editingId]);
+
+  // const handleMouseEnterText = useCallback(() => {
+  //   if (wrapperRef.current) wrapperRef.current.draggable = false;
+  // }, []);
+    // Отключаем drag и принудительно ставим стартовую точку выделения
+    const handleMouseEnterText = useCallback(() => {
+    if (wrapperRef.current) wrapperRef.current.draggable = false;
+  }, []);
+
+  // Когда мышка уходит с текста, проверяем: тянет ли пользователь выделение?
+  const handleMouseLeaveText = useCallback((e:any) => {
+    // e.buttons === 1 означает, что левая кнопка мыши прямо сейчас зажата (идет выделение)
+    if (e.buttons === 1) {
+      // Ждем, пока пользователь отпустит кнопку где-то на экране
+      const handleMouseUp = () => {
+        if (wrapperRef.current && !isEditingCard) {
+          wrapperRef.current.draggable = true;
+        }
+        window.removeEventListener('mouseup', handleMouseUp);
+      };
+      window.addEventListener('mouseup', handleMouseUp);
+    } else {
+      // Мышка просто ушла, кнопка не нажата — возвращаем возможность таскать строку
+      if (wrapperRef.current && !isEditingCard) {
+        wrapperRef.current.draggable = true;
+      }
+    }
+  }, [isEditingCard]);
+
+  // const handleMouseLeaveText = useCallback(() => {
+  //   if (wrapperRef.current && !isEditingCard) wrapperRef.current.draggable = true;
+  // }, [isEditingCard]);
 
   const activeGroups = isGroup ? [...parentGroupIds, block.id] : parentGroupIds;
 
@@ -303,14 +344,12 @@ const FlatBlockNode = memo(({ item, index, actions, groupBounds, editingId, isCo
   const MT_BUTTON_MT: number = 2;
 
   const SegmentedTitle = ({ segments, query }: { segments: any[], query: string }) => (
-    <span style={{ display: 'inline' }}>
-      {segments.map((seg, i) => (
-        <span key={i} style={seg.isGroup ? { fontWeight: 600, opacity: 1.0 } : { fontWeight: 300, opacity: 0.6 }}>
-          <HighlightText text={seg.text} query={query} />
-          {i < segments.length - 1 ? (seg.isGroup ? ': ' : ', ') : ';'}
-        </span>
-      ))}
-    </span>
+    segments.map((seg, i) => (
+      <span key={i} style={seg.isGroup ? { fontWeight: 600, opacity: 1.0 } : { fontWeight: 300, opacity: 0.6 }}>
+        <HighlightText text={seg.text} query={query} />
+        {i < segments.length - 1 ? (seg.isGroup ? ': ' : ', ') : ';'}
+      </span>
+    ))
   );
 
   return (
@@ -319,7 +358,9 @@ const FlatBlockNode = memo(({ item, index, actions, groupBounds, editingId, isCo
       data-is-top={isGroup}
       data-is-bottom={isBottom || (isGroup && block.metainfo.collapsed)}
       className={`tree-block-flat ${isGroup ? 'is-group' : 'is-card'}`}
-      style={{ paddingLeft: `${rowIndent}px` }} 
+      style={{
+        paddingLeft: `${rowIndent}px`,
+      }}
       draggable={!isEditingCard}
       onDragStart={(e) => actions.onDragStart(e, block.id, block.type)}
       onDragOver={(e) => actions.onDragOver(e, block.id, block.type)}
@@ -405,10 +446,37 @@ const FlatBlockNode = memo(({ item, index, actions, groupBounds, editingId, isCo
                 style={{ flex: 1, background: 'rgba(0,0,0,0.3)', color: 'white', border: '1px solid gray', borderRadius: '3px', padding: '0 4px', fontSize: `${TREE_UI.rowStyle.fontSize}px` }}
               />
             ) : (
-              <div style={{ flex: 1, opacity: TREE_UI.groupRow.opacities.title, whiteSpace: 'pre-wrap', wordBreak: 'break-word', paddingTop: '1px', position: 'relative' }} onDoubleClick={(e) => { e.stopPropagation(); setIsEditingTitle(true); }}>
-                <span className="group-title-text react-content" style={{ display: 'inline' }}>
-                  <SegmentedTitle segments={displaySegments} query={actions.searchQuery} />
-                </span>
+              <div 
+                style={{
+                  flex: 1,
+                  opacity: TREE_UI.groupRow.opacities.title,
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                  paddingTop: '1px',
+                  position: 'relative',
+                  cursor: 'text',
+                  outline: 'none',
+                  userSelect: 'text',
+                }}
+                onDoubleClick={(e) => { e.stopPropagation(); setIsEditingTitle(true); }}
+                onMouseEnter={handleMouseEnterText}
+                onMouseLeave={handleMouseLeaveText}
+                onInput={(e) => {
+                  // Блокируем любые изменения содержимого
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                onKeyDown={(e) => {
+                  // Блокируем все клавиши редактирования
+                  if (!e.ctrlKey && !e.metaKey && !e.shiftKey && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'ArrowUp' && e.key !== 'ArrowDown') {
+                    e.preventDefault();
+                  }
+                }}
+                onPaste={(e) => e.preventDefault()}
+                onCut={(e) => e.preventDefault()}
+                onDrop={(e) => e.preventDefault()}
+              >
+                <SegmentedTitle segments={displaySegments} query={actions.searchQuery} />
                 <span className="vanilla-overlay" style={{ display: 'none' }}></span>
               </div>
             )}
@@ -425,7 +493,14 @@ const FlatBlockNode = memo(({ item, index, actions, groupBounds, editingId, isCo
             />
           </div>
         ) : (
-          <div className="card-content-row">
+          <div className="card-content-row"
+            style={{
+              cursor: isGroup? 'text' : 'pointer',
+              // backgroundColor: 'red',
+            }}
+            onMouseEnter={handleMouseEnterText} // Добавлено
+            onMouseLeave={handleMouseLeaveText}
+          >
             <Card
               id={block.id}
               content={block.metainfo.content || ''}
@@ -442,6 +517,8 @@ const FlatBlockNode = memo(({ item, index, actions, groupBounds, editingId, isCo
     </div>
   );
 }, flatNodeAreEqual);
+
+
 
 export const TreeView = memo(forwardRef(({}: any, ref: any) => {
   const graphCtx = useGraphCtx();
@@ -603,11 +680,29 @@ export const TreeView = memo(forwardRef(({}: any, ref: any) => {
     openMenu(e);
   };
 
+  // Внутри вашего HeaderTabsComponent в TreeView.tsx
+  // const [isSplitterOpen, setIsSplitterOpen] = useState(false);
+  // const handleChunksReady = (chunks: string[]) => {
+  //     setBlocksData((prev: any[]) => {
+  //         const newBlocks = chunks.map(chunkContent => ({
+  //             id: ID.unique(),
+  //             type: 'card',
+  //             metainfo: { content: chunkContent, title: 'Из статьи' },
+  //             children: []
+  //         }));
+  //         return [...prev, ...newBlocks]; 
+  //     });
+  //     window.dispatchEvent(new CustomEvent('insert-ai-context', { detail: chunks }));
+  //     setIsSplitterOpen(false);
+  // };
+
   useEffect(() => {
     if (blocks && blocks.length > 0 && blocksData.length === 0) setBlocksData(blocks);
   }, [blocks]);
 
-  useEffect(() => { syncDOMSelection(); }, [flatTree, syncDOMSelection]);
+  useEffect(() => { 
+    syncDOMSelection(editingNodeId);
+  }, [flatTree, syncDOMSelection, editingNodeId]);
   
 	useEffect(() => {
 		blocksDataRef.current = blocksData;
@@ -644,15 +739,41 @@ export const TreeView = memo(forwardRef(({}: any, ref: any) => {
 
   const HeaderTabsComponent = () => {
     const [localTab, setLocalTab] = useState(selfRef.current?.getMode() || 'eg');
-    
-    // --- НОВЫЙ КОД: Состояния для логики скрытия/показа ---
     const [isNearBottom, setIsNearBottom] = useState(false);
     const [isChatFocused, setIsChatFocused] = useState(false);
+    
+    // ДОБАВЛЕНО: Новые состояния для наведения и "закрепления" чата
+    const [isChatHovered, setIsChatHovered] = useState(false);
+    const [isChatPinned, setIsChatPinned] = useState(false);
+    const chatContainerRef = useRef<HTMLDivElement>(null);
+    
+    const [chatHeight, setChatHeight] = useState<number | null>(null);
+    const [isResizing, setIsResizing] = useState(false);
 
+    const [isClipperOpen, setIsClipperOpen] = useState(false);
+
+    const handleClipperExport = (chunks: string[]) => {
+        // Создаем новые блоки для графа из полученных чанков
+        const newBlocks = chunks.map(chunkContent => ({
+            id: ID.unique(),
+            type: 'card',
+            metainfo: { 
+                content: chunkContent, 
+                title: 'Из Web Clipper' 
+            },
+            children: []
+        }));
+
+        // Добавляем их в стейт Дерева
+        setBlocksData((prev: any[]) => [...prev, ...newBlocks]);
+        
+        // (Опционально) прокидываем в ChatNN, если нужно
+        window.dispatchEvent(new CustomEvent('insert-ai-context', { detail: chunks }));
+    };
+
+    // 1. Отслеживание приближения мыши к низу экрана
     useEffect(() => {
       const handleMouseMove = (e: MouseEvent) => {
-        // Расстояние от низа экрана, при котором появляется ChatNN (в пикселях). 
-        // Можете настроить это значение под себя.
         const THRESHOLD = 200; 
         const distanceToBottom = window.innerHeight - e.clientY;
         setIsNearBottom(distanceToBottom < THRESHOLD);
@@ -662,106 +783,220 @@ export const TreeView = memo(forwardRef(({}: any, ref: any) => {
       return () => window.removeEventListener('mousemove', handleMouseMove);
     }, []);
 
-    // Чат показывается, если мышка внизу ИЛИ если пользователь внутри что-то пишет
-    const showChat = isNearBottom || isChatFocused;
-    // -------------------------------------------------------
+    // 2. ДОБАВЛЕНО: Снятие "закрепления" при клике ВНЕ чата
+    useEffect(() => {
+      if (!isChatPinned) return;
+
+      const handleClickOutside = (e: MouseEvent) => {
+        if (chatContainerRef.current && !chatContainerRef.current.contains(e.target as Node)) {
+          setIsChatPinned(false); // Открепляем чат
+        }
+      };
+
+      // Используем mousedown, чтобы срабатывало сразу в момент клика
+      window.addEventListener('mousedown', handleClickOutside);
+      return () => window.removeEventListener('mousedown', handleClickOutside);
+    }, [isChatPinned]);
+
+    // ИЗМЕНЕНО: Чат показывается, если выполняется хотя бы одно из условий
+    const showChat = isNearBottom || isChatFocused || isChatHovered || isChatPinned;
+
+    // Сброс высоты при скрытии чата
+    useEffect(() => {
+      if (!showChat) setChatHeight(null);
+    }, [showChat]);
+
+    const handlePointerDownResize = (e: React.PointerEvent) => {
+      e.preventDefault();
+      setIsResizing(true);
+      setIsChatPinned(true); // ДОБАВЛЕНО: Жестко закрепляем чат при начале ресайза
+      
+      const startY = e.clientY;
+      const startHeight = (e.currentTarget.parentElement as HTMLElement).getBoundingClientRect().height;
+
+      const handleMove = (moveEvent: PointerEvent) => {
+        const dy = moveEvent.clientY - startY;
+        let newHeight = startHeight - dy; 
+        newHeight = Math.max(100, Math.min(newHeight, 800));
+        setChatHeight(newHeight);
+      };
+
+      const handleUp = () => {
+        setIsResizing(false); 
+        window.removeEventListener('pointermove', handleMove);
+        window.removeEventListener('pointerup', handleUp);
+      };
+
+      window.addEventListener('pointermove', handleMove);
+      window.addEventListener('pointerup', handleUp);
+    };
 
     return (
-      <span key="header-tabs" css={headerCSS}>
-        <VStack
-          gap={showChat ? "10px" : "0px"}
-          // transition="gap 0.3s ease"
-          transform={showChat ? "translateY(-3px)" : "translateY(0)"}
-          /* Добавляем transform в анимацию для плавности */
-          transition="gap 0.3s ease, transform 0.3s ease" 
-          
-          className={'blur-panel'}
-        >
-          <Box 
-            p={0}
-            onFocus={() => setIsChatFocused(true)}
-            onBlur={(e) => {
-              if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-                setIsChatFocused(false);
-              }
-            }}
-            style={{
-              maxHeight: showChat ? '500px' : '0px',
-              opacity: showChat ? 1 : 0,
-              transform: showChat ? 'translateY(0)' : 'translateY(20px)',
-              pointerEvents: showChat ? 'auto' : 'none',
-              overflow: 'hidden',
-              borderWidth: showChat ? '1px' : '0px',
-              transition: 'all 0.1s cubic-bezier(0.4, 0, 0.2, 1)',
-              visibility: showChat ? 'visible' : 'hidden',
-              border: 'none',
-              gap:'10px',
-            }}
+      <Box
+        display={'flex'}
+        flexDirection={'column'}
+        height={'100%'}
+        gap={'20px'}
+        bottom={0}              // Прижимаем к нижнему краю экрана
+        left={0}                // Растягиваем от левого...
+        right={0}               // ...до правого края
+        justifyContent={'flex-end'} // Выравниваем содержимое снизу
+        pointerEvents={'none'} 
+      >
+        {isClipperOpen && (
+          <Box
+            className="blur-panel"
+            flex={'1'}
           >
-            <ChatNN/>
-            <Separator h={'1px'} orientation={'horizontal'} w={'100%'} mt={'10px'} opacity={0.2}/>
-          </Box>
-
-
-          <Tabs.Root 
-            className='headerTabs'
-            value={localTab}
-            variant="plain"
-            onValueChange={(e: any) => {
-              const newValue = e.value;
-              setLocalTab(newValue);
-              if (newValue === 'repeat') {
-                const cardsToRepeat = getSelectedCardIds();
-                if (cardsToRepeat.length > 0) {
-                  setTimeout(() => {
-                    window.dispatchEvent(new CustomEvent('start-feed-training', { detail: cardsToRepeat }));
-                  }, 50);
-                }
-              }
-
-              if (editingNodeId) { 
-                setTimeout(() => { 
-                  selfRef.current.setMode(newValue);
-                  setEditingNodeId(null); 
-                }, 150); 
-              } else { 
-                selfRef.current.setMode(newValue); 
-              }
-            }}
-          >
-            
-            <Tabs.Trigger className='tabsTrigger' value="eg"><BsDiagram2Fill /></Tabs.Trigger>
-            <Tabs.Trigger className='tabsTrigger' value="repeat" ml={'-6px'}><RiRepeat2Line /></Tabs.Trigger>
-
-            <GraphCtx.Provider value={{ 
-              selfRef: tabsRef, 
-              blocks: curName, 
-              setBlocks: (p: any) => { curName.current = p['0'] }, 
-              ns: curName,
-              setNs: async (p: any) => { curName.current = p['0']; } 
-            }}>
-              <Box p={0} m={0} onClickCapture={(e: any) => { if (e.altKey) { actions.onAltClick(e, '__root__', 'root'); e.stopPropagation(); } }}>
-                <Card
-                  id={'0'}
-                  content={curName.current as any}
-                  options={{ twoSides: false, fontSize: 12, onBlur: (newVal: any) => curName.current = newVal }}
-                />
-              </Box>
-            </GraphCtx.Provider>
-
-            <Spacer />
-            
-            <Button variant={'ghost'} colorPalette={'green'} onClick={saveGraph as any}>
-              <RiSaveFill className={'icon'}/> save
-            </Button>
-            <Clip 
-              props={{ h: '20px', variant: 'ghost', p: '0', w: '20px', minW: '20px' }} 
-              copyIcon={<FaShare style={{ width: '13px', height: '13px' }}/>} 
-              value={APPWRITE_CONFIG.BASE_URL + '/' + id} 
+            <VisualWebClipper 
+              onClose={(p:any) => setIsClipperOpen(false)} 
+              onExport={handleClipperExport} 
             />
-          </Tabs.Root>
-        </VStack>
-      </span>
+          </Box>
+        )}
+        <span
+          key="header-tabs"
+          css={headerCSS}
+          className={'headerTabsInner'}
+        >
+          <VStack
+            gap={showChat ? "10px" : "0px"}
+            transform={showChat ? "translateY(-3px)" : "translateY(0)"}
+            transition={isResizing ? "none" : "gap 0.3s ease, transform 0.3s ease"} 
+            className={'blur-panel'}
+            style={{
+              marginTop: 'auto', 
+              transformOrigin: "bottom center"
+            }}
+          >
+            <Box
+              ref={chatContainerRef} // ДОБАВЛЕНО: Реф для отслеживания клика вне области
+              p={0}
+              onMouseEnter={() => setIsChatHovered(true)}   // ДОБАВЛЕНО: Мышь зашла в чат
+              onMouseLeave={() => setIsChatHovered(false)}  // ДОБАВЛЕНО: Мышь покинула чат
+              onFocus={() => setIsChatFocused(true)}
+              onBlur={(e) => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                  setIsChatFocused(false);
+                }
+              }}
+              style={{
+                maxHeight: showChat ? (chatHeight ? `${chatHeight}px` : '800px') : '0px',
+                height: showChat ? (chatHeight ? `${chatHeight}px` : 'auto') : '0px',
+                width: '100%',
+                opacity: showChat ? 1 : 0,
+                transform: showChat ? 'translateY(0)' : 'translateY(20px)',
+                pointerEvents: showChat ? 'auto' : 'none',
+                overflow: 'hidden',
+                transition: isResizing 
+                  ? 'none' 
+                  : (chatHeight ? 'opacity 0.1s, visibility 0.1s' : 'all 0.1s cubic-bezier(0.4, 0, 0.2, 1)'),
+                visibility: showChat ? 'visible' : 'hidden',
+                border: 'none',
+                gap:'10px',
+                padding: '0px',
+                display: 'flex',
+                flexDirection: 'column',
+                '--chat-textarea-height': chatHeight ? '100%' : 'auto',
+                '--chat-textarea-max-h': chatHeight ? 'none' : '300px',
+              } as React.CSSProperties}
+            >
+              {showChat && (
+                <div
+                  onPointerDown={handlePointerDownResize}
+                  style={{
+                    width: '100%',
+                    height: '4px',
+                    cursor: 'ns-resize',
+                    display: 'flex',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    flexShrink: 0,
+                    zIndex: 10,
+                  }}
+                >
+                  <div style={{ width: '40px', height: '4px', borderRadius: '2px', background: 'color-mix(in srgb, white 20%, transparent)' }} />
+                </div>
+              )}
+              <Button 
+                size="sm" 
+                variant="outline" 
+                color="white"
+                onClick={(p:any) => setIsClipperOpen(true)}
+              >
+                Web Clipper `{isClipperOpen}`
+              </Button>
+              
+              {/* Сам компонент */}
+
+              <div style={{ flex: 1, display: 'flex', overflow: 'hidden', width: '100%' }}>
+                <ChatNN/>
+              </div>
+            </Box>
+
+
+            <Tabs.Root 
+              className='headerTabs'
+              /* ... дальше код остался без изменений ... */
+              value={localTab}
+              variant="plain"
+              // p={'10px'}
+              onValueChange={(e: any) => {
+                const newValue = e.value;
+                setLocalTab(newValue);
+                if (newValue === 'repeat') {
+                  const cardsToRepeat = getSelectedCardIds();
+                  if (cardsToRepeat.length > 0) {
+                    setTimeout(() => {
+                      window.dispatchEvent(new CustomEvent('start-feed-training', { detail: cardsToRepeat }));
+                    }, 50);
+                  }
+                }
+
+                if (editingNodeId) { 
+                  setTimeout(() => { 
+                    selfRef.current.setMode(newValue);
+                    setEditingNodeId(null); 
+                  }, 150); 
+                } else { 
+                  selfRef.current.setMode(newValue); 
+                }
+              }}
+            >
+              
+              <Tabs.Trigger className='tabsTrigger' value="eg"><BsDiagram2Fill /></Tabs.Trigger>
+              <Tabs.Trigger className='tabsTrigger' value="repeat" ml={'-6px'}><RiRepeat2Line /></Tabs.Trigger>
+
+              <GraphCtx.Provider value={{ 
+                selfRef: tabsRef, 
+                blocks: curName, 
+                setBlocks: (p: any) => { curName.current = p['0'] }, 
+                ns: curName,
+                setNs: async (p: any) => { curName.current = p['0']; } 
+              }}>
+                <Box p={0} m={0} onClickCapture={(e: any) => { if (e.altKey) { actions.onAltClick(e, '__root__', 'root'); e.stopPropagation(); } }}>
+                  <Card
+                    id={'0'}
+                    content={curName.current as any}
+                    options={{ twoSides: false, fontSize: 12, onBlur: (newVal: any) => curName.current = newVal }}
+                  />
+                </Box>
+              </GraphCtx.Provider>
+
+              <Spacer />
+              
+              <Button variant={'ghost'} colorPalette={'green'} onClick={saveGraph as any}>
+                <RiSaveFill className={'icon'}/> save
+              </Button>
+              <Clip 
+                props={{ h: '20px', variant: 'ghost', p: '0', w: '20px', minW: '20px' }} 
+                copyIcon={<FaShare style={{ width: '13px', height: '13px' }}/>} 
+                value={APPWRITE_CONFIG.BASE_URL + '/' + id} 
+              />
+            </Tabs.Root>
+          </VStack>
+        </span>
+      </Box>
     );
   };
 
@@ -816,6 +1051,12 @@ export const TreeView = memo(forwardRef(({}: any, ref: any) => {
             }}
           />
         )}
+
+        {/* <VisualWebClipper 
+          isOpen={isClipperOpen} 
+          onClose={() => setIsClipperOpen(false)} 
+          onExport={handleClipperExport} 
+        /> */}
 
         <ContextMenu {...menuProps} items={menuItems} />
 

@@ -25,40 +25,37 @@ import { Box } from '@chakra-ui/react';
 import { Clip } from '../clip';
 // @ts-expect-error
 import dagre from 'dagre';
+// @ts-expect-error: у copy-tex нет деклараций
+import 'katex/dist/contrib/copy-tex';
+import remarkMath from 'remark-math';
+
 
 export const SIDE_SPLIT_SYM: string = '@@@';
 export const OPTION_SPLIT_SYM: string = '===';
 export const CARD_SPLIT_SYM: string = '~~~';
-const MASK_USC = '\uE000';
-const MASK_AST = '\uE001';
 
-export const Sh=({value}:any)=>{
+
+export const Sh = ({ value }: any) => {
   // @ts-expect-error
-  shComponents.cell = (props: any)=>{
-    const {id}=props
-    return <Cell id={id}/>;
-  }
-
-  // МАСКИРОВКА: Прячем _ и * внутри формул от Markdown-парсера
-  const safeValue = typeof value === 'string'
-    ? value.replace(/\$([\s\S]+?)\$/g, (match) => {
-        return match
-          .replace(/_/g, MASK_USC)
-          .replace(/\*/g, MASK_AST);
-      })
-    : value;
-
+  shComponents.cell = (props: any) => {
+    const { id } = props;
+    return <Cell id={id} />;
+  };
+  const safeValue = typeof value === 'string' ? value : value;
   return (
     <ReactMarkdown
-      remarkPlugins={[shRemark,remarkGfm]}
-      rehypePlugins={[rehypeRaw,rehypeKatex,rehypeHighlight]}
+      remarkPlugins={[
+        remarkMath,
+        shRemark,
+        remarkGfm
+      ]}
+      rehypePlugins={[rehypeRaw, rehypeKatex, rehypeHighlight]}
       components={shComponents}
     >
-      {/* Передаем замаскированный текст */}
       {safeValue}
     </ReactMarkdown>
-  )
-}
+  );
+};
 
 export function topSort(ns: Record<string, string>, preferredOrder:string[]=[]) {
   const used = new Set<string>();
@@ -191,10 +188,14 @@ const CodeBlock = ({ node, inline, className, children, ...props }: any) => {
   );
 };
 
+
+
 const headingStyles: React.CSSProperties = {
   marginBottom: '0.4em',
   fontWeight: 600,
 };
+
+
 export const shComponents: Components = {
   h1: ({ node, ...props }:any) => <h1 style={{ ...headingStyles, fontSize: '2em', borderBottom: '1px solid #ddd' }} {...props} />,
   h2: ({ node, ...props }) => <h2 style={{ ...headingStyles, fontSize: '1.5em', borderBottom: '1px solid #eee' }} {...props} />,
@@ -217,8 +218,8 @@ export const shComponents: Components = {
 };
 
 const LINK_REGEX_EXPR: RegExp = /<id=([^>]+?)>/g;
-// const MATH_REGEX_EXPR: RegExp = /\$([^<>]*?)\$/g;
-const MATH_REGEX_EXPR: RegExp = /\$([\s\S]+?)\$/g; 
+const MATH_REGEX_EXPR: RegExp = /\$([\s\S]+?)\$/g;
+
 const splitPattern = (
   s: string,
   p: any,
@@ -244,55 +245,53 @@ const splitPattern = (
   return ans
 }
 
+
 export const shRemark: Plugin<[], Root> = () => {
   return (tree: any) => {
-    visit(tree,['text', 'html'], (node: Text, index: any, p: any) => {
-      if (!p || index === null ) return;
-      const newChildren = splitPattern(
+    visit(tree, ['text', 'html'], (node: Text, index: any, p: any) => {
+      if (!p || index === null) return;
+      const nodesAfterMath = splitPattern(
         node.value,
-        LINK_REGEX_EXPR,
-        (ans:any,s:string,pI:number,sI:number)=>{
-          ans.push({type:'text',value:s.slice(pI, sI)})
+        MATH_REGEX_EXPR,
+        (ans: any, s: string, pI: number, sI: number) => {
+          ans.push({ type: 'text', value: s.slice(pI, sI) });
         },
-        (ans:any,data:string)=>{
+        (ans: any, data: string) => {
           ans.push({
-            type:'html',
-            value:`<cell id="${data}" value="${data}"></cell>`,
-          })
+            data: {
+              hChildren: [{ type: 'text', value: data }],
+              hName: 'code',
+              hProperties: {
+                className: ['language-math', 'math-inline']
+              }
+            },
+            position: {},
+            type: 'inlineMath',
+            value: data
+          });
         },
-      )
-      const finalNodes = newChildren.flatMap((n: any) => {
-        if (n.type === 'html')
-          return [n]
-        const nodesWithMath = splitPattern(
-          n.value,
-          MATH_REGEX_EXPR,
-          (ans:any,s:string,pI:number,sI:number) => {
-            ans.push({type: 'text', value: s.slice(pI,sI)});
-          },
-          (ans:any,data:string) => {
-            // РАЗМАСКИРОВКА: возвращаем _ и * на свои места
-            const cleanData = data
-              .replace(new RegExp(MASK_USC, 'g'), '_')
-              .replace(new RegExp(MASK_AST, 'g'), '*');
+      );
 
+      const finalNodes = nodesAfterMath.flatMap((n: any) => {
+        if (n.type === 'inlineMath' || n.type === 'html') {
+          return [n];
+        }
+        return splitPattern(
+          n.value,
+          LINK_REGEX_EXPR,
+          (ans: any, s: string, pI: number, sI: number) => {
+            ans.push({ type: 'text', value: s.slice(pI, sI) });
+          },
+          (ans: any, data: string) => {
             ans.push({
-              data: {
-                hChildren:[{type:'text',value:cleanData}],
-                hName: 'code',
-                hProperties: {
-                  className:['language-math', 'math-inline']
-                }
-              },
-              position: {},
-              type: 'inlineMath',
-              value: cleanData // Отдаем чистую формулу в KaTeX
+              type: 'html',
+              value: `<cell id="${data}" value="${data}"></cell>`,
             });
           },
         );
-        return nodesWithMath;
       });
-      p.children.splice(index, 1, ...finalNodes);      
+
+      p.children.splice(index, 1, ...finalNodes);
       return index + finalNodes.length;
     });
   };
@@ -445,7 +444,7 @@ export function calculateHierarchy(groups: any) {
   const sortedGroups = Object.entries(groups||{}).sort((a: any,b: any) => (a.end-a.start) - (b.end-b.start));
   const nodeToGroup: Record<string, string> = {};
   const groupToGroup: Record<string, string> = {};
-  sortedGroups.forEach(([gName, gData]) => {
+  sortedGroups.forEach(([gName, gData]: any) => {
     // example of output: gn: Leonard story {start: 9, end: 12, color: '#3ab3b026', depth: 1}
     gData.forEach((nodeId:any) => {
       if (nodeToGroup[nodeId]) {

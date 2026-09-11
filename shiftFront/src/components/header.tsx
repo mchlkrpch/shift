@@ -10,27 +10,29 @@ import store from '../storage';
 import { SpAvatar } from '../pages/profile';
 
 const headerStyle = css`
-display: flex;
+// display: flex;
 width: 100%;
-height: fit-content;
+height: 100%;
+pointer-events: none;
 
 
 position: absolute;
-bottom: 20px;
+bottom: 0px;
 left: 0;
 right: 0;
 z-index: 1000;
 background-color: transparent;
-// pointer-events: none;
+justify-content: flex-end;
 
 
 .blur-panel {
+	pointer-events: auto;
 	background-color: rgba(18, 18, 22, 0.65);
-	backdrop-filter: blur(12px);
-	-webkit-backdrop-filter: blur(12px);
+	backdrop-filter: blur(22px);
+	-webkit-backdrop-filter: blur(22px);
 	padding: 10px;
 	border-radius: 20px;
-	border: 1px solid color-mix(in srgb, white 4%, transparent);
+	border: 2px solid color-mix(in srgb, white 8%, transparent);
 	display: flex;
 	width: 100%;
 	box-shadow: 0px 0px 45px color-mix(in srgb, black 50%, rgba(18, 18, 22, 1.0));
@@ -125,7 +127,7 @@ export const Header=React.forwardRef((_props:any,ref:any)=>{
 	return (<>
 		<div
 			css={headerStyle}>
-			<Box w={'100%'}
+			<Box w={'100%'} h={'100%'}
 				className='panel'
 				justifySelf={'center'}>
 				{localContent}

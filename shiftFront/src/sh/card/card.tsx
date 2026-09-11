@@ -95,6 +95,10 @@ position: relative;
 
 width: 100%;
 
+em, i {
+  font-style: italic !important;
+}
+
 
 .chakra-stack{
   scrollbar-width: none;
@@ -907,7 +911,7 @@ export const Card = forwardRef(({
     }}/>
 
   
-  const CardBody=(
+    const CardBody=(
     <div
       css={contentCSS}
       className={'editor'}
@@ -915,15 +919,19 @@ export const Card = forwardRef(({
       onMouseLeave={()=>setHovered(false)} 
       onClick={async ()=>{
         if (options.twoSides===false) {
-          setIsEdit(true)
+          // Проверяем, что нет активного выделения текста
+          const selection = window.getSelection();
+          const hasSelection = selection && selection.toString().length > 0;
+          
+          if (!hasSelection) {
+            setIsEdit(true);
+          }
         }
       }}
       style={{
         fontSize:`${fontSize}px`,
         padding:options.padding||'0px',
-        // ...options.style,
       }}>
-      {/* Подключаем новый ContextMenu вместо ручной верстки */}
       <ContextMenu 
         isOpen={mentionMenu.isOpen}
         x={mentionMenu.x}
@@ -933,20 +941,35 @@ export const Card = forwardRef(({
       />
       {/* Editable div + Card previewr */}
       {isEdit?(TextBox):(
-        <HStack justifyContent={'stretch'} alignItems={'stretch'} w={'100%'} gap={0}>
+        // ИЗМЕНЕНИЕ 1: Меняем HStack на Box с flexDirection="column"
+        <Box 
+          display={'flex'} 
+          flexDirection={'column'} 
+          cursor={'text'} 
+          justifyContent={'stretch'} 
+          alignItems={'stretch'} 
+          w={'100%'} 
+          gap={'5px'}
+          borderRadius={'5px'}
+          p={options?.twoSides===true && (!isEdit)? '10px 5px':'0'}
+          border={options?.twoSides===true && (!isEdit)? '1px solid white':'none'}
+        >
           {/* If preview both edior and card at the same
-          time preview through the vertical separator */}
+          time preview through the separator */}
           {options?.twoSides===true&&(<>
               {TextBox}
-              <Separator orientation={'vertical'} h={'auto'} minH={'100%'} w={'1px'} />
           </>)}
 
-          {/* Preview: card option switcher + backward preveiw if opened */}
-          <Box flex={1} w={'50%'} minW={0} fontWeight={300} p={'0px'} fontSize={`${fontSize}px`}>
+          {options?.twoSides===true && (!isEdit) && (
+            <Text fontSize={'9px'} opacity={0.2} color={'white'}>preview</Text>
+          )}
+          <Box
+            // bgColor={options?.twoSides===true && (!isEdit)? 'color-mix(in srgb, white 5%, transparent)': 'transparent'}
+            flex={1} w={'100%'} minW={0} fontWeight={300} p={'0px'} fontSize={`${fontSize}px`}>
             {OptionSwitcher}
             <Sh value={bwd_content} />
           </Box>
-        </HStack>
+        </Box>
       )}
     </div>)
 
