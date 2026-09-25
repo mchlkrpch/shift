@@ -1,13 +1,6 @@
-// import createStore from 'redux/dist/redux.min.js';
-
 import { createStore } from 'redux';
-//import * as Redux from 'redux';
-//const createStore = Redux.createStore;
-// import { legacy_createStore as createStore } from 'redux';
-// import { configureStore } from '@reduxjs/toolkit';
 
 const initState = {
-	// user of current session
 	user: null,
 	userData: null,
 
