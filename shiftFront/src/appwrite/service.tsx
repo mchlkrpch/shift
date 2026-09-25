@@ -1,6 +1,5 @@
-import { Databases, ID, Query, Client, Account, type Models, Permission, Role } from "appwrite";
+import { Databases, ID, Query, Client, Account, type Models, Permission, Role, Functions } from "appwrite";
 import store from "../storage";
-
 
 export const APPWRITE_CONFIG = {
     ENDPOINT: 'https://fra.cloud.appwrite.io/v1',
@@ -14,6 +13,11 @@ export const APPWRITE_CONFIG = {
     },
     BASE_URL:'localhost:5173',
 };
+
+
+
+export const UPDATE_COLLABORATORS_FUNCTION_ID = '6ab2ffe700061b41344f';
+export const READ_DOCUMENT_FUNCTION_ID = '6ab43d5a00183b843e42';
 
 
 export class Repo<T extends Models.Document> {
@@ -92,12 +96,28 @@ export class Repo<T extends Models.Document> {
 
     async update(id: string, data: any): Promise<T> {
         try {
-            return await this.db.updateDocument<T>(
-                this.dbId,
-                this.colId,
-                id,
-                data,
-            );
+					// return await this.db.updateDocument<T>(
+					//     this.dbId,
+					//     this.colId,
+					//     id,
+					//     data,
+					// );
+					const execution = await spaced_functions.createExecution(
+							UPDATE_COLLABORATORS_FUNCTION_ID,
+							JSON.stringify({
+								databaseId: this.dbId,
+								tableId: this.colId,
+								id,
+								data,
+							}),
+						false,
+					);
+
+					const body = JSON.parse(execution.responseBody || '{}');
+					if (execution.responseStatusCode >= 400) {
+						throw new Error(body.error || 'Failed to update graph content');
+					}
+					return body;
         } catch (error) {
             console.error(`[update] Error in ${this.colId}:`, error);
             throw error;
@@ -123,8 +143,54 @@ export const spaced_client = new Client()
     .setEndpoint(APPWRITE_CONFIG.ENDPOINT)
     .setProject(APPWRITE_CONFIG.PROJECT_ID);
 
+// export const UPDATE_COLLABORATORS_FUNCTION_ID = '6ab2ffe700061b41344f';
+// export const READ_DOCUMENT_FUNCTION_ID = '6ab43d5a00183b843e42';
+
 export const spaced_account = new Account(spaced_client);
 const spaced_databases = new Databases(spaced_client);
+export const spaced_functions = new Functions(spaced_client);
+// export async function updateGraphCollaborators(
+//   graphId,
+//   collaborators,
+// ) {
+//   const execution = await spaced_functions.createExecution(
+//     UPDATE_COLLABORATORS_FUNCTION_ID,
+//     JSON.stringify({
+//       databaseId: APPWRITE_CONFIG.DATABASE_ID,
+//       tableId: APPWRITE_CONFIG.COLLECTIONS.GRAPHS_ID,
+//       graphId,
+//       collaborators,
+//     }),
+//     false,
+//   );
+//   const body = JSON.parse(execution.responseBody || '{}');
+//   if (execution.responseStatusCode >= 400) {
+//     throw new Error(body.error || 'Failed to update collaborators');
+//   }
+//   return body;
+// }
+
+
+export async function updateGraphCollaborators(
+  graphId: string,
+  data: { content?: string; name?: string; groups?: any }
+) {
+  const execution = await spaced_functions.createExecution(
+    UPDATE_COLLABORATORS_FUNCTION_ID,
+    JSON.stringify({
+      databaseId: APPWRITE_CONFIG.DATABASE_ID,
+      tableId: APPWRITE_CONFIG.COLLECTIONS.GRAPHS_ID,
+      graphId,
+      data,
+    }),
+    false,
+  );
+  const body = JSON.parse(execution.responseBody || '{}');
+  if (execution.responseStatusCode >= 400) {
+    throw new Error(body.error || 'Failed to update graph content');
+  }
+  return body;
+}
 
 export const gReq = new Repo(
     spaced_databases,
@@ -210,4 +276,13 @@ export async function fetch_user(acc: any) {
 	} catch(e:any) {
 		console.error('[fetch_user]',e.code, e)
 	}
+}
+
+if (typeof window !== 'undefined') {
+  (window as any).__debug = {
+    // updateGraphCollaborators,
+    spaced_account,
+    spaced_functions,
+    APPWRITE_CONFIG,
+  };
 }
