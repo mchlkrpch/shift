@@ -16,6 +16,8 @@ interface SpEditorI {
 	// treeRef?:any, setTreeRef?: any; // treeview configure
 	selfRef:any,
 	blocks:any,setBlocks:any,
+	owner?:any;
+	collaborators?: any;
 }
 
 export const GraphCtx = createContext<SpEditorI|null>(null);
