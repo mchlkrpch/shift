@@ -28,13 +28,16 @@ export type Block = {
 // BLOCKS UTILITIES
 // ============================================================================
 
-const isBlocksArray = (arr: any): arr is Block[] =>
-  Array.isArray(arr) &&
-  arr.every(b =>
-    b && typeof b.id === 'string' &&
-    (b.type === 'card' || b.type === 'group') &&
-    typeof b.metainfo === 'object'
-  );
+const isBlocksArray = (arr: any): arr is Block[] => {
+  return (
+    Array.isArray(arr) &&
+    arr.every(b =>
+      b && typeof b.id === 'string' &&
+      (b.type === 'card' || b.type === 'group') &&
+      typeof b.metainfo === 'object'
+    )
+  )
+}
 
 /** 
  * Конвертирует старый формат (ns, groups) в новый древовидный JSON.
@@ -182,7 +185,6 @@ export const parseGraphContent = (contentStr: string, groupsStr: string) => {
     const maybeBlocks =
       isBlocksArray(rawContent) ? rawContent :
       (rawContent && isBlocksArray(rawContent.blocks)) ? rawContent.blocks : null;
-
     if (!maybeBlocks) throw new Error('not blocks-v2');
 
     const legacy = blocksToLegacy(maybeBlocks);
@@ -213,17 +215,19 @@ export const parseGraphContent = (contentStr: string, groupsStr: string) => {
 // ============================================================================
 
 export const GraphPage = ({mode,id,name}: any) => {
-    const [_,setGraphData] = useState<any>(null);
+    const [gData,setGraphData] = useState<any>(null);
     const [loading,setLoading] = useState<boolean>(true);
     const [error,setError] = useState<string | null>(null);
 
     const headerRef = useRef(null) as any;
+    const collaboratorsRef = useRef(null) as any;
     
     // Legacy states (для обратной совместимости с Sigma/calcG)
     const [curNs,setNs] = useState<Record<string, string>>({});
     const [curGroups,setCurGroups] = useState<Record<string, any>>({});
     
     const gRef=useRef<any>(null);
+    // const [gOwner, setOwner] = useState(undefined) as any;
     // New state (дерево блоков)
     const [curBlocks, setCurBlocks] = useState<Block[]>([]);
     
@@ -264,10 +268,11 @@ export const GraphPage = ({mode,id,name}: any) => {
                         setName(data.name);
                         setGraphData(data);
                         // Парсим с попыткой прочитать новый формат
-                        const { blocks, ns, groups, format } = parseGraphContent(
+                        const { blocks, } = parseGraphContent(
                             data.content, 
                             data.groups || '{}'
                         );
+                        collaboratorsRef.current = JSON.parse(data.collaborators);
                         // setNs(ns);
                         // setCurGroups(groups);
                         setCurBlocks(blocks);
@@ -305,6 +310,8 @@ export const GraphPage = ({mode,id,name}: any) => {
                         selfRef:gRef,
                         ns: curNs,
                         setNs: setNs,
+                        owner: gData.owner,
+                        collaborators: collaboratorsRef,
                         groups: curGroups,
                         setGroups: setCurGroups,
                         blocks: curBlocks,        // <-- прокидываем дерево
