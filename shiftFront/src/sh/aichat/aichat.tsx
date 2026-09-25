@@ -494,7 +494,7 @@ export const ADDITION_FORMAT_PROMT = `
 
 
 
-export const GEMINI_API_KEY = import.meta.env.VITE_GOOGLE_API_KEY;
+export const GEMINI_API_KEY = import.meta.env.VITE_GOOGLE_API_KEY || '';
 export const genAI = new GoogleGenAI({apiKey: GEMINI_API_KEY});
 
 export const getContextForAi = (ns: any) => {
