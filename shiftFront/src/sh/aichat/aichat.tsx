@@ -7,9 +7,10 @@ import { GoogleGenAI } from '@google/genai';
 import { MdClose } from "react-icons/md";
 import { createPortal } from "react-dom";
 import { Card } from "../card/card";
-import { REMOTE_GPT_MODEL, RemoteGPTOptGroup, sendToRemoteGPT } from "./remoteGPT";
-import { createIcon, HStack, Kbd, Spacer, Spinner, Text, Textarea } from "@chakra-ui/react";
+import { Box, createIcon, HStack, Kbd, Menu, Portal, Spacer, Spinner, Text, Textarea } from "@chakra-ui/react";
 import { useGraphCtx } from "../../App";
+import { LuBook, LuBookDashed, LuChevronDown, LuChevronRight, LuChevronUp, LuCog, LuSend, LuSendHorizontal, LuSlidersVertical } from "react-icons/lu";
+import { FaEllipsisVertical } from "react-icons/fa6";
 
 
 
@@ -28,14 +29,42 @@ export const EnterIcon = createIcon({
   ),
 });
 
+export const REMOTE_GPT_MODEL = 'chatgpt-headless';
+
+export const sendToRemoteGPT = async (prompt: string): Promise<string> => {
+  const text = prompt.trim();
+  if (!text) return '[ChatGPT] Пустой запрос.';
+  
+  try {
+    const response = await fetch('http://localhost:3001/api/ask-gpt', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: text })
+    });
+    
+    if (!response.ok) {
+        throw new Error(`Ошибка сервера: ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    console.log(data.answer);
+    
+    return data.answer;
+  } catch (e) {
+    console.error('[remoteGPT] Ошибка связи', e);
+    return '[ChatGPT] Ошибка';
+  }
+};
+
 
 
 const contextMenuCSS = css`
 width: 100%;
 display: flex;
 flex-direction: column;
-padding: 5px 0px;
+padding: 0px;
 height: 100%;
+min-height: 0;
 
 .menu-item {
   padding: 6px 12px;
@@ -66,29 +95,28 @@ height: 100%;
 }
 
 .promt-field {
+  padding: 4px 0px;
   display: flex;
   align-items: flex-start;
   gap: 12px;
   font-size: 12px;
-  flex: 1; /* ДОБАВЛЕНО: Растягиваем поле на свободное пространство */
-  min-height: 0;
+  flex: 1;
+  // min-height: 0;
 }
 
-.promt-field input {
+.promt-field textarea {
   width: 100%;
   background: transparent;
   border: none;
   outline: none;
   color: white;
-  font-size: 13px;
-  padding: 8px 0;
-
-  &::placeholder {
-    color: color-mix(in srgb, white 30%, transparent);
-  }
+  padding: 5px 0px;
 }
 
-
+.promt-field textarea::placeholder {
+  font-weight: 300;
+  opacity: 0.5;
+}
 
 
 .image-carousel {
@@ -221,25 +249,36 @@ height: 100%;
   display: flex;
   position: relative;
   scrollbar-width: none;
+  gap: 1.5px;
 }
 
-.controls .select {
-  background-color: #1e1e1e;
+.controls .model-select {
+  // background-color: #1e1e1e;
+  background-color: transparent;
+  width: fit-content;
+
+  width: 100px !important;
+  padding-right: 10px;
+  min-width: 100px !important;
+  max-width: 100px !important;
 }
-.controls optgroup {
+.controls option, optgroup {
   background-color: #1e1e1e;
-  // background-color: transparent;
+  padding-right: 10px;
+
+  min-width: 100px;
+  max-width: 100px;
+  font-size: 11px;
 }
 
 .controls .button-frame {
   display: flex;
-  padding: 6px 12px;
+  padding: 1px 4px;
 
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 11px;
+  font-weight: 500;
 
-  background-color: color-mix(in srgb, white, transparent 92%);
-  border-radius: 8px;
+  border-radius: 5px;
   cursor: pointer;
 
   transition: background-color 0.2s;
@@ -257,12 +296,37 @@ height: 100%;
   }
 }
 
+.add-button {
+  opacity: 0.5;
+
+  &:hover {
+    opacity: 1.0;
+  }
+}
+
 [data-run="true"] {
   color: white !important;
   background-color: color-mix(in srgb, #0d99ff 70%, transparent) !important;
   &:hover {
     background-color: color-mix(in srgb, #0d99ff 80%, transparent) !important;
   }
+}
+`;
+
+
+const addCSS=css`
+
+[data-part="content"] {
+  // background-color: white !important;
+  width: 150px;
+  min-width: 150px !important;
+}
+
+[data-part="item"] {
+  font-size: 11px;
+  padding: 2px;
+  width: 100%;
+  padding-left: 6px;
 }
 `;
 
@@ -430,10 +494,10 @@ export const ADDITION_FORMAT_PROMT = `
 
 
 
-const GEMINI_API_KEY = import.meta.env.VITE_GOOGLE_API_KEY;
-const genAI = new GoogleGenAI({apiKey: GEMINI_API_KEY});
+export const GEMINI_API_KEY = import.meta.env.VITE_GOOGLE_API_KEY;
+export const genAI = new GoogleGenAI({apiKey: GEMINI_API_KEY});
 
-const getContextForAi = (ns: any) => {
+export const getContextForAi = (ns: any) => {
   if (!ns) return "";
   let result = 'ВЫПОЛНИ ВСЕ ИНСТРУКЦИИ СНИЗУ! НЕ ЗАКЛЮЧАЙ ЗАМЕНЫ В ДОЛЛАРЫ ($)\n';
 
@@ -475,10 +539,6 @@ export function ChatNN() {
     });
   };
   traverseNs(blocks);
-  // console.log('ns', nsDict)
-  // const graphContext = getContextForAi(nsDict);
-  // console.log('graphContext', graphContext)
-
   const [pastedImages, setPastedImages] = useState<{ url: string, base64: string, file: File, tokens: number }[]>([]);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
@@ -611,6 +671,8 @@ export function ChatNN() {
     if (isLoading) return;
     setIsLoading(true);
 
+    window.dispatchEvent(new CustomEvent('ai-request-started'));
+
     let finalPrompt = prompt;
     if (useContext) {
       const promtGraphContext = getContextForAi(nsDict);
@@ -717,16 +779,145 @@ export function ChatNN() {
     window.addEventListener('pointerup', handleUp);
   };
 
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const closeMenuTimeoutRef = useRef<any>(null);
+
+  const handleMenuEnter = () => {
+    if (closeMenuTimeoutRef.current) clearTimeout(closeMenuTimeoutRef.current);
+    setIsMenuOpen(true);
+  };
+
+  const handleMenuLeave = () => {
+    closeMenuTimeoutRef.current = setTimeout(() => {
+      setIsMenuOpen(false);
+    }, 150);
+  };
+
+  const textareaRef = useRef(null) as any;
+  useEffect(()=>{
+    if (textareaRef.current) {
+      textareaRef.current.focus();
+    }
+  },[])
+
   return (
     <>
       <div css={contextMenuCSS}>
         <div className="promt-field">
+          <Menu.Root
+            open={isMenuOpen} 
+            onOpenChange={(e) => setIsMenuOpen(e.open)}
+            positioning={{ placement: "top-start" }}
+          >
+            <Menu.Trigger asChild>
+              <button 
+                className="button-frame add-button"
+                disabled={isLoading}
+                onMouseEnter={handleMenuEnter}
+                onMouseLeave={handleMenuLeave}
+                onClick={(e) => e.preventDefault()}
+                style={{
+                  borderRadius:'10px',
+                  height: '20px',
+                  width: '20px',
+                  display: 'flex',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  outline: 'none',
+                  marginTop: '5px',
+                }}
+              >
+                {isMenuOpen? <LuChevronDown />:<LuChevronUp/>}
+              </button>
+            </Menu.Trigger>
+            <Portal>
+              <Menu.Positioner style={{ zIndex: 10000 }}
+              // TODO: use context-menu chared css
+                css={addCSS}
+              >
+                <Menu.Content
+                  onMouseEnter={handleMenuEnter}
+                  onMouseLeave={handleMenuLeave}
+                  style={{
+                    border: '1px solid var(--chakra-colors-bg-emphasized)',
+                    borderRadius: '6px',
+                    padding: '4px',
+                    boxShadow: '0 6px 10px color-mix(in srgb, var(-chakra-colors-bg-inverted) 20%, transparent)',
+                    backdropFilter: 'blur(10px)',
+                    minWidth: '220px',
+                    outline: 'none',
+                    fontSize: '12px',
+                  }}
+                >                  
+                  <Menu.Item 
+                    value="gemini-3.6-flash" 
+                    onClick={() => { setModel("gemini-3.6-flash"); setIsMenuOpen(false); }}
+                    className="menu-item"
+                    style={{ display: 'flex', alignItems: 'center' }}
+                  >
+                    <Box w={'10px'}>
+                      {model === "gemini-3.6-flash" && "✓"}
+                    </Box>
+                    gemini-3.6-flash
+                  </Menu.Item>
+
+                  <Menu.Item 
+                    value="qwen2.5vl:7b" 
+                    onClick={() => { setModel("qwen2.5vl:7b"); setIsMenuOpen(false); }}
+                    className="menu-item"
+                    style={{ display: 'flex', alignItems: 'center' }}
+                  >
+                    <Box w={'10px'}>
+                      {model === "qwen2.5vl:7b" && "✓"}
+                    </Box>
+                    qwen2.5vl:7b
+                  </Menu.Item>
+
+                  <Menu.Item 
+                    value={REMOTE_GPT_MODEL} 
+                    onClick={() => { setModel(REMOTE_GPT_MODEL); setIsMenuOpen(false); }}
+                    className="menu-item"
+                    style={{ display: 'flex', alignItems: 'center' }}
+                  >
+                    <Box w={'10px'}>
+                      {model === REMOTE_GPT_MODEL && "✓  "}
+                    </Box>
+                    ChatGPT
+                  </Menu.Item>
+
+                  <div style={{ height: '1px', background: 'rgba(255,255,255,0.1)', margin: '4px 0' }} />
+
+                  <Menu.Item 
+                    value="use-context"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setUseContext(!useContext);
+                    }}
+                    className="menu-item"
+                    style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+                  >
+                    {useContext ? <LuBook color="var(--chakra-colors-blue-400)" /> : <LuBookDashed />}
+                    <span style={{ color: useContext ? 'var(--chakra-colors-blue-400)' : 'inherit' }}>
+                      Контекст
+                    </span>
+                  </Menu.Item>
+                </Menu.Content>
+              </Menu.Positioner>
+            </Portal>
+          </Menu.Root>
+
           <Textarea
+            ref={textareaRef}
             overflowY={'auto'}
             maxH={'var(--chat-textarea-max-h, 300px)'}
             h={'var(--chat-textarea-height, auto)'}
             flex={1}
-            minH={'40px'} // Минимальная высота, чтобы не схлопывалось
+            // p={'0'}
+            px={'0'} // отступы по бокам 0
+            pt={'5px'} // <--- Вот ваш отступ сверху (вместо margin-top)
+            pb={'5px'}
+
+            minH={'30px'}
             bgColor={'transparent'}
             outline={'none'}
             border={'none'}
@@ -734,15 +925,48 @@ export function ChatNN() {
             scrollbarColor={'color-mix(in srgb, white 40%, transparent) transparent'}
             resize={'none'}
             value={prompt}
+            fontWeight={200}
+            fontSize={'10px'}
             fieldSizing={'content'}
             onChange={(e) => setPrompt(e.target.value)} 
             onPaste={handlePaste}
             onKeyDown={(e) => { 
-              if (e.key === 'Enter' && e.ctrlKey && !isLoading) handleSend();
+              // if (e.key === 'Enter' && e.ctrlKey && !isLoading) handleSend();
+              if (e.key === 'Enter' && prompt.length > 0 && !isLoading) {
+                handleSend()
+              }
             }}
-            placeholder={model === REMOTE_GPT_MODEL ? "Press Ctrl+Enter to copy & open ChatGPT" : "Ask AI (Ctrl + Enter)"}
+            placeholder={'Ask AI to do something'}
             disabled={isLoading}
           />
+          <button 
+            className="button-frame"
+            data-run={String(!isLoading)} 
+            onClick={handleSend}
+            disabled={isLoading}
+            style={{
+              opacity: isLoading ? 0.6 : 1,
+              cursor: isLoading ? 'not-allowed' : 'pointer',
+              borderRadius:'10px',
+              height: '20px',
+              width: '20px',
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              marginTop: '5px',
+            }}
+          >
+            {isLoading ? (
+              <>
+                <Spinner size="sm" color="white" />
+                {/* processing... */}
+              </>
+            ) : (
+              <>
+                <LuChevronRight/>
+              </>
+            )}
+          </button>
         </div>
 
         {pastedImages.length > 0 && (
@@ -761,74 +985,6 @@ export function ChatNN() {
             ))}
           </div>
         )}
-        
-        <div className="controls">
-          <HStack
-            className='tools-corousel'
-          >
-            <select className="button-frame select"
-              value={model}
-              onChange={(e) => {
-                const val = e.target.value;
-                setModel(val);
-              }}
-            >
-              <optgroup label="Cloud Models">
-                <option value="gemini-3.6-flash">gemini-3.6-flash</option>
-              </optgroup>
-              <optgroup label="Local Models">
-                <option value="qwen2.5vl:7b">qwen2.5vl:7b (Ollama)</option>
-              </optgroup>
-              <RemoteGPTOptGroup />
-            </select>
-
-            <label className="button-frame">
-              <input type="checkbox" checked={useContext} onChange={(e) => setUseContext(e.target.checked)} /> 
-              course ctx
-            </label>
-            <label className="button-frame">
-              <input type="checkbox" checked={generateCardsMode} onChange={(e) => setGenerateCardsMode(e.target.checked)} /> 
-              json out
-            </label>
-          </HStack>
-
-          <Spacer />
-
-          {/* <button className="button-frame" data-run={"true"} onClick={handleSend}>run <LuChevronRight/></button> */}
-          <button 
-            className="button-frame" 
-            data-run={String(!isLoading)} 
-            onClick={handleSend}
-            disabled={isLoading}
-            style={{
-              opacity: isLoading ? 0.6 : 1,
-              cursor: isLoading ? 'not-allowed' : 'pointer'
-            }}
-          >
-            {isLoading ? (
-              <>
-                <Spinner size="sm" color="white" />
-                processing...
-              </>
-            ) : (
-              <>
-                run
-                <Kbd
-                  p={'0px 1px'}
-                  colorPalette={'blue'}
-                  variant={'plain'}
-                  opacity={0.5}
-                >
-                  <Text opacity={0.5}>|</Text>
-                  ctrl
-                  +
-                  <EnterIcon w={'12px'}/>
-                </Kbd>
-                {/* + */}
-              </>
-            )}
-          </button>
-        </div>
       </div>
 
       {previewImage && createPortal(
