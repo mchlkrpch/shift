@@ -86,6 +86,17 @@ export function SpAvatar(props:any) {
 }
 
 
+const getEmptyDoc=()=>{
+	return JSON.stringify([{
+		id: ID.unique(),
+		type: "card",
+		metainfo: {
+			content:""
+		}
+	}])
+}
+
+
 const profileWrapperCSS = css`
 position: relative;
 width: 100%;
@@ -205,7 +216,10 @@ export const InputStack=(props:any)=>{
 											ref={el.ref}
 											id={'0'}
 											content={localNs['0']}
-											options={{stats:false,textEdit:false,twoSides:false}}
+											options={{
+												stats:false,textEdit:false,twoSides:false,
+												onBlur: ()=>{},
+											}}
 											focus={false}
 											/>
 									</GraphCtx.Provider>
@@ -477,7 +491,6 @@ export const MyGraphs = ({
 export function Profile(props:any){
 	let userData=undefined;
 	let user=undefined;
-
 	const [loading,setLoading]=useState(true);
 
 	if (props.id === undefined) {
@@ -554,8 +567,9 @@ export function Profile(props:any){
           								const currentUserId = user.$id;
 										const gId = ID.unique();
 										await gReq.create({
-											content:'{}',
-											collaborators:[],
+											name: 'New document',
+											content: getEmptyDoc(),
+											collaborators: '{}',
 											owner:currentUserId,
 										},gId);
 										History.push(`/${gId}`)
