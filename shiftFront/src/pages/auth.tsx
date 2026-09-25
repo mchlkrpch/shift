@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
 	spaced_client,
 	fetch_user, spaced_account } from "../appwrite/service";
@@ -8,9 +8,7 @@ import { Navigate, Route, Routes, useNavigate, useSearchParams } from "react-rou
 import { FcGoogle } from "react-icons/fc";
 import store from "../storage";
 import { Profile } from "./profile";
-// import { Header } from "../components/header";
-import { Feed } from "./feed";
-// import { Graph } from "../sh/graph/editor";
+import { LibraryPage } from "./library";
 import { GraphPage } from "./graph";
 
 export async function loginGoogle(){
@@ -52,7 +50,6 @@ const AuthCallback = () => {
 				
 				fetch_user(spaced_account)
 				navigate('/profile')
-        // setTimeout(()=>navigate('/profile'),1000);
       } catch (err){
         console.error('Failed to create session:', err);
         setError('An error occurred during authentication. Please try again.');
@@ -94,7 +91,6 @@ export async function logOut(){
 export async function loginEmail(email: string, password: string) {
 	try {
 		await spaced_account.createEmailPasswordSession(email, password);
-		// window.location.reload();
 		const u = await fetch_user(spaced_account)
 		store.dispatch({
 			type: 'set_user',
@@ -109,12 +105,6 @@ export async function loginEmail(email: string, password: string) {
 
 function Auth() {
 	const [authState,setAuthState]=useState('login');
-	// login inputs
-	const emailRef=useRef<HTMLInputElement>(null) as any;
-	const passwordRef=useRef<HTMLInputElement>(null) as any;
-	// register inputs
-	const usernameRef=useRef<HTMLInputElement>(null) as any;
-	const confirmPasswordRef=useRef<HTMLInputElement>(null) as any;
 
 	useEffect(() => {
 		// for testing
@@ -127,77 +117,6 @@ function Auth() {
 	return (
 		<>
 			<VStack gap="5" mt={'100px'}>
-				{/* <HStack gap="2" width="full">
-					<Field.Root gap='-0.5' required>
-						<Field.Label fontSize={'12px'} opacity="0.5">
-							Email <Field.RequiredIndicator />
-						</Field.Label>
-						<Input
-							ref={emailRef}
-							placeholder="Enter you email"
-							variant="flushed"
-							/>
-						<Field.ErrorText>This field is required</Field.ErrorText>
-					</Field.Root>
-
-					<Field.Root gap='-0.5' required>
-						<Field.Label fontSize={'12px'} opacity="0.5">
-							password<Field.RequiredIndicator />
-						</Field.Label>
-						<Input ref={passwordRef} type="password" placeholder="use 8 symbols" variant="outline" />
-						<Field.ErrorText>This field is required</Field.ErrorText>
-					</Field.Root>
-				</HStack>
-
-				{authState==='registration' &&
-					<HStack gap="2" width="full">
-						<Field.Root gap='-0.5' required>
-							<Field.Label fontSize={'12px'} opacity="0.5">
-								username<Field.RequiredIndicator />
-							</Field.Label>
-							<Input
-								onChange={usernameRef}
-								type="username"
-								name="username"
-								placeholder={"f.e. \"mchlkrpch\""}
-								variant="flushed"
-								/>
-							<Field.ErrorText>This field is required</Field.ErrorText>
-						</Field.Root>
-
-						<Field.Root gap='-0.5' required>
-								<Field.Label fontSize={'12px'} opacity="0.5">
-									confirm password <Field.RequiredIndicator />
-								</Field.Label>
-								<Input
-									type="confirmPassword"
-									name="confirmPassword"
-									onChange={confirmPasswordRef}
-									// value={this.state.form.confirmPassword}
-									placeholder="use 8 symbols"
-									variant="outline"
-									/>
-								<Field.ErrorText>This field is required</Field.ErrorText>
-							</Field.Root>
-					</HStack>
-				}
-
-				<Button
-					variant="outline"
-					width="full"
-					colorPalette="blue"
-					borderRadius="md"
-					onClick={()=>{
-						loginEmail(
-							emailRef.current.value,
-							passwordRef.current.value,
-						)
-					}}
-					>
-					{authState==='login'?('Log in'):('sign up')}
-				</Button> */}
-				{/* <Text mt={'-10px'}>or</Text> */}
-
 				<Button
 					mt={'-10px'}
 					variant="outline"
@@ -332,22 +251,10 @@ class SpaceRouter extends React.Component<any,any> {
 		} else {
 			return (
 				<Routes>
-					{/* <Route path="/search" element={
-						<SearchPage
-							filters={{
-								tp: 'graphs',
-							}}
-							/>
-						}
-					/> */}
 					<Route path="/profile" element={
 						<Profile preview={false}/>
 						}
 					/>
-					{/* <Route path="/profile/:profileid" element={
-						<ProfileWrapper />
-						}
-					/> */}
 					<Route
 						path=':route'
 						element={
@@ -355,10 +262,10 @@ class SpaceRouter extends React.Component<any,any> {
 						}
 					/>
                     <Route
-						path='/'
+						path='/graphs'
 						element={
                             <>
-								<Feed/>
+								<LibraryPage/>
 							</>
 						}
 					/>
