@@ -57,3 +57,96 @@ export const Colored=({content}:any)=>{
   const {colorMode} = useColorMode();
   return colorMode === 'light' ? <LightMode>{content}</LightMode> : <DarkMode>{content}</DarkMode>;
 }
+
+
+
+
+
+
+
+
+
+
+export const convertNestedToUnifiedBlocks = (blocksInput: any, parentId?: string): any[] => {
+  let result: any[] = [];
+  let blocks = blocksInput;
+  // АВТОВОССТАНОВЛЕНИЕ: Если пришла JSON-строка из базы, парсим её
+  if (typeof blocks === 'string') {
+    try {
+      blocks = JSON.parse(blocks);
+    } catch (e) {
+      console.error("Failed to parse blocks:", e);
+      return [];
+    }
+  }
+  // Если всё равно не массив - отдаем пустой
+  if (!blocks || !Array.isArray(blocks)) return [];
+  blocks.forEach(b => {
+    // АВТОВОССТАНОВЛЕНИЕ плоского формата (тот самый [{id: "blk-...", text: "..."}])
+    if (b.text !== undefined) {
+      result.push({ 
+        id: b.id, 
+        text: b.text, 
+        isGroup: !!b.isGroup, 
+        parentId: b.parentId || parentId, 
+        isRendered: !!b.isRendered,
+        originalMeta: b.originalMeta || {} 
+      });
+      return; // Если это старый формат, спасли его и идем к следующему блоку
+    }
+    // Нормальный древовидный формат (group / card)
+    if (b.type === 'group') {
+      result.push({
+        id: b.id,
+        text: b.metainfo?.title || '',
+        isGroup: true,
+        parentId: parentId,
+        isRendered: false,
+        originalMeta: b.metainfo
+      });
+      if (b.children && Array.isArray(b.children)) {
+        result = result.concat(convertNestedToUnifiedBlocks(b.children, b.id));
+      }
+    } else if (b.type === 'card' || b.metainfo) {
+      result.push({
+        id: b.id,
+        text: b.metainfo?.content || '',
+        isGroup: false,
+        parentId: parentId,
+        isRendered: false,
+        originalMeta: b.metainfo
+      });
+    }
+  });
+  return result;
+};
+
+
+export const buildNestedTreeFromUnified = (unifiedBlocks: any[]): any[] => {
+  const blockMap = new Map();
+  const roots: any[] = [];
+  const validBlocks = unifiedBlocks.filter(b => !b.isAIChatContainer && !b.isSpinner);
+
+  validBlocks.forEach(ub => {
+    const isGroup = ub.isGroup;
+    const node = {
+      id: ub.id,
+      type: isGroup ? 'group' : 'card',
+      metainfo: isGroup
+        ? { ...ub.originalMeta, title: ub.text, color: ub.originalMeta?.color || '#555555', collapsed: ub.originalMeta?.collapsed || false }
+        : { ...ub.originalMeta, content: ub.text, title: ub.text.split('\n')[0].substring(0, 50) },
+      children: []
+    };
+    blockMap.set(ub.id, node);
+  });
+
+  validBlocks.forEach(ub => {
+    const node = blockMap.get(ub.id);
+    if (ub.parentId && blockMap.has(ub.parentId)) {
+      blockMap.get(ub.parentId).children.push(node);
+    } else {
+      roots.push(node);
+    }
+  });
+  return roots;
+};
