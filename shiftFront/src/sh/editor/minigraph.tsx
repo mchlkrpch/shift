@@ -1,14 +1,55 @@
+/** @jsxImportSource @emotion/react */
+import { css } from "@emotion/react";
 import { forwardRef, memo, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { useGraphCtx } from "../../App";
-import { calcG, transformToOldGroups } from "../card/utility";
-import { Box, Button, HStack, IconButton, Spacer, Text } from "@chakra-ui/react";
+import { calcG } from "../card/utility";
+import { Box, HStack, IconButton, Spacer } from "@chakra-ui/react";
 import Graphology from "graphology";
 import Sigma from "sigma";
 import { MdClose, MdDelete } from "react-icons/md";
-import { createPortal } from "react-dom";
-import { getCardState } from "./feed";
 import { SIDE_SPLIT_SYM } from "../card/utility";
 import { drawRoundRect, rgba2hex } from "./utility";
+import { buildDependencyGraph, getCardState } from "./feed/feedUtils";
+import { createPortal } from "react-dom";
+
+
+const minigraphCSS = css`
+display: flex;
+flex-direction: column;
+height: 100%;
+width: 100%;
+z-index: 99;
+
+background-color: transparent;
+cursor: grab;
+
+
+
+.panel {
+	height: 30px;
+	background-color: transparent;
+	padding: 2px;
+	font-size: 10px;
+}
+`
+
+// ———— Полная классификация карточек (как в Feed) ————————————————————————————————————————————
+const CARD_CATEGORIES = [
+	{ key: 'new',     label: 'New',     color: '#3182ce' },
+	{ key: 'due',     label: 'Due',     color: '#e53e3e' },
+	{ key: 'learned', label: 'Learned', color: '#38a169' },
+	{ key: 'waiting', label: 'Waiting', color: 'color-mix(in srgb, var(--chakra-colors-bg-inverted) 80%, var(--chakra-colors-bg))' },
+	{ key: 'locked',  label: 'Locked',  color: 'color-mix(in srgb, var(--chakra-colors-bg-inverted) 60%, var(--chakra-colors-bg))' },
+];
+
+const classifyCardStatus = (st: any): string => {
+	if (!st) return 'waiting';
+	if (st.isLocked) return 'locked';
+	if (st.isNew) return 'new';
+	if (st.isDue) return 'due';
+	if (st.isLearned) return 'learned';
+	return 'waiting';
+};
 
 const ResizeHandle = ({ cursor, top, left, right, bottom, w, h, onDown }: any) => (
   <Box
@@ -30,6 +71,8 @@ export interface GraphRendererProps {
 	selectedIds?: Set<string>;
 	selectionBoxRef?: React.MutableRefObject<{x: number, y: number, w: number, h: number} | null>;
 	externalHoveredNodeId?: string | null;
+	nodeStatuses?: Record<string, any>;
+	hiddenCategories?: Set<string>;
 	onNodeClick?: (e: any, nodeId: string) => void;
 	onNodeDoubleClick?: (nodeId: string) => void;
 	onNodeRightClick?: (e: any, nodeId: string) => void;
@@ -48,6 +91,8 @@ export const GraphRenderer = memo(forwardRef(({
 	selectedIds = new Set(),
 	selectionBoxRef,
 	externalHoveredNodeId = null,
+	nodeStatuses = {},
+	hiddenCategories = new Set(),
 	onNodeClick,
 	onNodeDoubleClick,
 	onNodeRightClick,
@@ -66,32 +111,46 @@ export const GraphRenderer = memo(forwardRef(({
 	const hoveredGroup = useRef<string | null>(null);
 	const sortedGroupsRef = useRef<string[]>([]);
 
-	const latestProps = useRef({ groups, ns, repeats, selectedIds, selectionBoxRef, externalHoveredNodeId, onNodeClick, onNodeDoubleClick, onNodeRightClick, onStageClick, onStageRightClick, onHover, onCameraUpdated });
+	const latestProps = useRef({
+		groups, ns, repeats,
+		selectedIds, selectionBoxRef, externalHoveredNodeId, hiddenCategories,
+		onNodeClick, onNodeDoubleClick, onNodeRightClick,
+		onStageClick, onStageRightClick, onHover, onCameraUpdated });
+
 	useEffect(() => {
-		latestProps.current = { groups, ns, repeats, selectedIds, selectionBoxRef, externalHoveredNodeId, onNodeClick, onNodeDoubleClick, onNodeRightClick, onStageClick, onStageRightClick, onHover, onCameraUpdated };
+		latestProps.current = { groups, ns, repeats, selectedIds, selectionBoxRef, externalHoveredNodeId, hiddenCategories, onNodeClick, onNodeDoubleClick, onNodeRightClick, onStageClick, onStageRightClick, onHover, onCameraUpdated };
 	});
+
+	// Переключение фильтра категорий не пересобирает граф — просто просим Sigma перерисовать кадр,
+	// а afterRender уже сам применит актуальный hiddenCategories из latestProps.
+	useEffect(() => {
+		if (!sigmaRef.current) return;
+		try { sigmaRef.current.refresh(); } catch (e) { /* инстанс мог быть пересоздан в моменте ре-маунта эффектов */ }
+	}, [hiddenCategories]);
 
 	useImperativeHandle(ref, () => ({
 		getSigma: () => sigmaRef.current,
 		getGraph: () => graphRef.current,
-		refresh: () => sigmaRef.current?.refresh(),
+		refresh: () => { try { sigmaRef.current?.refresh(); } catch (e) {} },
 		animatedReset: (options: any) => {
-			if (sigmaRef.current) (sigmaRef.current as any).camera.animatedReset(options);
+			try { (sigmaRef.current as any)?.camera.animatedReset(options); } catch (e) {}
 		},
 		animate: (state: any, options: any) => {
-			if (sigmaRef.current) (sigmaRef.current as any).camera.animate(state, options);
+			try { (sigmaRef.current as any)?.camera.animate(state, options); } catch (e) {}
 		},
-		viewportToGraph: (pos: any) => sigmaRef.current?.viewportToGraph(pos),
-		graphToViewport: (pos: any) => sigmaRef.current?.graphToViewport(pos),
+		viewportToGraph: (pos: any) => { try { return sigmaRef.current?.viewportToGraph(pos); } catch (e) { return undefined; } },
+		graphToViewport: (pos: any) => { try { return sigmaRef.current?.graphToViewport(pos); } catch (e) { return undefined; } },
 		zoomToNode: (id: string) => {
-			const displayData = (sigmaRef.current as any)?.getNodeDisplayData(id);
-			if (displayData) {
-				const px = Number(displayData.x);
-				const py = Number(displayData.y);
-				if (!isNaN(px) && !isNaN(py)) {
-					(sigmaRef.current as any)?.camera.animate({ x: px, y: py, ratio: 0.8 }, { duration: 150 });
+			try {
+				const displayData = (sigmaRef.current as any)?.getNodeDisplayData(id);
+				if (displayData) {
+					const px = Number(displayData.x);
+					const py = Number(displayData.y);
+					if (!isNaN(px) && !isNaN(py)) {
+						(sigmaRef.current as any)?.camera.animate({ x: px, y: py, ratio: 0.8 }, { duration: 150 });
+					}
 				}
-			}
+			} catch (e) {}
 		}
 	}));
 
@@ -154,6 +213,7 @@ export const GraphRenderer = memo(forwardRef(({
 
 			graphRef.current.forEachNode((node, data) => {
 				if (data.isGroup) return;
+				if (latestProps.current.hiddenCategories && data.category && latestProps.current.hiddenCategories.has(data.category)) return;
 				const vp = sigmaRef.current!.graphToViewport({ x: data.x, y: data.y });
 				const nodeW = (data.width || 160) * scale;
 				const nodeH = (data.height || 36) * scale;
@@ -291,49 +351,55 @@ export const GraphRenderer = memo(forwardRef(({
 			// === РИСУЕМ КРАСИВЫЕ СТРЕЛКИ СВЯЗЕЙ ВРУЧНУЮ ===
 			underCtx.save();
 			graphRef.current.forEachEdge((_edge, _attrs, _source, _target, sourceAttrs, targetAttrs) => {
-				 const p1 = renderer.graphToViewport({ x: sourceAttrs.x, y: sourceAttrs.y });
-				 const p2 = renderer.graphToViewport({ x: targetAttrs.x, y: targetAttrs.y });
-				 
-				 const dx = p2.x - p1.x;
-				 const dy = p2.y - p1.y;
-				 const dist = Math.sqrt(dx*dx + dy*dy);
-				 if (dist === 0) return;
+				const p1 = renderer.graphToViewport({ x: sourceAttrs.x, y: sourceAttrs.y });
+				const p2 = renderer.graphToViewport({ x: targetAttrs.x, y: targetAttrs.y });
+				const dx = p2.x - p1.x;
+				const dy = p2.y - p1.y;
+				const dist = Math.sqrt(dx*dx + dy*dy);
+				if (dist === 0) return;
+				const dirX = dx / dist;
+				const dirY = dy / dist;
+				const tw = (targetAttrs.width || 160) * scale;
+				const th = (targetAttrs.height || 36) * scale;
 
-				 const dirX = dx / dist;
-				 const dirY = dy / dist;
+				const absDirX = Math.abs(dirX);
+				const absDirY = Math.abs(dirY);
+				const intersectDistX = absDirX > 0 ? (tw / 2) / absDirX : Infinity;
+				const intersectDistY = absDirY > 0 ? (th / 2) / absDirY : Infinity;
+				const intersectDist = Math.min(intersectDistX, intersectDistY) + (2 * scale);
+				const arrowX = p2.x - dirX * intersectDist;
+				const arrowY = p2.y - dirY * intersectDist;
 
-				 // Размеры узла назначения, чтобы стрелка касалась его края, а не центра
-				 const tw = (targetAttrs.width || 160) * scale;
-				 const th = (targetAttrs.height || 36) * scale;
+				// Если ребро упирается в узел скрытой категории (или исходит из него) — делаем линию и наконечник почти невидимыми
+				const isSourceHidden = !!(
+				props.hiddenCategories &&
+				sourceAttrs.category &&
+				props.hiddenCategories.has(sourceAttrs.category));
+				const isTargetHidden = !!(
+				props.hiddenCategories &&
+				targetAttrs.category &&
+				props.hiddenCategories.has(targetAttrs.category));
+				const edgeAlpha = (isSourceHidden || isTargetHidden) ? 0.15 : 1;
+				underCtx.globalAlpha = edgeAlpha;
 
-				 const absDirX = Math.abs(dirX);
-				 const absDirY = Math.abs(dirY);
-				 const intersectDistX = absDirX > 0 ? (tw / 2) / absDirX : Infinity;
-				 const intersectDistY = absDirY > 0 ? (th / 2) / absDirY : Infinity;
-				 const intersectDist = Math.min(intersectDistX, intersectDistY) + (2 * scale); // Небольшой отступ
+				underCtx.strokeStyle = "rgba(160, 174, 192, 0.4)";
+				underCtx.lineWidth = 1.5 * scale;
+				underCtx.beginPath();
+				underCtx.moveTo(p1.x, p1.y);
+				underCtx.lineTo(arrowX, arrowY);
+				underCtx.stroke();
 
-				 const arrowX = p2.x - dirX * intersectDist;
-				 const arrowY = p2.y - dirY * intersectDist;
-
-				 // Линия связи
-				 underCtx.strokeStyle = "rgba(160, 174, 192, 0.4)";
-				 underCtx.lineWidth = 1.5 * scale;
-				 underCtx.beginPath();
-				 underCtx.moveTo(p1.x, p1.y);
-				 underCtx.lineTo(arrowX, arrowY);
-				 underCtx.stroke();
-
-				 // Треугольный наконечник
-				 const angle = Math.atan2(dy, dx);
-				 const arrowLen = 8 * scale;
-				 underCtx.fillStyle = "rgba(160, 174, 192, 0.8)";
-				 underCtx.beginPath();
-				 underCtx.moveTo(arrowX, arrowY);
-				 underCtx.lineTo(arrowX - arrowLen * Math.cos(angle - Math.PI/7), arrowY - arrowLen * Math.sin(angle - Math.PI/7));
-				 underCtx.lineTo(arrowX - arrowLen * Math.cos(angle + Math.PI/7), arrowY - arrowLen * Math.sin(angle + Math.PI/7));
-				 underCtx.closePath();
-				 underCtx.fill();
+				const angle = Math.atan2(dy, dx);
+				const arrowLen = 8 * scale;
+				underCtx.fillStyle = "rgba(160, 174, 192, 0.8)";
+				underCtx.beginPath();
+				underCtx.moveTo(arrowX, arrowY);
+				underCtx.lineTo(arrowX - arrowLen * Math.cos(angle - Math.PI/7), arrowY - arrowLen * Math.sin(angle - Math.PI/7));
+				underCtx.lineTo(arrowX - arrowLen * Math.cos(angle + Math.PI/7), arrowY - arrowLen * Math.sin(angle + Math.PI/7));
+				underCtx.closePath();
+				underCtx.fill();
 			});
+			underCtx.globalAlpha = 1;
 			underCtx.restore();
 
 			graphRef.current.forEachNode((node, data) => {
@@ -344,6 +410,9 @@ export const GraphRenderer = memo(forwardRef(({
 				const isHovered = activeHoveredNode === node;
 				const w = (data.width || 160) * scale; 
 				const h = (data.height || 36) * scale;
+
+				const isHiddenCat = !!(props.hiddenCategories && data.category && props.hiddenCategories.has(data.category));
+				overCtx.globalAlpha = isHiddenCat ? 0.08 : 1;
 				
 				if (data.status?.isLocked && !isSelected && !isHovered) { overCtx.fillStyle = "rgba(30, 30, 30, 1.0)"; } 
 				else if (isSelected) { overCtx.fillStyle = "rgba(49, 130, 206, 1.0)"; } 
@@ -365,22 +434,27 @@ export const GraphRenderer = memo(forwardRef(({
 				}
 				
 				const maxTextWidth = w - 16;
-				if (maxTextWidth > 15) { 
+				// Если карточку выделил пользователь (кликнул) — показываем лейбл полностью, без обрезки,
+				// даже если он не помещается в текущую ширину прямоугольника.
+				if (maxTextWidth > 15 || isSelected) { 
 					overCtx.fillStyle = data.status?.isLocked ? "rgba(255,255,255,0.2)" : "#ffffff";
 					overCtx.font = `500 12px 'Merriweather', 'Roboto', sans-serif`;
 					overCtx.textAlign = "center";
 					overCtx.textBaseline = "middle";
 					
 					let text = data.label || "";
-					let tw = overCtx.measureText(text).width;
-					if (tw > maxTextWidth) {
-							const ratio = maxTextWidth / tw;
-							const keepChars = Math.max(1, Math.floor(text.length * ratio) - 2);
-							text = text.slice(0, keepChars) + '..';
+					if (!isSelected) {
+						let tw = overCtx.measureText(text).width;
+						if (tw > maxTextWidth) {
+								const ratio = maxTextWidth / tw;
+								const keepChars = Math.max(1, Math.floor(text.length * ratio) - 2);
+								text = text.slice(0, keepChars) + '..';
+						}
 					}
 					overCtx.fillText(text, x, y);
 				}
 			});
+			overCtx.globalAlpha = 1;
 
 			sortedGroupsRef.current.forEach(gName => {
 				const gData = props.groups[gName] || { color: '#555555' };
@@ -394,6 +468,8 @@ export const GraphRenderer = memo(forwardRef(({
 				const minY = vp.y - gh / 2;
 
 				if (gw < 30 || gh < 20) return; 
+
+				const isGroupSelected = props.selectedIds.has(gName);
 
 				let baseColor = gData.color || '#555555';
 				if (!baseColor.startsWith('#')) baseColor = rgba2hex(baseColor) || '#555555';
@@ -409,7 +485,8 @@ export const GraphRenderer = memo(forwardRef(({
 				const maxTextW = gw - 16; 
 				let tw = overCtx.measureText(text).width;
 				
-				if (tw > maxTextW) {
+				// Выбранную группу не обрезаем — плашка расширяется под полный заголовок.
+				if (!isGroupSelected && tw > maxTextW) {
 						const ratio = maxTextW / tw;
 						const keepChars = Math.max(1, Math.floor(text.length * ratio) - 2);
 						text = text.slice(0, keepChars) + '..';
@@ -453,6 +530,7 @@ export const GraphRenderer = memo(forwardRef(({
 			containerRef.current?.removeEventListener('mousemove', handleCustomHover);
 			containerRef.current?.removeEventListener('mouseleave', handleMouseLeave);
 			renderer.kill();
+			if (sigmaRef.current === renderer) sigmaRef.current = null;
 		};
 	}, []);
 
@@ -478,18 +556,17 @@ export const GraphRenderer = memo(forwardRef(({
 			}
 
 			let label = n.id;
-			let status = { isLocked: false, isNew: true, isDue: false, isLearned: false, level: 0 };
+			let status = nodeStatuses[n.id] || { isLocked: false, isNew: true, isDue: false, isLearned: false, level: 0, category: 'new' };
 			const content = ns[n.id];
-			if (content !== undefined) {
+			if (content) {
 				label = content.split(SIDE_SPLIT_SYM)[0].replace(/<[^>]*>?/gm, '').trim() || n.id;
-				try { status = getCardState(n.id, ns, repeats); } catch(e) {}
 			}
 
 			if (graph.hasNode(n.id)) {
-				 graph.updateNode(n.id, attrs => ({ ...attrs, x: n.position.x, y: n.position.y, width: n.width, height: n.height, label, status }));
+				 graph.updateNode(n.id, attrs => ({ ...attrs, x: n.position.x, y: n.position.y, width: n.width, height: n.height, label, status, category: status.category }));
 				 existingNodes.delete(n.id);
 			} else {
-				 graph.addNode(n.id, { x: n.position.x, y: n.position.y, width: n.width, height: n.height, size: 15, label, color: "rgba(0,0,0,0)", isGroup: false, status });
+				 graph.addNode(n.id, { x: n.position.x, y: n.position.y, width: n.width, height: n.height, size: 15, label, color: "rgba(0,0,0,0)", isGroup: false, status, category: status.category });
 			}
 		});
 
@@ -499,7 +576,8 @@ export const GraphRenderer = memo(forwardRef(({
 		reactflowEs.forEach((e: any) => {
 			if (graph.hasNode(e.source) && graph.hasNode(e.target)) {
 					if (graph.hasEdge(e.source, e.target)) existingEdges.delete(graph.edge(e.source, e.target)!);
-					else graph.addEdge(e.source, e.target, { size: 1, color: '#4a5568', type: 'arrow' });
+					// Заменяем цвет на прозрачный, чтобы нативный рендерер Sigma не рисовал свои стрелки поверх наших кастомных с Canvas
+					else graph.addEdge(e.source, e.target, { size: 1, color: 'rgba(0,0,0,0)', type: 'arrow' });
 			}
 		});
 
@@ -507,7 +585,7 @@ export const GraphRenderer = memo(forwardRef(({
 		existingNodes.forEach(n => { if (graph.hasNode(n)) graph.dropNode(n); });
 
 		sigmaRef.current?.refresh();
-	}, [reactflowNs, reactflowEs, ns, groups, repeats]);
+	}, [reactflowNs, reactflowEs, ns, groups, repeats, nodeStatuses]);
 
 	return (
 		<Box position="relative" w="100%" h="100%">
@@ -519,207 +597,370 @@ export const GraphRenderer = memo(forwardRef(({
 }));
 
 
+
+
+
+
 export const Minigraph = memo(({
-	id, type,
-	targetNodes, targetGroups,
+	ids = [],
 	x, y,
-	ns, flatTree, groups,
-	onClose, onDelete, onRepeat
+	isFloat,
+	editorRef,
 }: any) => {
-    const rendererRef = useRef<any>(null);
-    const { repeats } = useGraphCtx() as any;
-    
-    const [reactflowNs, reactflowEs, miniNs, miniGroups] = useMemo(() => {
-        const visited = new Set<string>();
-        
-        if (type === 'group' || type === 'root') {
-            (targetNodes || []).forEach((n: string) => visited.add(n));
-        } else {
-            const traverse = (currId: string) => {
-                if (visited.has(currId)) return;
-                visited.add(currId);
-                const content = ns[currId];
-                if (!content) return;
-                const matches = [...content.matchAll(/<id=([a-zA-Z0-9_.:-]+)>/g)];
-                for (const match of matches) {
-                    traverse(match[1]);
-                }
-            };
-            traverse(id);
-        }
+	const rendererRef = useRef<any>(null);
+	const { blocks, repeats, ns } = useGraphCtx() as any;
 
-        const mNs: any = {};
-        visited.forEach(n => { mNs[n] = ns[n] || ''; });
+	const { activeNs, groupColorByLabel } = useMemo(() => {
+		const dict: Record<string, any> = {};
+		const colorByLabel: Record<string, string> = {};
 
-        const mGroups: any = {};
-        if (targetGroups) {
-            targetGroups.forEach((gName: string) => {
-                if (groups && groups[gName]) mGroups[gName] = groups[gName];
-            });
-        }
-        
-        // Получаем расчеты из calcG (так же, как это делает основной Flow)
-		const reconstructedGroups = transformToOldGroups(flatTree);
-        const [rNs, rEs] = calcG(mNs, reconstructedGroups, {x:1, y:1});
+		const collectLeafIds = (arr: any[], out: string[]) => {
+			if (!Array.isArray(arr)) return;
+			arr.forEach((c: any) => {
+				if (c.type === 'group') collectLeafIds(c.children, out);
+				else if (c.id) out.push(c.id);
+			});
+		};
 
-        // 1. Очищаем узлы от суффиксов :0, :1, чтобы отображать единые базовые карточки.
-        const baseNsMap = new Map();
-        rNs.forEach((n: any) => {
-            if (n.type === 'SpGroup') {
-                baseNsMap.set(n.id, n);
-                return;
-            }
-            const baseId = n.id.replace(/:\d+$/, '');
-            if (!baseNsMap.has(baseId)) {
-                baseNsMap.set(baseId, { ...n, id: baseId });
-            }
-        });
-        const cleanNs = Array.from(baseNsMap.values());
+		const traverse = (nodes: any[], path: string[]) => {
+			if (!Array.isArray(nodes)) return;
+			nodes.forEach((b: any) => {
+				if (b.type === 'group') {
+					const label = b.metainfo?.title || b.id;
+					const childIds: string[] = [];
+					collectLeafIds(b.children, childIds);
+					dict[b.id] = { type: 'group', label, path, children: childIds };
+					if (b.metainfo?.color) colorByLabel[label] = b.metainfo.color;
+					if (b.children) traverse(b.children, [...path, label]);
+					return;
+				}
+				if (b.id) {
+					dict[b.id] = {
+						type: 'card',
+						content: b.metainfo?.content || b.metainfo?.title || '',
+						path,
+					};
+				}
+				if (b.children) traverse(b.children, path);
+			});
+		};
 
-        // 2. Берем готовые связи из calcG и тоже очищаем их от суффиксов.
-        const cleanEs: any[] = [];
-        const seenEdges = new Set<string>();
-        
-        rEs.forEach((e: any) => {
-            // calcG выдает source (потомок) -> target (предок). 
-            // Разворачиваем стрелку (target -> source), чтобы линия шла от предка к потомку:
-            const ancestorId = e.target.replace(/:\d+$/, ''); 
-            const descendantId = e.source.replace(/:\d+$/, ''); 
-            
-            const edgeId = `${descendantId}->${ancestorId}`;
+		traverse(blocks, []);
+		return { activeNs: dict, groupColorByLabel: colorByLabel };
+	}, [blocks]);
 
-            // Защита от дублей и петель на самого себя (если разные стороны 1 карты ссылались друг на друга)
-            if (ancestorId !== descendantId && !seenEdges.has(edgeId)) {
-                // Убеждаемся, что оба узла существуют в нашем очищенном списке
-                if (baseNsMap.has(ancestorId) && baseNsMap.has(descendantId)) {
-                    seenEdges.add(edgeId);
-                    cleanEs.push({
-                        id: edgeId,
-                        source: descendantId,
-                        target: ancestorId,
-                    });
-                }
-            }
-        });
+	const expandedIds = useMemo(() => {
+		const result = new Set<string>();
+		(ids || []).forEach((rawId: string) => {
+			const entry = activeNs[rawId];
+			if (entry?.type === 'group') {
+				(entry.children || []).forEach((c: string) => result.add(c));
+			} else {
+				result.add(rawId);
+			}
+		});
+		return result;
+	}, [ids, activeNs]);
 
-        return [cleanNs, cleanEs, mNs, mGroups];
-    }, [id, type, targetNodes, targetGroups, ns, groups]);
+	const selectedNodeIds = useMemo(() => {
+		const s = new Set<string>();
+		(ids || []).forEach((rawId: string) => {
+			const entry = activeNs[rawId];
+			if (entry?.type === 'group') s.add(entry.label);
+			else s.add(rawId);
+		});
+		return s;
+	}, [ids, activeNs]);
 
-    const stats = useMemo(() => {
-        let newCnt = 0, dueCnt = 0, learnedCnt = 0;
-        Object.keys(miniNs).forEach(n => {
-            const st = getCardState(n, ns, repeats);
-            if (!st.isLocked) {
-                if (st.isNew) newCnt++;
-                else if (st.isDue) dueCnt++;
-                else if (st.isLearned) learnedCnt++;
-            }
-        });
-        return { newCnt, dueCnt, learnedCnt };
-    }, [miniNs, ns, repeats]);
+	const [reactflowNs, reactflowEs, miniNs, miniGroups] = useMemo(() => {
+		const idsArr = Array.from(expandedIds);
 
-    useEffect(() => {
-        if (rendererRef.current) {
-            setTimeout(() => {
-                rendererRef.current.animatedReset({ duration: 200 });
-            }, 50);
-        }
-    }, [reactflowNs]);
+		const mNs: any = {};
+		idsArr.forEach((id: string) => { mNs[id] = activeNs[id]?.content ?? ns[id] ?? ''; });
 
-    const rectRef = useRef({ x: 0, y: 0, w: 400, h: 300 });
-    const [rect, setRectState] = useState(rectRef.current);
-    const setRect = (newRect: any) => { rectRef.current = newRect; setRectState(newRect); };
+		const rootChildren: any[] = [];
+		const findOrCreateGroup = (cur: any[], label: string) => {
+			let g = cur.find((c: any) => c.type === 'group' && c.id === label);
+			if (!g) {
+				g = { type: 'group', id: label, metainfo: { title: label, color: groupColorByLabel[label] }, children: [] };
+				cur.push(g);
+			}
+			return g;
+		};
 
-    useEffect(() => {
-       const w = 400; const h = 300;
-       let finalX = Math.min(x + 15, window.innerWidth - w - 15);
-       finalX = Math.max(15, finalX);
-       let finalY = Math.min(y + 15, window.innerHeight - h - 15);
-       finalY = Math.max(15, finalY);
-       setRect({ x: finalX, y: finalY, w, h });
-    }, [x, y]);
+		idsArr.forEach((id: string) => {
+			const entry = activeNs[id];
+			const path = entry?.path || [];
+			let cur = rootChildren;
+			path.forEach((label: string) => {
+				const g = findOrCreateGroup(cur, label);
+				cur = g.children;
+			});
+			cur.push({ id });
+		});
 
-    const handlePointerDown = (e: React.PointerEvent, action: string) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const startX = e.clientX;
-        const startY = e.clientY;
-        const startRect = { ...rectRef.current };
+		const tr2groups=(ns_arr: any)=>{
+			const dict = {} as any;
+			Object.keys(ns_arr).map((nid:any)=>{
+				const pt = ns_arr[nid].path
+				pt.map((p:any)=>{
+					if (dict[p] === undefined) {
+						dict[p] = [] as any[];
+					}
+					dict[p].push(nid);
+				})
+			})
+			return dict;
+		}
+		const reconstructedGroups = tr2groups(activeNs);
+		const [rNs, rEs] = calcG(mNs, reconstructedGroups, { x: 1, y: 1 });
 
-        const handleMove = (moveEvent: PointerEvent) => {
-            const dx = moveEvent.clientX - startX;
-            const dy = moveEvent.clientY - startY;
-            let { x, y, w, h } = startRect;
-            
-            if (action === 'move') { 
-                x += dx; 
-                y += dy; 
-            } else {
-                if (action.includes('e')) w += dx;
-                if (action.includes('s')) h += dy;
-                if (action.includes('w')) { x += dx; w -= dx; }
-                if (action.includes('n')) { y += dy; h -= dy; }
-                
-                if (w < 200) { if (action.includes('w')) x += (w - 200); w = 200; }
-                if (h < 150) { if (action.includes('n')) y += (h - 150); h = 150; }
-            }
-            
-            setRect({ x, y, w, h });
-        };
+		const baseNsMap = new Map();
+		rNs.forEach((n: any) => {
+			if (n.type === 'SpGroup') {
+				baseNsMap.set(n.id, n);
+				return;
+			}
+			const baseId = n.id.replace(/:\d+$/, '');
+			if (!baseNsMap.has(baseId)) {
+				baseNsMap.set(baseId, { ...n, id: baseId });
+			}
+		});
+		const cleanNs = Array.from(baseNsMap.values());
 
-        const handleUp = () => {
-            window.removeEventListener('pointermove', handleMove);
-            window.removeEventListener('pointerup', handleUp);
-        };
+		const cleanEs: any[] = [];
+		const seenEdges = new Set<string>();
 
-        window.addEventListener('pointermove', handleMove);
-        window.addEventListener('pointerup', handleUp);
-    };
+		rEs.forEach((e: any) => {
+			const ancestorId = e.target.replace(/:\d+$/, '');
+			const descendantId = e.source.replace(/:\d+$/, '');
+			const edgeId = `${descendantId}->${ancestorId}`;
 
-    return createPortal(
-        <Box position="fixed" top={rect.y} left={rect.x} w={`${rect.w}px`} h={`${rect.h}px`} bg="#1e1e1e" border="1px solid color-mix(in srgb, #666 40%, transparent)" borderRadius="md" zIndex={99999} boxShadow="dark-lg" display="flex" flexDirection="column">
-            
-            <HStack h="30px" bg="rgba(40,40,40,0.95)" px={2} cursor="grab" onPointerDown={(e) => handlePointerDown(e, 'move')} borderBottom="1px solid rgba(255,255,255,0.1)">
-                <Text fontSize="12px" fontWeight="600" color="white"
-                  // @ts-expect-error
-                  noOfLines={1} pointerEvents="none">
-                    {type === 'root' ? 'Root' : id}
-                </Text>
-                
-                {/* Вставляем статистику прямо сюда */}
-                <HStack gap="3" fontSize="10px" fontWeight="normal" ml={3} mr={3} pointerEvents="none">
-                    <Text color="blue.400">New: {stats.newCnt}</Text>
-                    <Text color="red.400">Due: {stats.dueCnt}</Text>
-                    <Text color="green.400">Learned: {stats.learnedCnt}</Text>
-                </HStack>
-                
-                <Spacer pointerEvents="none" />
-                <Button size="xs" height="20px" variant="subtle" colorPalette="blue" onClick={(e) => { e.stopPropagation(); onRepeat?.(); }}>Repeat</Button>
-                <IconButton aria-label="Delete" size="xs" height="20px" minW="20px" variant="ghost" colorPalette="red" onClick={(e) => { e.stopPropagation(); onDelete?.(); }}><MdDelete/></IconButton>
-                <IconButton aria-label="Close" size="xs" height="20px" minW="20px" variant="ghost" onClick={(e) => { e.stopPropagation(); onClose?.(); }}><MdClose/></IconButton>
-            </HStack>
+			if (ancestorId !== descendantId && !seenEdges.has(edgeId)) {
+				if (baseNsMap.has(ancestorId) && baseNsMap.has(descendantId)) {
+					seenEdges.add(edgeId);
+					cleanEs.push({
+						id: edgeId,
+						source: descendantId,
+						target: ancestorId,
+					});
+				}
+			}
+		});
 
-            <Box position="relative" flex={1}>
-              <GraphRenderer
-                 ref={rendererRef}
-                 reactflowNs={reactflowNs}
-                 reactflowEs={reactflowEs}
-                 ns={miniNs}
-                 groups={miniGroups}
-                 repeats={repeats}
-                 selectedIds={new Set([id])}
-              />
-            </Box>
+		const mGroups: any = {};
+		const collectGroupColors = (nodes: any[]) => {
+			nodes.forEach((n: any) => {
+				if (n.type === 'group') {
+					mGroups[n.id] = { color: n.metainfo?.color };
+					collectGroupColors(n.children);
+				}
+			});
+		};
+		collectGroupColors(rootChildren);
 
-            <ResizeHandle cursor="ew-resize" top={'-16px'} bottom={0} left={'-16px'} w="16px" onDown={(e: any) => handlePointerDown(e, 'w')} />
-            <ResizeHandle cursor="ew-resize" top={'-16px'} bottom={0} right={'-16px'} w="16px" onDown={(e: any) => handlePointerDown(e, 'e')} />
-            <ResizeHandle cursor="ns-resize" left={0} right={0} top={'-16px'} h="16px" onDown={(e: any) => handlePointerDown(e, 'n')} />
-            <ResizeHandle cursor="ns-resize" left={0} right={0} bottom={'-16px'} h="16px" onDown={(e: any) => handlePointerDown(e, 's')} />
-            <ResizeHandle cursor="nwse-resize" top={'-16px'} left={'-16px'} w="16px" h="16px" onDown={(e: any) => handlePointerDown(e, 'nw')} />
-            <ResizeHandle cursor="nesw-resize" top={'-16px'} right={'-16px'} w="16px" h="16px" onDown={(e: any) => handlePointerDown(e, 'ne')} />
-            <ResizeHandle cursor="nesw-resize" bottom={'-16px'} left={'-16px'} w="16px" h="16px" onDown={(e: any) => handlePointerDown(e, 'sw')} />
-            <ResizeHandle cursor="nwse-resize" bottom={'-16px'} right={'-16px'} w="16px" h="16px" onDown={(e: any) => handlePointerDown(e, 'se')} />
-        </Box>,
-        document.body
-    );
+		return [cleanNs, cleanEs, mNs, mGroups];
+	}, [expandedIds, activeNs, ns, groupColorByLabel]);
+
+	const depsMap = useMemo(() => buildDependencyGraph(activeNs), [activeNs]);
+
+	const nodeStatusMap = useMemo(() => {
+		const map: Record<string, any> = {};
+		Object.keys(miniNs).forEach(n => {
+			let st: any = { isLocked: false, isNew: true, isDue: false, isLearned: false, level: 0 };
+			try { st = getCardState(n, ns, repeats, depsMap); } catch (e) {}
+			map[n] = { ...st, category: classifyCardStatus(st) };
+		});
+		return map;
+	}, [miniNs, ns, repeats, depsMap]);
+
+	const stats = useMemo(() => {
+		const counts: Record<string, number> = { new: 0, due: 0, learned: 0, waiting: 0, locked: 0 };
+		Object.values(nodeStatusMap).forEach((st: any) => {
+			counts[st.category] = (counts[st.category] || 0) + 1;
+		});
+		return counts;
+	}, [nodeStatusMap]);
+
+	const [hiddenCategories, setHiddenCategories] = useState<Set<string>>(new Set());
+	const toggleCategory = (key: string) => {
+		setHiddenCategories(prev => {
+			const next = new Set(prev);
+			if (next.has(key)) next.delete(key); else next.add(key);
+			return next;
+		});
+	};
+
+	useEffect(() => {
+		let cancelled = false;
+		const timer = setTimeout(() => {
+			if (cancelled) return;
+			try { rendererRef.current?.animatedReset?.({ duration: 200 }); } catch (e) {}
+		}, 50);
+		return () => { cancelled = true; clearTimeout(timer); };
+	}, [reactflowNs]);
+
+	const rectRef = useRef({ x: 0, y: 0, w: 400, h: 300 });
+	const [rect, setRectState] = useState(rectRef.current);
+	const setRect = (newRect: any) => { rectRef.current = newRect; setRectState(newRect); };
+
+	useEffect(() => {
+		const w = 400; const h = 300;
+		let finalX = Math.min(x + 15, window.innerWidth - w - 15);
+		finalX = Math.max(15, finalX);
+		let finalY = Math.min(y + 15, window.innerHeight - h - 15);
+		finalY = Math.max(15, finalY);
+		setRect({ x: finalX, y: finalY, w, h });
+	}, [x, y]);
+
+	const handlePointerDown = (e: React.PointerEvent, action: string) => {
+		e.preventDefault();
+		e.stopPropagation();
+		const startX = e.clientX;
+		const startY = e.clientY;
+		const startRect = { ...rectRef.current };
+		const handleMove = (moveEvent: PointerEvent) => {
+			const dx = moveEvent.clientX - startX;
+			const dy = moveEvent.clientY - startY;
+			let { x, y, w, h } = startRect;
+			if (action === 'move') {
+				x += dx;
+				y += dy;
+			} else {
+				if (action.includes('e')) w += dx;
+				if (action.includes('s')) h += dy;
+				if (action.includes('w')) { x += dx; w -= dx; }
+				if (action.includes('n')) { y += dy; h -= dy; }
+				if (w < 200) { if (action.includes('w')) x += (w - 200); w = 200; }
+				if (h < 150) { if (action.includes('n')) y += (h - 150); h = 150; }
+			}
+			setRect({ x, y, w, h });
+		};
+		const handleUp = () => {
+			window.removeEventListener('pointermove', handleMove);
+			window.removeEventListener('pointerup', handleUp);
+		};
+		window.addEventListener('pointermove', handleMove);
+		window.addEventListener('pointerup', handleUp);
+	};
+
+	const cssStyles = [minigraphCSS]
+	const floatCSS = css`
+position: fixed;
+top: ${rect.y}px;
+left: ${rect.x}px;
+width: ${rect.w}px;
+height: ${rect.h}px;
+	`;
+
+	if (isFloat) cssStyles.push(floatCSS);
+
+	const title = ids.length === 1 ? ids[0] : `${ids.length} elements`;
+
+	const innerMinigraphComponent = (
+		<Box css={cssStyles}>
+			{/* Собственная строка-заголовок нужна только для плавающего (float) режима — там она же
+			    служит хэндлом для драга окна. Во встроенном режиме (используется как фон под шапкой)
+			    она не нужна и раньше просто дублировала заголовок страницы. */}
+			{isFloat && (
+				<HStack className={'panel'} onPointerDown={(e)=>handlePointerDown(e,'move')}>
+					<p>{title}</p>
+					<Spacer pointerEvents="none" />
+				</HStack>
+			)}
+
+			<Box position="relative" flex={1}>
+				<GraphRenderer
+					ref={rendererRef}
+					reactflowNs={reactflowNs}
+					reactflowEs={reactflowEs}
+					ns={miniNs}
+					groups={miniGroups}
+					repeats={repeats}
+					selectedIds={selectedNodeIds}
+					nodeStatuses={nodeStatusMap}
+					hiddenCategories={hiddenCategories}
+				/>
+
+				<HStack
+					position="absolute"
+					bottom="10px"
+					left="50%"
+					transform="translateX(-50%)"
+					zIndex={10}
+					gap="6px"
+					// bg="rgba(20,20,20,0.85)"
+					bg={'var(--chakra-colors-bg)'}
+					borderRadius="6px"
+					px="8px"
+					py="4px"
+					onPointerDown={(e) => e.stopPropagation()}
+				>
+					{CARD_CATEGORIES.map(cat => {
+						const isOff = hiddenCategories.has(cat.key);
+						return (
+							<HStack
+								key={cat.key}
+								gap="4px"
+								px="6px"
+								py="2px"
+								borderRadius="4px"
+								cursor="pointer"
+								userSelect="none"
+								opacity={isOff ? 0.4 : 1}
+								_hover={{ opacity: isOff ? 0.6 : 0.85 }}
+								onClick={() => toggleCategory(cat.key)}
+							>
+								<Box
+									w="10px" h="10px"
+									borderRadius="2px"
+									border={`1px solid ${cat.color}`}
+									bg={isOff ? 'transparent' : cat.color}
+									flexShrink={0}
+								/>
+								<Box as="span" fontSize="10px" whiteSpace="nowrap">
+									{cat.label}: {stats[cat.key] || 0}
+								</Box>
+							</HStack>
+						);
+					})}
+
+					<Box w="1px" h="16px" bg="color-mix(in srgb, var(--chakra-colors-bg-inverted) 10%, transparent)" mx="2px" />
+
+					<IconButton
+						aria-label="Delete" size="xs" height="20px" minW="20px" variant="ghost" colorPalette="red"
+						onClick={(e) => { e.stopPropagation(); editorRef?.current?.onDelete?.(ids); }}
+					><MdDelete/>
+					</IconButton>
+
+					<IconButton
+						aria-label="Close" size="xs" height="20px" minW="20px" variant="ghost"
+						onClick={(e)=>{e.stopPropagation(); editorRef?.current?.onClose?.();}}
+					><MdClose/></IconButton>
+				</HStack>
+			</Box>
+
+			{isFloat && (
+				<>
+					<ResizeHandle cursor="ew-resize"   top={'-16px'}    left ={'-16px'} bottom={0} w="16px" onDown={(e: any) => handlePointerDown(e, 'w')} />
+					<ResizeHandle cursor="nwse-resize" top={'-16px'}    left ={'-16px'} w="16px"   h="16px" onDown={(e: any) => handlePointerDown(e, 'nw')} />
+					<ResizeHandle cursor="ew-resize"   top={'-16px'}    right={'-16px'} bottom={0} w="16px" onDown={(e: any) => handlePointerDown(e, 'e')} />
+					<ResizeHandle cursor="ns-resize"   top={'-16px'}    right={0}       left={0}   h="16px" onDown={(e: any) => handlePointerDown(e, 'n')} />
+					<ResizeHandle cursor="nesw-resize" top={'-16px'}    right={'-16px'} w="16px"   h="16px" onDown={(e: any) => handlePointerDown(e, 'ne')} />
+					<ResizeHandle cursor="nwse-resize" bottom={'-16px'} right={'-16px'} w="16px"   h="16px" onDown={(e: any) => handlePointerDown(e, 'se')} />
+					<ResizeHandle cursor="ns-resize"   bottom={'-16px'} left ={0}       right={0}  h="16px" onDown={(e: any) => handlePointerDown(e, 's')} />
+					<ResizeHandle cursor="nesw-resize" bottom={'-16px'} left ={'-16px'} w="16px"   h="16px" onDown={(e: any) => handlePointerDown(e, 'sw')} />
+				</>
+			)}
+		</Box>
+	)
+
+	if (isFloat) {
+		return createPortal(
+			innerMinigraphComponent,
+			document.body
+		)
+	}
+
+	return innerMinigraphComponent;
 });
