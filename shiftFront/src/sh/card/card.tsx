@@ -28,7 +28,9 @@ import {
   Clip
 } from '../clip';
 import {
+  EditorImageResizer,
   getGroupTp,
+  handleEditorPaste,
   OPTION_SPLIT_SYM,
   Sh,
   SIDE_SPLIT_SYM,
@@ -56,8 +58,12 @@ export const dropMenuCSS=css`
 .menuFrame{
   position: fixed;
   backdrop-filter:blur(20px);
-  background-color: color-mix(in srgb, #223 60%, transparent);
-  border: 1px solid color-mix(in srgb, #666 60%, transparent);
+  // background-color: color-mix(in srgb, #223 60%, transparent);
+  // border: 1px solid color-mix(in srgb, #666 60%, transparent);
+  
+  background-color: var(--chakra-colors-bg);
+  border: 1px solid color-mix(in srgb, var(--chakra-colors-bg-inverted) 3%, var(--chakra-colors-bg));
+  
   border-radius: 5px;
   padding: 5px;
   max-height: 200px;
@@ -92,7 +98,7 @@ export const dropMenuCSS=css`
 
 export const contentCSS = css`
 position: relative;
-
+// background: color-mix(in srgb, white 5%, transparent);
 width: 100%;
 
 em, i {
@@ -560,6 +566,8 @@ export const Card = forwardRef(({
 
   const gCtx=useGraphCtx()as any;
   const{ns,updateCardContent}=gCtx;
+
+  const [isAltPressed, setIsAltPressed] = useState(false);
   // content to displays
   const [c,setC]=useState(content||'empty');
   // if hovered - display upper tools
@@ -575,9 +583,11 @@ export const Card = forwardRef(({
   // current zoom of card's content (sz in px)
   const [fontSize,setFontSize]=useState(options.fontSize?options.fontSize:12) as any;
   // const [visualize,setVisualize]=useState(false) as any;
+    // ... ваши существующие стейты
   const [like,setLike]=useState(12) as any;
   // ref of editable div
   const inputRef=useRef(null) as any;
+  const [activeImg, setActiveImg] = useState<HTMLImageElement | null>(null);
   const groupTp: GroupTp = getGroupTp(c);
   // ctx of the card
   const cardCtx = useMemo(()=>({
@@ -613,10 +623,57 @@ export const Card = forwardRef(({
     setMentionMenu(prev => ({ ...prev, isOpen: false, query: '' }));
   },[mentionMenu]);
 
+  // const mentionMenuItems = useMemo(() => {
+  //   const q = mentionMenu.query.toLowerCase();
+  //   const opts: MenuItem[] =[];
+  //   Object.keys(ns).forEach(nid => {
+  //     const cardContent = ns[nid] || '';
+  //     const fwdText = cardContent.split('\n')[0] || 'empty';
+      
+  //     if (fwdText.toLowerCase().includes(q) || nid.toLowerCase().includes(q)) {
+  //       const cardOpts = cardContent.split(OPTION_SPLIT_SYM);
+        
+  //       if (cardOpts.length > 1) {
+  //         // Если есть варианты выбора, делаем вложенное меню
+  //         opts.push({
+  //           id: nid,
+  //           el: fwdText,
+  //           children: cardOpts.map((optStr: any, i: number) => {
+  //             const optFwd = optStr.split(SIDE_SPLIT_SYM)[0].trim();
+  //             const optText = optFwd.split('\n')[0] || `Option ${i + 1}`;
+  //             return {
+  //               id: `${nid}:${i}`,
+  //               el: optText,
+  //               onClick: () => insertMention({ id: `${nid}:${i}`, text: optText })
+  //             };
+  //           })
+  //         });
+  //       } else {
+  //         // Прямая вставка для обычной карточки
+  //         opts.push({
+  //           id: nid,
+  //           el: fwdText,
+  //           onClick: () => insertMention({ id: nid, text: fwdText })
+  //         });
+  //       }
+  //     }
+  //   });
+
+  //   if (opts.length === 0) {
+  //     opts.push({ id: 'no-results', el: <Text className='tip'>no cards match</Text>, disabled: true });
+  //   }
+
+  //   return opts;
+  // }, [ns, mentionMenu.query, insertMention]);
+
   const mentionMenuItems = useMemo(() => {
     const q = mentionMenu.query.toLowerCase();
     const opts: MenuItem[] =[];
+    
     Object.keys(ns).forEach(nid => {
+      // ИСПРАВЛЕНИЕ: Пропускаем саму карточку, чтобы она не могла сослаться на себя
+      if (nid === id) return;
+
       const cardContent = ns[nid] || '';
       const fwdText = cardContent.split('\n')[0] || 'empty';
       
@@ -654,8 +711,7 @@ export const Card = forwardRef(({
     }
 
     return opts;
-  }, [ns, mentionMenu.query, insertMention]);
-
+  }, [ns, mentionMenu.query, insertMention, id]); // <-- ИСПРАВЛЕНИЕ: добавили `id` в зависимости
 
   // list[str]: of forward sides of card-group
   const fwdParts = groupTp==='multiple_bwd'? c
@@ -689,6 +745,8 @@ export const Card = forwardRef(({
     'multiple': c.split(OPTION_SPLIT_SYM)[option],
   })
 
+  const hasBwd = innerC.split(SIDE_SPLIT_SYM).length > 1;
+
 
   // str: cur backward side of the card
   let bwd_content:string = (hide===false||options.twoSides===true)
@@ -697,71 +755,103 @@ export const Card = forwardRef(({
 
   const isHTML_set = useRef(false);
 
-  const onBlurCb = async () => {
-    const newC: string = [...inputRef.current.children]
-      .map((ch: any) => {
-        if (ch.children.length >= 1) {
-          return [...ch.childNodes].map((n: any) => {
-            if (n.id && n.className === 'inlineCell') {
-              const parts = n.id.split(':');
-              return parts.length === 2 ? `<id=${parts[0]}:${parts[1]}>` : `<id=${n.id}>`;
-            }
-            return n.nodeType === Node.TEXT_NODE ? n.textContent : n.textContent;
-          }).join('');
-        }
-        return ch.innerText;
-      })
-      .join('\n');
+  const extractContent = (node: any): string => {
+    if (node.nodeType === Node.TEXT_NODE) return node.textContent || '';
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      const el = node as HTMLElement;
+      
+      if (el.tagName === 'IMG') {
+        // Гарантируем чистое сохранение картинки с ее шириной
+        return `<img src="${el.getAttribute('src')}" style="${el.getAttribute('style')}" />`; 
+      }
+
+      if (el.tagName === 'HR' && el.classList.contains('clipper-split')) {
+        return '\n~~~\n'; // Превращаем визуальный сплиттер в обычный разделитель, чтобы сработал saveContentOnly
+      }
+
+      if (el.classList.contains('inlineCell')) {
+        const parts = el.id.split(':');
+        return parts.length === 2 ? `<id=${parts[0]}:${parts[1]}>` : `<id=${el.id}>`;
+      }
+      
+      if (el.tagName === 'BR') return '\n';
+      
+      let inner = Array.from(el.childNodes).map(extractContent).join('');
+      if (el.tagName === 'DIV' || el.tagName === 'P') return '\n' + inner;
+      return inner;
+    }
+    return '';
+  };
+
+  const saveContentOnly = () => {
+    if (!inputRef.current) return;
+    
+    let newC = Array.from(inputRef.current.childNodes)
+      .map(extractContent)
+      .join('')
+      .replace(/^\n+/, '')
+      .trimEnd();
 
     const chunks = newC.split('~~~');
-    const currentCardContent = chunks[0];
+    const currentCardContent = chunks[0].trimEnd(); 
     const currentCardId = path[path.length-1];
 
-    // Парсим карточки, которые юзер хочет создать пачкой (через ~~~)
     const newBlocksToInsert: any[] = [];
-    
     for (let i = 1; i < chunks.length; i++) {
-      const chunk = chunks[i];
-      const newlineIndex = chunk.indexOf('\n');
-      let newId = '', newText = '';
+      // Убираем лишние переносы строк в начале отрезанного куска
+      const chunk = chunks[i].replace(/^\n+/, ''); 
       
-      if (newlineIndex === -1) {
-        newId = chunk;
-      } else {
-        newId = chunk.substring(0, newlineIndex).trim();
-        newText = chunk.substring(newlineIndex + 1);
-      }
+      const newText = chunk.trimEnd(); // Весь текст уходит в контент, ничего не съедается!
+      
+      // Если кусок после ~~~ оказался полностью пустым (одни пробелы), пропускаем его
+      if (!newText.trim()) continue;
 
-      const finalId = resolveCardId(newId, newText);
+      // Передаем пустую строку первым аргументом, resolveCardId сам сгенерирует уникальный ID
+      const finalId = resolveCardId('', newText);
       if (finalId) {
-        // Формируем структуру блока для дерева
-        newBlocksToInsert.push({ 
-          id: finalId, 
-          type: 'card', 
-          metainfo: { content: newText } 
-        });
+        newBlocksToInsert.push({ id: finalId, type: 'card', metainfo: { content: newText } });
       }
     }
 
-    // 1. Обновляем локальный стейт (чтобы UI моргнул мгновенно)
+    if (chunks.length > 1) {
+      isHTML_set.current = false;
+    }
+
     setC(currentCardContent);
     
-    // 2. ОТПРАВЛЯЕМ ИЗМЕНЕНИЯ В ЦЕНТРАЛЬНОЕ ДЕРЕВО (Singular Source of Truth)
-    if (updateCardContent) {
-      updateCardContent(currentCardId, currentCardContent, newBlocksToInsert);
-    } else {
-      // console.log('options:',options.onBlur)
-      console.warn("updateCardContent is missing in GraphCtx!");
-      options.onBlur(currentCardContent)
-    }
+    if (updateCardContent) updateCardContent(currentCardId, currentCardContent, newBlocksToInsert);
+    else options.onBlur(currentCardContent);
 
-    // 3. Вызываем внешний хук (если кто-то ждет новых ID)
     if (options.onCardsCreated && newBlocksToInsert.length > 0) {
-      options.onCardsCreated(newBlocksToInsert.map(b => b.id));
+      options.onCardsCreated(newBlocksToInsert.map((b:any) => b.id));
+    }
+  };
+
+  // ИСПРАВЛЕНИЕ 1: Защита от закрытия редактора при ресайзе и кропе
+  const onBlurCb = async (e?: React.FocusEvent) => {
+    console.log("???")
+    if (options.twoSides) {
+      return
+    }
+    // 1. Проверяем, куда ушел фокус. Если на элементы рамки или кропера — отбой.
+    const related = e?.relatedTarget as HTMLElement;
+    if (related && (related.closest('.cropper-overlay') || related.closest('.resizer-handle'))) {
+      return;
     }
 
+    // 2. Проверяем глобально, открыт ли кропер (он рендерится через портал)
+    if (document.querySelector('.cropper-overlay')) {
+      return;
+    }
+
+    saveContentOnly();
+    
     if (options.twoSides === false) {
-      setIsEdit(false);
+      setTimeout(() => {
+        // Двойная защита от асинхронного закрытия
+        if (document.querySelector('.cropper-overlay')) return;
+        setIsEdit(false);
+      }, 50);
     }
   };
 
@@ -823,6 +913,51 @@ export const Card = forwardRef(({
   };
 
 
+  useEffect(() => {
+    // Включаем логику только если карточка является Root-эдитором (twoSides = true)
+    if (options?.twoSides !== true) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Alt' && !isAltPressed) {
+        // ПРОВЕРКА ФОКУСА: 
+        // Если активный элемент на странице не является нашим редактором 
+        // и не находится внутри него — игнорируем нажатие Alt для этой карты.
+        const hasFocus = inputRef.current && (
+          document.activeElement === inputRef.current || 
+          inputRef.current.contains(document.activeElement)
+        );
+
+        if (!hasFocus) return;
+        if (inputRef.current) {
+          e.stopPropagation();
+          e.preventDefault();
+          let newC = Array.from(inputRef.current.childNodes)
+            .map(extractContent).join('').replace(/^\n+/, '').trimEnd();
+          setC(newC.split('~~~')[0]);
+        }
+        setIsAltPressed(true);
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'Alt') {
+        setIsAltPressed(false);
+      }
+    };
+
+    const handleBlur = () => setIsAltPressed(false);
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', handleBlur);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', handleBlur);
+    };
+  }, [isAltPressed, options?.twoSides, extractContent]);
+
+
   const OptionSwitcher:any=(<>
     {(groupTp!=="multiple_fwd")&&(
       <Accordion.Root collapsible defaultValue={[""]}
@@ -834,16 +969,19 @@ export const Card = forwardRef(({
       >
         <Accordion.Item value={fwdParts[option]}>
           <Accordion.ItemTrigger className='optionsTrigger'>
-            <Box w={'100%'} fontWeight={600} onClick={(e:any)=>{
+            <Box w={'100%'}
+              onClick={(e:any)=>{
                 e.stopPropagation()
                 e.preventDefault()
                 setHide((h:any)=>!h)
               }}
-              onDoubleClick={()=>(
-                setIsEdit(true)
-              )}
-              fontSize={`${fontSize}px`}
-              >
+              onDoubleClick={()=>{
+                setIsEdit(true);
+              }}
+
+              fontWeight={hasBwd? 500:'var(--title-weight, 300)'}
+              fontSize={hasBwd? `${fontSize + 3}px` : `var(--title-fs, ${fontSize}px)`}
+            >
               {path.length>1&&(
                 <Box pl={'4px'} m={0}>
                   <CardPath path={path}/>
@@ -852,10 +990,7 @@ export const Card = forwardRef(({
             </Box>
             {fwdParts.length>1&&(
               <Accordion.ItemIndicator mr={'5px'} >
-                <Box
-                  p={'0px'}
-                >
-                  {/* <Box w={'5px'} h={'5px'} bgColor={'whiteAlpha.300'} borderRadius={'5px'}/> */}
+                <Box p={'0px'}>
                   <LuScan size={'4px'} style={{height: '8px', minHeight: '8px', minWidth: '8px'}} opacity={0.3}/>
                 </Box>
               </Accordion.ItemIndicator>
@@ -895,39 +1030,75 @@ export const Card = forwardRef(({
 
 
   // Editor card's code 
-  const TextBox=<div
-    ref={inputRef}
-    role='textbox'
-    contentEditable
-    suppressContentEditableWarning={true}
-    defaultValue={c}
-    onBlur={onBlurCb}
-    onKeyDown={localOnKeyDown}
-    style={{
-      width:'100%',
-      marginTop: options.twoSides===true?'10px':0,
-      flex: 1,
-      padding: '0px 10px',
-    }}/>
+  const TextBox = (
+    <>
+      <div
+        ref={inputRef}
+        role='textbox'
+        contentEditable
+        suppressContentEditableWarning={true}
+        defaultValue={c}
+        onBlur={onBlurCb}
+        onKeyDown={localOnKeyDown}
+        onPaste={(e) => handleEditorPaste(e, saveContentOnly)}
+        onPointerDown={(e) => {
+          const target = e.target as HTMLElement;
+          if (target.tagName === 'IMG') {
+            setActiveImg(target as HTMLImageElement);
+          } else {
+            setActiveImg(null);
+          }
+        }}
+        style={{
+          width: '100%',
+          marginTop: options.twoSides === true ? '10px' : 0,
+          flex: 1,
+          padding: '0px 10px',
+          // lineHeight: '1.5em',
+          fontWeight: `var(--title-weight, 400)`,
+          fontSize: `var(--title-fs, ${fontSize}px)`,
+        }}
+      />
 
-  
-    const CardBody=(
+      {(isEdit || options?.twoSides) && (
+        <EditorImageResizer
+          activeImg={activeImg}
+          onClose={() => setActiveImg(null)}
+          onResizeEnd={saveContentOnly}
+        />
+      )}
+    </>
+  );
+
+
+  const PreviewBox = (
+      <Box flex={1} w={'100%'} minW={0} fontWeight={300} p={'0px'}
+        // fontSize={`${fontSize}px`}
+        fontSize={`var(--title-fs, ${fontSize}px)`}
+        lineHeight={'1em'}
+      >
+        {OptionSwitcher}
+        {(!hide && hasBwd)&& (
+          <Separator my={'8px'} mx={'0px'}
+            // borderColor={'color-mix(in srgb, white 3%, transparent)'}
+            borderColor={'transparent'}
+          />
+        )}
+        {hasBwd && (
+        <Sh value={bwd_content} />
+        )}
+      </Box>
+    );
+
+  const showPreview = isAltPressed || (options?.twoSides !== true && !isEdit);
+  const showTextBox = !isAltPressed && (options?.twoSides === true || isEdit);
+
+  const CardBody = (
     <div
       css={contentCSS}
       className={'editor'}
       onMouseEnter={()=>setHovered(true)}
       onMouseLeave={()=>setHovered(false)} 
-      onClick={async ()=>{
-        if (options.twoSides===false) {
-          // Проверяем, что нет активного выделения текста
-          const selection = window.getSelection();
-          const hasSelection = selection && selection.toString().length > 0;
-          
-          if (!hasSelection) {
-            setIsEdit(true);
-          }
-        }
-      }}
       style={{
         fontSize:`${fontSize}px`,
         padding:options.padding||'0px',
@@ -952,22 +1123,16 @@ export const Card = forwardRef(({
           gap={'5px'}
           borderRadius={'5px'}
           p={options?.twoSides===true && (!isEdit)? '10px 5px':'0'}
-          border={options?.twoSides===true && (!isEdit)? '1px solid white':'none'}
+          // border={options?.twoSides===true && (!isEdit)? '1px solid white':'none'}
         >
-          {/* If preview both edior and card at the same
-          time preview through the separator */}
-          {options?.twoSides===true&&(<>
-              {TextBox}
-          </>)}
-
-          {options?.twoSides===true && (!isEdit) && (
-            <Text fontSize={'9px'} opacity={0.2} color={'white'}>preview</Text>
-          )}
-          <Box
-            // bgColor={options?.twoSides===true && (!isEdit)? 'color-mix(in srgb, white 5%, transparent)': 'transparent'}
-            flex={1} w={'100%'} minW={0} fontWeight={300} p={'0px'} fontSize={`${fontSize}px`}>
-            {OptionSwitcher}
-            <Sh value={bwd_content} />
+          <Box 
+            w="100%" 
+            style={showTextBox ? { display: 'block' } : { position: 'absolute', opacity: 0, pointerEvents: 'none', height: 0, overflow: 'hidden' }}
+          >
+            {TextBox}
+          </Box>
+          <Box w="100%" display={showPreview ? 'block' : 'none'}>
+            {PreviewBox}
           </Box>
         </Box>
       )}
@@ -1026,7 +1191,7 @@ export const Card = forwardRef(({
       const mergedTxt = `${c.split('\n').map((t:any)=>{
         return t === ''
           ? `<br>`
-          : `<div class="sh_string"}>${t}</div>`;
+          : `<div class="sh_string">${t}</div>`;
       }).join('')}`;
       const html = mergedTxt
         .split(/(<id=[^>]*>)/)
@@ -1088,7 +1253,10 @@ export const Card = forwardRef(({
   // link inside card's code editor
   if (options?.inner===true) {
     const option = options?.option?options?.option:0; 
-    return (<span className='card_inline_link'>{fwdParts[option]}</span>)
+    return (<span className='card_inline_link'>
+      <Sh value={fwdParts[option]}/>
+      {/* {fwdParts[option]} */}
+    </span>)
   }
 
   return (

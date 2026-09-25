@@ -9,7 +9,6 @@ import type {
   Plugin
 } from 'unified';
 import type {
-  Text,
   Root
 } from 'mdast';
 import rehypeKatex from 'rehype-katex';
@@ -29,6 +28,411 @@ import dagre from 'dagre';
 import 'katex/dist/contrib/copy-tex';
 import remarkMath from 'remark-math';
 
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
+import ReactCrop, { type Crop } from 'react-image-crop';
+import 'react-image-crop/dist/ReactCrop.css';
+import { MdCrop } from "react-icons/md";
+import { Button } from '@chakra-ui/react';
+
+
+
+// utility.tsx
+
+export const handleEditorPaste = (
+  e: React.ClipboardEvent<HTMLDivElement>, 
+  onSaveContent: () => void
+) => {
+  const items = e.clipboardData?.items;
+  if (!items) return;
+
+  for (let i = 0; i < items.length; i++) {
+    if (items[i].type.indexOf('image') !== -1) {
+      e.preventDefault(); 
+      const file = items[i].getAsFile();
+      if (!file) continue;
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const base64 = event.target?.result as string;
+        // Добавлен alt, чтобы Markdown парсер точно понимал, что это картинка
+        const imgHtml = `<img src="${base64}" alt="pasted image" style="width: 400px; max-width: 100%; height: auto; display: inline-block; vertical-align: middle; margin: 5px 0; cursor: pointer;" class="sh-editable-image" />`;
+        document.execCommand('insertHTML', false, imgHtml);
+        
+        onSaveContent(); 
+      };
+      reader.readAsDataURL(file);
+      break; 
+    }
+  }
+};
+
+export const EditorImageResizer = ({ 
+  activeImg,
+  onClose,
+  onResizeEnd 
+}: { 
+  activeImg: HTMLImageElement | null,
+  onClose: () => void,
+  onResizeEnd: () => void 
+}) => {
+  const [imgRect, setImgRect] = useState({ top: 0, left: 0, width: 0, height: 0 });
+  const [cropTarget, setCropTarget] = useState<HTMLImageElement | null>(null);
+  const [crop, setCrop] = useState<Crop>();
+  const [completedCrop, setCompletedCrop] = useState<any>(null);
+  const cropImgRef = useRef<HTMLImageElement>(null);
+
+  const updateRect = useCallback(() => {
+    if (activeImg && !cropTarget) {
+      const r = activeImg.getBoundingClientRect();
+      setImgRect({ top: r.top, left: r.left, width: r.width, height: r.height });
+    }
+  }, [activeImg, cropTarget]);
+
+  useEffect(() => {
+    if (activeImg) {
+      updateRect();
+      window.addEventListener('resize', updateRect);
+      window.addEventListener('scroll', updateRect, true);
+      
+      const handleOutsideClick = (e: MouseEvent) => {
+        const target = e.target as HTMLElement;
+        // Игнорируем клики по рамке и кроперу
+        if (target !== activeImg && !target.closest('.ReactCrop') && !target.closest('.cropper-actions') && !target.closest('.resizer-handle')) {
+          onClose();
+        }
+      };
+      window.addEventListener('mousedown', handleOutsideClick);
+
+      return () => {
+        window.removeEventListener('resize', updateRect);
+        window.removeEventListener('scroll', updateRect, true);
+        window.removeEventListener('mousedown', handleOutsideClick);
+      };
+    }
+  }, [activeImg, updateRect, onClose]);
+
+  useEffect(() => {
+    if (!activeImg) return;
+    const handleDblClick = (e: MouseEvent) => {
+      e.preventDefault(); e.stopPropagation();
+      setCropTarget(activeImg);
+      setCrop({ unit: '%', width: 100, height: 100, x: 0, y: 0 });
+    };
+    activeImg.addEventListener('dblclick', handleDblClick);
+    return () => activeImg.removeEventListener('dblclick', handleDblClick);
+  }, [activeImg]);
+
+  const handleDragResize = (e: React.PointerEvent) => {
+    if (!activeImg) return;
+    e.preventDefault(); e.stopPropagation();
+
+    const startX = e.clientX;
+    const startW = activeImg.getBoundingClientRect().width;
+
+    const onMove = (moveEv: PointerEvent) => {
+      const dx = moveEv.clientX - startX;
+      activeImg.style.width = `${Math.max(50, startW + dx)}px`;
+      activeImg.style.height = 'auto';
+      updateRect();
+    };
+
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      onResizeEnd();
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  };
+
+  const saveCroppedImage = () => {
+    if (cropImgRef.current && completedCrop && completedCrop.width > 0 && completedCrop.height > 0 && cropTarget) {
+      const canvas = document.createElement('canvas');
+      const image = cropImgRef.current;
+      const scaleX = image.naturalWidth / image.width;
+      const scaleY = image.naturalHeight / image.height;
+      canvas.width = Math.floor(completedCrop.width * scaleX);
+      canvas.height = Math.floor(completedCrop.height * scaleY);
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(
+          image,
+          completedCrop.x * scaleX, completedCrop.y * scaleY,
+          completedCrop.width * scaleX, completedCrop.height * scaleY,
+          0, 0,
+          canvas.width, canvas.height
+        );
+        cropTarget.src = canvas.toDataURL('image/jpeg', 0.9);
+        setCropTarget(null);
+        onResizeEnd();
+      }
+    }
+  };
+
+  if (!activeImg) return null;
+
+  return (
+    <>
+      {!cropTarget && createPortal(
+        <div style={{ position: 'fixed', top: imgRect.top, left: imgRect.left, width: imgRect.width, height: imgRect.height, border: '2px dashed #0d99ff', pointerEvents: 'none', zIndex: 100000, boxSizing: 'border-box' }}>
+          <div 
+            className="resizer-handle e"
+            onPointerDown={(e) => handleDragResize(e)} 
+            onMouseDown={(e) => e.preventDefault()} // <-- Защита от потери фокуса редактора
+            title="Растянуть по ширине" 
+            tabIndex={-1}
+            style={{ position: 'absolute', background: '#0d99ff', border: '2px solid white', pointerEvents: 'auto', width: '10px', height: '24px', right: '-5px', top: '50%', transform: 'translateY(-50%)', borderRadius: '4px', cursor: 'ew-resize' }} 
+          />
+          <div 
+            className="resizer-handle se"
+            onPointerDown={(e) => handleDragResize(e)} 
+            onMouseDown={(e) => e.preventDefault()} // <-- Защита от потери фокуса редактора
+            title="Растянуть" 
+            tabIndex={-1}
+            style={{ position: 'absolute', background: '#0d99ff', border: '2px solid white', pointerEvents: 'auto', width: '14px', height: '14px', right: '-7px', bottom: '-7px', borderRadius: '50%', cursor: 'nwse-resize' }} 
+          />
+        </div>,
+        document.body
+      )}
+
+      {cropTarget && createPortal(
+        <div className="cropper-overlay" tabIndex={-1} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.9)', zIndex: 200000, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+          <div onMouseDown={(e) => e.stopPropagation()}>
+            <ReactCrop crop={crop} onChange={c => setCrop(c)} onComplete={c => setCompletedCrop(c)}>
+              <img
+                ref={cropImgRef}
+                src={cropTarget.src}
+                alt="Crop"
+                style={{ maxHeight: '70vh', objectFit: 'contain' }}
+                crossOrigin={cropTarget.src.startsWith('data:') ? undefined : "anonymous"}
+                onLoad={(e) => {
+                  const { width, height } = e.currentTarget;
+                  setCompletedCrop({ unit: 'px', width, height, x: 0, y: 0 });
+                }}
+              />
+            </ReactCrop>
+            <div className="cropper-actions" style={{ marginTop: '10px', display: 'flex', gap: '10px' }}>
+              <Button colorScheme="gray" onClick={() => setCropTarget(null)}>Cancel</Button>
+              <Button colorScheme="blue" onClick={saveCroppedImage}>
+                <MdCrop />
+                Done
+              </Button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+    </>
+  );
+};
+
+// ИСПРАВЛЕНИЕ: Мы достаем `node` из пропсов, чтобы он не попадал в HTML атрибуты картинки как [object Object]
+export const InteractiveImage = ({ src, alt, width: propWidth, style, node, ...props }: any) => {
+  const [active, setActive] = useState(false);
+  const [rect, setRect] = useState({ top: 0, left: 0, width: 0, height: 0 });
+  const [cropTarget, setCropTarget] = useState<string | null>(null);
+  const [crop, setCrop] = useState<Crop>();
+  const [completedCrop, setCompletedCrop] = useState<any>(null);
+  
+  let parsedStyle: any = {};
+  let initialWidth = propWidth || 'auto';
+  
+  if (typeof style === 'object' && style !== null) {
+    parsedStyle = { ...style };
+    if (style.width) initialWidth = style.width;
+  } else if (typeof style === 'string') {
+    const match = style.match(/width:\s*([^;]+)/);
+    if (match) initialWidth = match[1].trim();
+  }
+
+  const [width, setWidth] = useState<number | string>(initialWidth);
+  const [currentSrc, setCurrentSrc] = useState(src);
+  
+  // ИСПРАВЛЕНИЕ: Если картинка пришла из Markdown, и она обновилась — синхронизируем src
+  useEffect(() => {
+    setCurrentSrc(src);
+  }, [src]);
+
+  const imgRef = useRef<HTMLImageElement>(null);
+  const cropImgRef = useRef<HTMLImageElement>(null);
+
+  const updateRect = useCallback(() => {
+    if (imgRef.current) {
+      const r = imgRef.current.getBoundingClientRect();
+      setRect({ top: r.top, left: r.left, width: r.width, height: r.height });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (active) {
+      updateRect();
+      window.addEventListener('resize', updateRect);
+      window.addEventListener('scroll', updateRect, true);
+      return () => {
+        window.removeEventListener('resize', updateRect);
+        window.removeEventListener('scroll', updateRect, true);
+      };
+    }
+  }, [active, updateRect]);
+
+  useEffect(() => {
+    const img = imgRef.current;
+    if (!img) return;
+    const handlePointerDown = (e: MouseEvent) => {
+      e.stopPropagation(); setActive(true); updateRect();
+    };
+    const handleDblClick = (e: MouseEvent) => {
+      e.stopPropagation(); setCropTarget(currentSrc);
+      setCrop({ unit: '%', width: 100, height: 100, x: 0, y: 0 });
+    };
+    const handleDragStart = (e: Event) => e.preventDefault(); 
+    img.addEventListener('pointerdown', handlePointerDown);
+    img.addEventListener('dblclick', handleDblClick);
+    img.addEventListener('dragstart', handleDragStart);
+    return () => {
+      img.removeEventListener('pointerdown', handlePointerDown);
+      img.removeEventListener('dblclick', handleDblClick);
+      img.removeEventListener('dragstart', handleDragStart);
+    };
+  }, [currentSrc, updateRect]);
+
+  useEffect(() => {
+    if (!active) return;
+    const handleClick = (e: MouseEvent) => {
+      if (imgRef.current && !imgRef.current.contains(e.target as Node)) {
+        setActive(false);
+      }
+    };
+    document.addEventListener('pointerdown', handleClick);
+    return () => document.removeEventListener('pointerdown', handleClick);
+  }, [active]);
+
+  const handleLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    const img = e.currentTarget;
+    if (width === 'auto' && !parsedStyle?.width && !propWidth) {
+      if (img.naturalWidth > 400) setWidth(400);
+      else if (img.naturalWidth > 0) setWidth(img.naturalWidth);
+    }
+    if (active) updateRect();
+  };
+
+  const handleDragResize = (e: React.PointerEvent) => {
+    e.preventDefault(); e.stopPropagation();
+    if (!imgRef.current) return;
+    const startX = e.clientX;
+    const startW = imgRef.current.getBoundingClientRect().width;
+    
+    const onMove = (moveEv: PointerEvent) => {
+      const dx = moveEv.clientX - startX;
+      setWidth(Math.max(50, startW + dx));
+      updateRect();
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  };
+
+  const saveCroppedImage = () => {
+    if (cropImgRef.current && completedCrop && completedCrop.width > 0 && completedCrop.height > 0) {
+      const canvas = document.createElement('canvas');
+      const image = cropImgRef.current;
+      const scaleX = image.naturalWidth / image.width;
+      const scaleY = image.naturalHeight / image.height;
+      
+      canvas.width = Math.floor(completedCrop.width * scaleX);
+      canvas.height = Math.floor(completedCrop.height * scaleY);
+      const ctx = canvas.getContext('2d');
+
+      if (ctx) {
+        ctx.drawImage(
+          image,
+          completedCrop.x * scaleX, completedCrop.y * scaleY,
+          completedCrop.width * scaleX, completedCrop.height * scaleY,
+          0, 0,
+          canvas.width, canvas.height
+        );
+        setCurrentSrc(canvas.toDataURL('image/jpeg', 0.9)); 
+        setCropTarget(null);
+        setActive(false);
+      }
+    }
+  };
+
+  return (
+    <>
+      <img
+        ref={imgRef}
+        src={currentSrc}
+        alt={alt}
+        onLoad={handleLoad}
+        style={{ 
+          ...parsedStyle, 
+          width: typeof width === 'number' ? `${width}px` : width, 
+          height: 'auto', 
+          maxWidth: '100%', 
+          borderRadius: '4px', 
+          cursor: 'pointer',
+          display: 'inline-block',
+          verticalAlign: 'middle',
+          margin: '5px 0'
+        }}
+        {...props}
+      />
+
+      {active && createPortal(
+        <div style={{ position: 'fixed', top: rect.top, left: rect.left, width: rect.width, height: rect.height, border: '2px dashed #0d99ff', pointerEvents: 'none', zIndex: 10000, boxSizing: 'border-box' }}>
+          <div onPointerDown={(e) => handleDragResize(e)} title="Растянуть по ширине" style={{ position: 'absolute', background: '#0d99ff', border: '2px solid white', pointerEvents: 'auto', width: '10px', height: '24px', right: '-5px', top: '50%', transform: 'translateY(-50%)', borderRadius: '4px', cursor: 'ew-resize' }} />
+          <div onPointerDown={(e) => handleDragResize(e)} title="Растянуть" style={{ position: 'absolute', background: '#0d99ff', border: '2px solid white', pointerEvents: 'auto', width: '14px', height: '14px', right: '-7px', bottom: '-7px', borderRadius: '50%', cursor: 'nwse-resize' }} />
+        </div>,
+        document.body
+      )}
+
+      {cropTarget && createPortal(
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.9)', zIndex: 20000, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+          <ReactCrop crop={crop} onChange={c => setCrop(c)} onComplete={c => setCompletedCrop(c)}>
+            <img
+              ref={cropImgRef}
+              src={cropTarget}
+              alt="Crop"
+              style={{ maxHeight: '70vh', objectFit: 'contain' }}
+              crossOrigin={currentSrc?.startsWith('data:') ? undefined : "anonymous"}
+              onLoad={(e) => {
+                const { width, height } = e.currentTarget;
+                setCompletedCrop({ unit: 'px', width, height, x: 0, y: 0 });
+              }}
+            />
+          </ReactCrop>
+          <div style={{ marginTop: '10px', display: 'flex', gap: '10px' }}>
+            <Button colorScheme="gray" onClick={() => setCropTarget(null)}>Cancel</Button>
+            <Button colorScheme="blue" onClick={saveCroppedImage}>
+              <MdCrop />
+              Done
+            </Button>
+          </div>
+        </div>,
+        document.body
+      )}
+    </>
+  );
+};
+
+// ... Остальные константы без изменений ...
+
+// ... ваш существующий код ...
+
+// export const shComponents: Components = {
+//   h1: ({ node, ...props }:any) => <h1 style={{ ...headingStyles, fontSize: '2em', borderBottom: '1px solid #ddd' }} {...props} />,
+//   // ... (остальные компоненты) ...
+//   li: ({ node, ...props }) => <li style={{ marginBottom: '0.4em' }} {...props} />,
+//   code: CodeBlock,
+//   img: InteractiveImage, // <---- ДОБАВЛЯЕМ СЮДА
+// };
+
 
 export const SIDE_SPLIT_SYM: string = '@@@';
 export const OPTION_SPLIT_SYM: string = '===';
@@ -43,17 +447,20 @@ export const Sh = ({ value }: any) => {
   };
   const safeValue = typeof value === 'string' ? value : value;
   return (
-    <ReactMarkdown
-      remarkPlugins={[
-        remarkMath,
-        shRemark,
-        remarkGfm
-      ]}
-      rehypePlugins={[rehypeRaw, rehypeKatex, rehypeHighlight]}
-      components={shComponents}
-    >
-      {safeValue}
-    </ReactMarkdown>
+    <span style={{ whiteSpace: 'normal' }}>
+      <ReactMarkdown
+        urlTransform={(url: string) => url} // ИСПРАВЛЕНИЕ: Отключаем удаление Base64-картинок парсером Markdown!
+        remarkPlugins={[
+          remarkMath,
+          shRemark,
+          remarkGfm
+        ]}
+        rehypePlugins={[rehypeRaw, rehypeKatex, rehypeHighlight]}
+        components={shComponents}
+      >
+        {safeValue}
+      </ReactMarkdown>
+    </span>
   );
 };
 
@@ -203,16 +610,34 @@ export const shComponents: Components = {
   h4: ({ node, ...props }) => <h4 style={{ ...headingStyles, fontSize: '1em' }} {...props} />,
   h5: ({ node, ...props }) => <h5 style={{ ...headingStyles, fontSize: '0.875em', color: '#555' }} {...props} />,
   h6: ({ node, ...props }) => <h6 style={{ ...headingStyles, fontSize: '0.85em', color: '#666' }} {...props} />,
+
+  p: ({ node, ...props }) => (
+    <p 
+      style={{ 
+        marginLeft: '4px', 
+        padding: '0px 0px', 
+        lineHeight: '1em',
+        marginTop: '0em',
+        marginBottom: '0em',
+      }} 
+      {...props} 
+    />
+  ),
   
-  ul: ({ node, ...props }) => <ul style={{ paddingLeft: '20px', listStyleType: 'disc' }} {...props} />,
+  ul: ({ node, ...props }) => <ul style={{
+    paddingLeft: '20px', listStyleType: 'disc',
+    marginBlockStart: '0em',
+    marginBlockEnd: '0em',
+  }} {...props} />,
   
   // ИЗМЕНЕНИЯ ЗДЕСЬ: добавляем отступ и тип маркера (decimal - обычные цифры)
   ol: ({ node, ...props }) => <ol style={{ paddingLeft: '20px', listStyleType: 'decimal' }} {...props} />,
   
-  p: ({ node, ...props }) => <p style={{ marginLeft: '4px', padding: '0px 0px', lineHeight: 'normal' }} {...props} />,
+  // p: ({ node, ...props }) => <p style={{ marginLeft: '4px', padding: '0px 0px', lineHeight: '1.2em' }} {...props} />,
   
   // Элемент списка (li) остаётся без изменений, он будет работать и для ul, и для ol
-  li: ({ node, ...props }) => <li style={{ marginBottom: '0.4em' }} {...props} />,
+  li: ({ node, ...props }) => <li style={{ marginBottom: '0em' }} {...props} />,
+  img: InteractiveImage,
   
   code: CodeBlock,
 };
@@ -248,8 +673,13 @@ const splitPattern = (
 
 export const shRemark: Plugin<[], Root> = () => {
   return (tree: any) => {
-    visit(tree, ['text', 'html'], (node: Text, index: any, p: any) => {
+    visit(tree, ['text', 'html'], (node: any, index: any, p: any) => {
       if (!p || index === null) return;
+
+      if (node.type === 'html' && node.value.toLowerCase().includes('<img')) {
+        return;
+      }
+
       const nodesAfterMath = splitPattern(
         node.value,
         MATH_REGEX_EXPR,
@@ -423,7 +853,6 @@ export const NodeHeight = 36;
 
 export function transformToOldGroups(flatTree: any[]) {
   const oldGroups: Record<string, string[]> = {};
-
   flatTree.forEach((item) => {
     // Нас интересуют только карточки (ноды)
     if (item.block.type === 'card') {
@@ -445,7 +874,6 @@ export function calculateHierarchy(groups: any) {
   const nodeToGroup: Record<string, string> = {};
   const groupToGroup: Record<string, string> = {};
   sortedGroups.forEach(([gName, gData]: any) => {
-    // example of output: gn: Leonard story {start: 9, end: 12, color: '#3ab3b026', depth: 1}
     gData.forEach((nodeId:any) => {
       if (nodeToGroup[nodeId]) {
         const smallerGroup = nodeToGroup[nodeId];
@@ -461,7 +889,6 @@ export function calculateHierarchy(groups: any) {
       }
     });
   });
-  
   return { nodeToGroup, groupToGroup };
 }
 
