@@ -350,24 +350,30 @@ export const useKeyDown = ({
       }, 10);
     }
 
-    // ── Cmd+Q — toggle render ─────────────────────────────────────────────────
+    // ── Cmd+Q / Cmd+Shift+Q — toggle render ───────────────────────────────────
+
     if (isCmdOrCtrl && (key === 'q' || key === 'й')) {
       e.preventDefault();
+      console.log('here?')
+      const cur = syncDOM();
+      
+      if (isShift) {
+        // Если есть хотя бы один не отрендеренный блок, переводим все в preview
+        // Иначе возвращаем все в режим редактирования
+        const hasUnrendered = cur.some((b: any) => !b.isRendered && !b.isAIChatContainer && !b.isSpinner);
+        const newBlocks = cur.map((b: any) => {
+          if (b.isAIChatContainer || b.isSpinner) return b;
+          return { ...b, isRendered: hasUnrendered };
+        });
+        setBlocks(newBlocks);
+        return;
+      }
+
       const idx = getActiveBlockIndex();
       if (idx === -1) return;
-      const cur = syncDOM();
       if (cur[idx]) { cur[idx].isRendered = !cur[idx].isRendered; setBlocks([...cur]); }
       return;
     }
-
-    const sel = window.getSelection();
-    if (!sel || !editorRef.current) return;
-
-    const getInfo = () => {
-      if (sel.rangeCount === 0) return null;
-      const r = sel.getRangeAt(0);
-      return getBlockInfoFromNode(r.startContainer, r.startOffset, editorRef.current!);
-    };
 
 
 
@@ -460,7 +466,7 @@ export const useKeyDown = ({
                   startEl.focus();
                   const r = document.createRange();
                   r.setStart(startEl.firstChild || startEl, 0);
-                  r.setEnd(endEl.lastChild || endEl, endEl.lastChild?.length || 0);
+                  r.setEnd(endEl.lastChild || endEl, (endEl.lastChild as any)?.length || 0);
                   const s = window.getSelection();
                   s?.removeAllRanges();
                   s?.addRange(r);
