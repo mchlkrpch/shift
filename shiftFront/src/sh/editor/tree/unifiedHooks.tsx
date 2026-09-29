@@ -369,6 +369,134 @@ export const useKeyDown = ({
       return getBlockInfoFromNode(r.startContainer, r.startOffset, editorRef.current!);
     };
 
+
+
+
+
+
+    // ── Cmd+G / Cmd+Shift+G — group / ungroup ────────────────────────────────
+    if (isCmdOrCtrl && key === 'g') {
+      e.preventDefault();
+      if (sel.rangeCount === 0) return;
+      const range = sel.getRangeAt(0);
+      const startInfo = getBlockInfoFromNode(range.startContainer, range.startOffset, editorRef.current);
+      const endInfo   = getBlockInfoFromNode(range.endContainer,   range.endOffset,   editorRef.current);
+      if (!startInfo || !endInfo) return;
+
+      const si = Math.min(startInfo.blockIndex, endInfo.blockIndex);
+      const ei = Math.max(startInfo.blockIndex, endInfo.blockIndex);
+      const cur = syncDOM();
+
+      // Разгруппировка (Ctrl + Shift + G)
+      if (isShift) {
+        const blockMap = new Map<string, any>(cur.map((b: any) => [b.id, b]));
+        
+        let gIndex = -1;
+        let gBlock = null;
+
+        // Определяем, относится ли начало выделения к группе
+        if (cur[si].isGroup) {
+          gIndex = si;
+          gBlock = cur[si];
+        } else {
+          const pId = cur[si].parentId;
+          if (pId) {
+            gIndex = cur.findIndex((b: any) => b.id === pId);
+            if (gIndex !== -1) gBlock = cur[gIndex];
+          }
+        }
+
+        if (gBlock && gBlock.isGroup) {
+          const isDescendant = (blockId: string, parentId: string) => {
+            let curr = blockMap.get(blockId)?.parentId;
+            while (curr) {
+              if (curr === parentId) return true;
+              curr = blockMap.get(curr)?.parentId;
+            }
+            return false;
+          };
+
+          // Ищем индекс последнего потомка этой группы в дереве
+          let lastDescendantIndex = gIndex;
+          for (let i = gIndex + 1; i < cur.length; i++) {
+            if (isDescendant(cur[i].id, gBlock.id)) {
+              lastDescendantIndex = i;
+            } else {
+              break; // Потомки всегда идут подряд, так что при первом чужом блоке прерываем
+            }
+          }
+
+          // Проверяем, что выделены СТРОГО ВСЕ элементы этой группы 
+          // (может включать или не включать саму строку заголовка группы)
+          if ((si === gIndex || si === gIndex + 1) && ei === lastDescendantIndex) {
+            
+            // 1. У прямых детей меняем родителя на родителя расформированной группы
+            for (let i = gIndex + 1; i <= lastDescendantIndex; i++) {
+              if (cur[i].parentId === gBlock.id) {
+                cur[i].parentId = gBlock.parentId;
+              }
+            }
+            
+            // 2. Удаляем саму строку группы из массива
+            cur.splice(gIndex, 1);
+            
+            sel.removeAllRanges();
+            flushSync(() => setBlocks([...cur]));
+            
+            // 3. Восстанавливаем фокус на оставшихся (разгруппированных) элементах
+            requestAnimationFrame(() => {
+              const newSi = gIndex;
+              const newEi = ei - 1; // Сдвинулись на -1 из-за удаления заголовка группы
+              
+              if (newSi <= newEi && newSi >= 0 && newEi < cur.length) {
+                const startEl = document.querySelector(
+                  `[data-index="${newSi}"] .tv-block, [data-index="${newSi}"] .tv-group`
+                ) as HTMLElement;
+                const endEl = document.querySelector(
+                  `[data-index="${newEi}"] .tv-block, [data-index="${newEi}"] .tv-group`
+                ) as HTMLElement;
+                
+                if (startEl && endEl) {
+                  startEl.focus();
+                  const r = document.createRange();
+                  r.setStart(startEl.firstChild || startEl, 0);
+                  r.setEnd(endEl.lastChild || endEl, endEl.lastChild?.length || 0);
+                  const s = window.getSelection();
+                  s?.removeAllRanges();
+                  s?.addRange(r);
+                }
+              } else if (newSi >= 0 && newSi < cur.length) {
+                setCursor(editorRef.current, newSi, -1);
+              }
+            });
+            return;
+          }
+        }
+        return; // Если условие разгруппировки не выполнено — ничего не делаем
+      }
+
+      // Создание группы (Ctrl + G)
+      const groupId = genId('grp');
+      const newGroup: DomBlock = {
+        id: groupId, text: 'Новая группа',
+        isRendered: false, isGroup: true,
+        parentId: cur[si].parentId,
+      };
+      for (let i = si; i <= ei; i++) cur[i].parentId = groupId;
+      cur.splice(si, 0, newGroup);
+
+      sel.removeAllRanges();
+
+      flushSync(() => setBlocks([...cur]));
+      requestAnimationFrame(() => {
+        setCursor(editorRef.current, si, -1);
+      });
+      return;
+    }
+
+
+
+
     // ── Alt+↑/↓ — move line ───────────────────────────────────────────────────
     if (isAlt && !isShift && (key === 'arrowup' || key === 'arrowdown')) {
       e.preventDefault();
@@ -520,7 +648,8 @@ export const useKeyDown = ({
     }
 
     // ── Alt+Shift+↑/↓ — move block ───────────────────────────────────────────
-    if (isAlt && isShift && (key === 'arrowup' || key === 'arrowdown')) {
+    // if (isAlt && isShift && (key === 'arrowup' || key === 'arrowdown')) {
+    if (isCmdOrCtrl && isShift && (key === 'arrowup' || key === 'arrowdown')) {
       const collapsedGroups = collapsedGroupsRef.current;
       e.preventDefault();
       if (sel.rangeCount === 0) return;
