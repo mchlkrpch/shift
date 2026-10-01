@@ -231,7 +231,6 @@ scrollbar-color: color-mix(in srgb, var(--chakra-colors-bg-inverted) 10%, var(--
 
 
 
-
 const TvBlock = React.memo(({
   block,
   index,
@@ -464,9 +463,8 @@ const TvBlock = React.memo(({
             paddingLeft: `${depthPadding + 6}px`,
             backgroundColor: 'transparent',
             margin: blockMargin,
-            // borderLeft: blockBorder,
-						// backgroundColor: blockBg,
-						'--title-fs': `${fontSize}px`,
+			'--title-weight': block.isGroup? '500' : 'none',
+			'--title-fs': block.isGroup? `${fontSize+3}px` : `${fontSize}px`,
           } as any}
         >
           <Card
@@ -763,30 +761,78 @@ export const UnifiedTreeView = forwardRef(({
 		if (newBlocks.length === 0) newBlocks.push({ id: `blk-${Date.now()}`, text: '', isRendered: false });
 		return newBlocks;
 	};
+	const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const handleInput = (_e: React.FormEvent) => {
+  // const handleInput = (_e: React.FormEvent) => {
+  //   if (!editorRef.current) return;
+	// 	const target = _e.target as HTMLElement;
+	// 	if (target.closest('.tv-editor-root') !== editorRef.current) return;
+	// 	if (target.closest('.chat-input-area')) return;
+	// 	if (target.closest('[data-ephemeral="true"]')) return;
+  //   const wrappers = editorRef.current.querySelectorAll('.tv-block-wrapper');
+  //   let needsSync = false;
+  //   wrappers.forEach((wrapper) => {
+  //     if (wrapper.closest('.tv-editor-root') !== editorRef.current) return;
+  //     if (wrapper.hasAttribute('data-is-ai-chat')) return;
+  //     const id = wrapper.getAttribute('data-id');
+  //     if (!id) return;
+  //     const isRendered = wrapper.hasAttribute('data-rendered');
+  //     if (isRendered) return;
+  //     const tvBlock = wrapper.querySelector('.tv-block, .tv-group') as HTMLElement;
+  //     if (!tvBlock) return;
+  //     const currentText = tvBlock.innerText.trim();
+  //     const previousText = previousContentRef.current.get(id) || '';
+  //     if (previousText && !currentText) needsSync = true;
+  //     previousContentRef.current.set(id, currentText);
+	// 		if (previousText && currentText !== previousText) needsSync = true;
+  //   	previousContentRef.current.set(id, currentText);
+  //   });
+  //   if (needsSync) setBlocks([...syncDOMToState()]);
+
+	// 	if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+	// 	typingTimeoutRef.current = setTimeout(() => {
+	// 		saveHistorySnapshot();
+	// 	}, 1000);
+  // };
+	const handleInput = (_e: React.FormEvent) => {
     if (!editorRef.current) return;
-		const target = _e.target as HTMLElement;
-		if (target.closest('.tv-editor-root') !== editorRef.current) return;
-		if (target.closest('.chat-input-area')) return;
-		if (target.closest('[data-ephemeral="true"]')) return;
+    const target = _e.target as HTMLElement;
+    if (target.closest('.tv-editor-root') !== editorRef.current) return;
+    if (target.closest('.chat-input-area')) return;
+    if (target.closest('[data-ephemeral="true"]')) return;
+    
     const wrappers = editorRef.current.querySelectorAll('.tv-block-wrapper');
     let needsSync = false;
+    
     wrappers.forEach((wrapper) => {
       if (wrapper.closest('.tv-editor-root') !== editorRef.current) return;
       if (wrapper.hasAttribute('data-is-ai-chat')) return;
+      
       const id = wrapper.getAttribute('data-id');
       if (!id) return;
+      
       const isRendered = wrapper.hasAttribute('data-rendered');
       if (isRendered) return;
+      
       const tvBlock = wrapper.querySelector('.tv-block, .tv-group') as HTMLElement;
       if (!tvBlock) return;
+      
       const currentText = tvBlock.innerText.trim();
       const previousText = previousContentRef.current.get(id) || '';
-      if (previousText && !currentText) needsSync = true;
+      
+      // ИСПРАВЛЕНИЕ ЗДЕСЬ: Возвращаем оригинальное условие!
+      // Синхронизируем стейт только если блок БЫЛ не пустым, а СТАЛ пустым.
+      // Это предотвращает ре-рендер компонента на каждый символ или Ctrl+Backspace
+      if (previousText && !currentText) {
+          needsSync = true;
+      }
+      
       previousContentRef.current.set(id, currentText);
     });
-    if (needsSync) setBlocks([...syncDOMToState()]);
+    
+    if (needsSync) {
+        setBlocks([...syncDOMToState()]);
+    }
   };
 
   const setCursor = (blockIndex: number, offset: number) => {
@@ -852,6 +898,84 @@ export const UnifiedTreeView = forwardRef(({
     sel.addRange(r);
     setMentionMenu(prev => ({ ...prev, isOpen: false, query: '' }));
   }, [mentionMenu]);
+
+  // ─── ГЛОБАЛЬНАЯ ИСТОРИЯ (UNDO / REDO) ──────────────────────────────────────────
+	// ─── ГЛОБАЛЬНАЯ ИСТОРИЯ (UNDO / REDO) ──────────────────────────────────────────
+	const historyRef = useRef<{
+		past: { blocks: DomBlock[], cursor: { index: number, offset: number } | null }[],
+		future: { blocks: DomBlock[], cursor: { index: number, offset: number } | null }[]
+	}>({ past: [], future: [] });
+
+	const saveHistorySnapshot = useCallback(() => {
+		const currentBlocks = syncDOMToStateRef.current();
+		const stringified = JSON.stringify(currentBlocks);
+		
+		// Защита от дубликатов: не сохраняем, если состояние визуально не поменялось
+		if (historyRef.current.past.length > 0) {
+			const last = historyRef.current.past[historyRef.current.past.length - 1];
+			if (JSON.stringify(last.blocks) === stringified) {
+				return;
+			}
+		}
+
+		// Получаем позицию курсора, чтобы после Undo вернуть его на место
+		let cursor = null;
+		const sel = window.getSelection();
+		if (sel && sel.rangeCount > 0 && editorRef.current) {
+			const range = sel.getRangeAt(0);
+			const info = getBlockInfoFromNode(range.startContainer, range.startOffset, editorRef.current);
+			if (info) cursor = { index: info.blockIndex, offset: info.offset };
+		}
+
+		historyRef.current.past.push({
+			blocks: JSON.parse(stringified), // Глубокая копия
+			cursor
+		});
+		
+		historyRef.current.future = []; // Очищаем Redo при новом действии
+		
+		if (historyRef.current.past.length > 50) {
+			historyRef.current.past.shift();
+		}
+	}, []);
+
+	const undoRef = useRef(() => {
+		if (historyRef.current.past.length === 0) return;
+		const currentBlocks = syncDOMToStateRef.current();
+		
+		historyRef.current.future.push({
+			blocks: JSON.parse(JSON.stringify(currentBlocks)),
+			cursor: null
+		});
+
+		const previousState = historyRef.current.past.pop()!;
+		setBlocks(previousState.blocks);
+		if (previousState.cursor) {
+			requestAnimationFrame(() => {
+				setCursor(previousState.cursor!.index, previousState.cursor!.offset);
+			});
+		}
+	});
+
+	const redoRef = useRef(() => {
+		if (historyRef.current.future.length === 0) return;
+		const currentBlocks = syncDOMToStateRef.current();
+		
+		historyRef.current.past.push({
+			blocks: JSON.parse(JSON.stringify(currentBlocks)),
+			cursor: null
+		});
+
+		const nextState = historyRef.current.future.pop()!;
+		setBlocks(nextState.blocks);
+		if (nextState.cursor) {
+			requestAnimationFrame(() => {
+				setCursor(nextState.cursor!.index, nextState.cursor!.offset);
+			});
+		}
+	});
+
+  // Очищенный handleInput (без таймера истории)
 
 	const mentionMenuItems = useMemo(() => {
     const q = mentionMenu.query.toLowerCase();
@@ -1076,6 +1200,9 @@ export const UnifiedTreeView = forwardRef(({
 		mentionMenuRef,
 		insertAIBlocksRef,
 		collapsedGroupsRef,
+		saveHistorySnapshot,
+		undoRef,
+		redoRef,
 	});
 
 
@@ -1157,10 +1284,18 @@ export const UnifiedTreeView = forwardRef(({
 				wrapper.setAttribute('data-focused', 'true');
 				activeWrapperRef.current = wrapper;
 			}
+			if (wrapper && wrapper !== activeWrapperRef.current) {
+				// if (activeWrapperRef.current) {
+				// 	saveHistorySnapshot();
+				// }
+				activeWrapperRef.current?.removeAttribute('data-focused');
+				wrapper.setAttribute('data-focused', 'true');
+				activeWrapperRef.current = wrapper;
+			}
 		};
 		document.addEventListener('selectionchange', handleSelectionChange);
 		return () => document.removeEventListener('selectionchange', handleSelectionChange);
-	}, []);
+	}, [saveHistorySnapshot]);
 
 
 	useEffect(() => {

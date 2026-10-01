@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useRef,
 } from 'react';
 import type {
   DomBlock
@@ -204,14 +205,19 @@ export const useKeyDown = ({
   onSaveRef,
   convertBlocksRef,
   mentionMenuRef,
-  onInsertAIBlocksRef,
+  insertAIBlocksRef,
   collapsedGroupsRef,
+  saveHistorySnapshot,
+  undoRef,
+  redoRef,
 }: any) => {
   // useCallback с пустыми deps — функция создаётся один раз
+  const isTypingRef = useRef(false);
+  const typingTimerRef = useRef<any>(null);
+
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     const isCmdOrCtrl = e.ctrlKey || e.metaKey;
     if (isCmdOrCtrl) editorRef.current?.classList.add('ctrl-active');
-
     const key = e.key.toLowerCase();
     const isAlt = e.altKey;
     const isShift = e.shiftKey;
@@ -231,7 +237,48 @@ export const useKeyDown = ({
         if (blockIndex === -1) return;
         
         // Вызываем колбэк из пропсов хука
-        onInsertAIBlocksRef.current?.(blockIndex);
+        insertAIBlocksRef.current?.(blockIndex);
+        return;
+    }
+
+    if (isCmdOrCtrl && key === 'z') {
+      console.log('z')
+      e.preventDefault(); // ОТКЛЮЧАЕМ СТАНДАРТНУЮ ИСТОРИЮ БРАУЗЕРА
+      if (isShift) {
+        redoRef.current?.();
+      } else {
+        undoRef.current?.();
+      }
+      return;
+    }
+    
+    const isPrintable = e.key.length === 1 && !isCmdOrCtrl && !isAlt;
+    const isPasteOrCut = isCmdOrCtrl && (key === 'v' || key === 'x');
+    const isTextEdit = isPrintable || key === 'backspace' || key === 'delete' || isPasteOrCut;
+
+    if (isTextEdit) {
+      if (!isTypingRef.current) {
+        // Если это первый символ в новой сессии печати, сохраняем состояние ДО изменения DOM
+        saveHistorySnapshot();
+        isTypingRef.current = true;
+      }
+      if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+      // Если пользователь не печатает 1 секунду, сессия завершается
+      typingTimerRef.current = setTimeout(() => {
+        isTypingRef.current = false;
+      }, 1000);
+    }
+
+    // ... остальной код (структурные изменения) ...
+
+    if (e.key === 'Enter' && e.ctrlKey && !isShift) {
+        e.preventDefault();
+        saveHistorySnapshot(); // Сохраняем перед AI блоком
+        const wrapper = (e.target as HTMLElement).closest('.tv-block-wrapper');
+        if (!wrapper) return;
+        const blockIndex = parseInt(wrapper.getAttribute('data-index') || '-1');
+        if (blockIndex === -1) return;
+        insertAIBlocksRef.current?.(blockIndex);
         return;
     }
 
@@ -349,6 +396,9 @@ export const useKeyDown = ({
         if (s?.rangeCount) mm.openAt(s.getRangeAt(0).cloneRange());
       }, 10);
     }
+
+    const sel = window.getSelection();
+    if (!sel || !editorRef.current) return;
 
     // ── Cmd+Q / Cmd+Shift+Q — toggle render ───────────────────────────────────
 
@@ -926,6 +976,12 @@ export const useKeyDown = ({
       }
     }
 
+    const getInfo = () => {
+      if (sel.rangeCount === 0) return null;
+      const r = sel.getRangeAt(0);
+      return getBlockInfoFromNode(r.startContainer, r.startOffset, editorRef.current!);
+    };
+
     // ── Delete at block end (НОВЫЙ ОБРАБОТЧИК) ───────────────────────────────
     if (key === 'delete') {
       const info = getInfo();
@@ -965,6 +1021,7 @@ export const useKeyDown = ({
         const cur = syncDOM();
         if (cur.length === 1) return;
         const current = cur[info.blockIndex];
+        saveHistorySnapshot();
 
         // снимаем selection ДО удаления/мутации DOM,
         // чтобы браузер не трогал focus/caret одновременно с React
