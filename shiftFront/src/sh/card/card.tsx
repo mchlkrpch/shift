@@ -980,7 +980,8 @@ export const Card = forwardRef(({
               }}
 
               fontWeight={hasBwd? 500:'var(--title-weight, 300)'}
-              fontSize={hasBwd? `${fontSize + 3}px` : `var(--title-fs, ${fontSize}px)`}
+              // fontSize={hasBwd? `${fontSize + 3}px` : `var(--title-fs, ${fontSize}px)`}
+              fontSize={`var(--title-fs, ${fontSize}px)`}
             >
               {path.length>1&&(
                 <Box pl={'4px'} m={0}>
