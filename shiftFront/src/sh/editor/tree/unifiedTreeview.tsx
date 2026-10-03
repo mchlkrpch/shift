@@ -7,7 +7,9 @@ import React, {
 	useMemo,
 	useCallback,
 	forwardRef,
-	useImperativeHandle
+	useImperativeHandle,
+	memo,
+	useLayoutEffect
 } from 'react';
 import { 
   Box, 
@@ -105,8 +107,11 @@ gap: 3px;
   transition: color 0.1s ease;
 }
 
+// .tv-block-wrapper[data-focused="true"] > .block-gutter {
+//   color: var(--chakra-colors-blue-400);
+// }
 .tv-block-wrapper[data-focused="true"] > .block-gutter {
-  color: var(--chakra-colors-blue-400);
+  /* Подсветка контролируется построчно в коде */
 }
 
 .tv-group {
@@ -248,6 +253,94 @@ scrollbar-color: color-mix(in srgb, var(--chakra-colors-bg-inverted) 10%, var(--
 `;
 
 
+
+// Добавьте этот компонент поверх UnifiedTreeView
+// Предполагается, что снаружи по сети приходят курсоры в таком формате:
+// { userId: '1', name: 'Ivan', color: '#ff0000', blockId: 'blk-123', offset: 5 }
+
+export const CollaboratorCursors = memo(({ editorRef, cursors }: { editorRef: any, cursors: any[] }) => {
+	const [positions, setPositions] = useState<any[]>([]);
+
+	useLayoutEffect(() => {
+		const editor = editorRef.current;
+		if (!editor || !cursors || cursors.length === 0) {
+			setPositions([]);
+			return;
+		}
+
+		const updatePositions = () => {
+			const editorRect = editor.getBoundingClientRect();
+			const newPositions = cursors.map(cursor => {
+				const blockWrapper = editor.querySelector(`[data-id="${cursor.blockId}"]`);
+				if (!blockWrapper) return null;
+
+				const textContainer = blockWrapper.querySelector('.tv-block, .tv-group');
+				if (!textContainer) return null;
+
+				try {
+					// createOffsetWalker у вас уже определен в файле
+					const walker = createOffsetWalker(textContainer);
+					const { node, offset } = walker.findOffset(cursor.offset);
+
+					if (!node) return null;
+
+					const range = document.createRange();
+					range.setStart(node, offset);
+					range.collapse(true);
+					const rect = range.getBoundingClientRect();
+
+					// Координаты относительно контейнера редактора
+					return {
+						...cursor,
+						top: rect.top - editorRect.top + editor.scrollTop,
+						left: rect.left - editorRect.left + editor.scrollLeft,
+						height: rect.height > 0 ? rect.height : 16 // Фолбэк высоты каретки
+					};
+				} catch (e) {
+					return null;
+				}
+			}).filter(Boolean);
+
+			setPositions(newPositions);
+		};
+
+		// Обновляем при маунте и изменениях
+		updatePositions();
+
+		// Следим за скроллом и ресайзом для моментальной перерисовки курсоров
+		const observer = new ResizeObserver(updatePositions);
+		observer.observe(editor);
+		editor.addEventListener('scroll', updatePositions, { passive: true });
+		// Опционально: таймер для подстраховки при быстрых изменениях DOM
+		const interval = setInterval(updatePositions, 200);
+
+		return () => {
+			observer.disconnect();
+			editor.removeEventListener('scroll', updatePositions);
+			clearInterval(interval);
+		};
+	}, [cursors, editorRef]);
+
+	return (
+		<div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, pointerEvents: 'none', zIndex: 10 }}>
+			{positions.map(p => (
+				<div key={p.userId} style={{
+					position: 'absolute', top: p.top, left: p.left,
+					height: p.height, width: '2px', backgroundColor: p.color,
+					transition: 'all 0.1s linear' // Плавное движение
+				}}>
+					<div style={{
+						position: 'absolute', top: '-14px', left: 0,
+						backgroundColor: p.color, color: 'white', fontSize: '10px',
+						padding: '0 4px', borderRadius: '4px', whiteSpace: 'nowrap'
+					}}>
+						{p.name}
+					</div>
+				</div>
+			))}
+		</div>
+	);
+});
 
 
 const TvBlock = React.memo(({
@@ -547,6 +640,36 @@ const TvBlock = React.memo(({
 
 
 
+const extractDOMContent = (node: Node): string => {
+  if (node.nodeType === Node.TEXT_NODE) return node.textContent || '';
+  if (node.nodeType === Node.ELEMENT_NODE) {
+    const el = node as HTMLElement;
+    if (el.tagName === 'IMG') {
+        return `<img src="${el.getAttribute('src')}" style="${el.getAttribute('style')}" />`;
+    }
+    if (el.classList.contains('inlineQuiz')) {
+			const input = el.querySelector('input');
+			const type = el.getAttribute('data-type') || 'exact';
+			const answer = input ? input.value : el.getAttribute('data-answer');
+			return `<quiz=${type}:${answer}>`;
+		}
+    if (el.classList.contains('inlineCell') || el.classList.contains('card_inline_link')) {
+        const parts = el.id.split(':');
+        return parts.length === 2 ? `<id=${parts[0]}:${parts[1]}>` : `<id=${el.id}>`;
+    }
+    if (el.tagName === 'BR') return '\n';
+    let inner = Array.from(el.childNodes).map(extractDOMContent).join('');
+    if (el.tagName === 'DIV' || el.tagName === 'P') return '\n' + inner;
+    return inner;
+  }
+  return '';
+};
+
+
+
+
+
+
 
 
 
@@ -640,8 +763,26 @@ export const UnifiedTreeView = forwardRef(({
 	} | null>(null);
 
 	const activeSuggestionIdRef = useRef<string | null>(null);
-  const minigraphIdsRef = useRef<string[]>([]);
+  // const minigraphIdsRef = useRef<string[]>([]);
+  // const minigraphListenersRef = useRef<Array<() => void>>([]);
+  // const onChangeRef = useRef(onChange);
+	const minigraphIdsRef = useRef<string[]>([]);
   const minigraphListenersRef = useRef<Array<() => void>>([]);
+  const [quizMenu, setQuizMenu] = useState<{ isOpen: boolean, x: number, y: number, node: HTMLElement | null }>({ isOpen: false, x: 0, y: 0, node: null });
+  const quizMenuItems = [
+     { id: 'exact', el: 'Посимвольный', onClick: () => {
+         if (quizMenu.node) {
+            quizMenu.node.setAttribute('data-type', 'exact');
+            setBlocks([...syncDOMToState()]);
+         }
+     }},
+     { id: 'ai', el: 'ИИ-проверка', onClick: () => {
+         if (quizMenu.node) {
+            quizMenu.node.setAttribute('data-type', 'ai');
+            setBlocks([...syncDOMToState()]);
+         }
+     }}
+  ];
   const onChangeRef = useRef(onChange);
 
 
@@ -698,7 +839,7 @@ export const UnifiedTreeView = forwardRef(({
 
   const formatEditText = useCallback((text: string) => {
     if (!text) return '<br>';
-    const parts = text.split(/(<id=[^>]*>)/);
+    const parts = text.split(/(<id=[^>]*>|<quiz=[^:]+:[^>]*>)/);
     let html = '';
     parts.forEach(part => {
       if (part.startsWith('<id=') && part.endsWith('>')) {
@@ -711,6 +852,16 @@ export const UnifiedTreeView = forwardRef(({
         fwdText = fwdText.replace(/^#+\s*/, '').trim();
         const displayText = fwdText.length > 20 ? fwdText.substring(0, 20) + '...' : fwdText;
         html += `<span class="inlineCell card_inline_link" id="${fullId}" contenteditable="false">${displayText}</span>`;
+      } else if (part.startsWith('<quiz=') && part.endsWith('>')) {
+         const match = part.match(/<quiz=([^:]+):([^>]*)>/);
+         if (match) {
+            const type = match[1];
+            const answer = match[2];
+            html += `<span class="inlineQuiz" data-type="${type}" data-answer="${answer}" contenteditable="false" style="display:inline-flex; align-items:center; border:1px solid color-mix(in srgb, var(--chakra-colors-fg) 20%, transparent); border-radius:4px; padding:2px; margin: 0 4px;">
+              <input class="quiz-answer-input" type="text" value="${answer}" style="border:none; outline:none; background:transparent; width: 60px; font-size: inherit; color: var(--chakra-colors-fg);" placeholder="Ответ..." />
+              <span class="quiz-type-toggle" style="cursor:pointer; font-size:10px; padding:0 4px; opacity: 0.5;">▼</span>
+            </span>`;
+         }
       } else {
         html += part
           .replace(/&/g, '&amp;')
@@ -781,7 +932,7 @@ export const UnifiedTreeView = forwardRef(({
 			} else {
 				const tvBlock = wrapper.querySelector('.tv-block, .tv-group') as HTMLElement;
 				if (tvBlock) {
-					text = extractContent(tvBlock).replace(/\n$/, '');
+					text = Array.from(tvBlock.childNodes).map(extractDOMContent).join('').replace(/^\n+/, '').replace(/\n$/, '');
 				}
 			}
 			newBlocks.push({ id, text, isRendered, isGroup, parentId, role });
@@ -789,7 +940,7 @@ export const UnifiedTreeView = forwardRef(({
 		if (newBlocks.length === 0) newBlocks.push({ id: `blk-${Date.now()}`, text: '', isRendered: false });
 		return newBlocks;
 	};
-	const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+	// const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // const handleInput = (_e: React.FormEvent) => {
   //   if (!editorRef.current) return;
@@ -1036,6 +1187,46 @@ export const UnifiedTreeView = forwardRef(({
     if (opts.length === 0) {
       opts.push({ id: 'no-results', el: <div style={{opacity:0.5}}>no cards match</div>, disabled: true });
     }
+    
+    opts.unshift({
+      id: 'insert-quiz',
+      el: (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--chakra-colors-green-500)' }}>
+            <LuBookDashed /> <span>Ввод текста с проверкой</span>
+        </div>
+      ),
+      onClick: () => {
+          const sel = window.getSelection();
+          if (!sel || !mentionMenu.range) return;
+          let r;
+          if (sel.rangeCount > 0 && sel.getRangeAt(0).startContainer === mentionMenu.range.startContainer) {
+            r = sel.getRangeAt(0).cloneRange();
+            r.setStart(r.startContainer, Math.max(0, r.startOffset - mentionMenu.query.length - 1));
+          } else {
+            r = document.createRange();
+            const startNode = mentionMenu.range.startContainer;
+            const startOffset = mentionMenu.range.startOffset;
+            r.setStart(startNode, Math.max(0, startOffset - 1));
+            r.setEnd(startNode, Math.min(startNode.textContent?.length || 0, startOffset + mentionMenu.query.length));
+          }
+          r.deleteContents();
+          
+          const wrapper = document.createElement('span');
+          wrapper.innerHTML = `<span class="inlineQuiz" data-type="exact" data-answer="" contenteditable="false" style="display:inline-flex; align-items:center; border:1px solid color-mix(in srgb, var(--chakra-colors-fg) 20%, transparent); border-radius:4px; padding:2px; margin: 0 4px;"><input class="quiz-answer-input" type="text" value="" style="border:none; outline:none; background:transparent; width: 60px; font-size: inherit; color: var(--chakra-colors-fg);" placeholder="Ответ..." /><span class="quiz-type-toggle" style="cursor:pointer; font-size:10px; padding:0 4px; opacity: 0.5;">▼</span></span>`;
+          const el = wrapper.firstChild as HTMLElement;
+          
+          r.insertNode(el);
+          const space = document.createTextNode('\u00A0');
+          el.after(space);
+          r.setStartAfter(space);
+          r.collapse(true);
+          sel.removeAllRanges();
+          sel.addRange(r);
+          setMentionMenu(prev => ({ ...prev, isOpen: false, query: '' }));
+          setTimeout(() => el.querySelector('input')?.focus(), 50);
+      }
+    });
+    
     return opts;
   }, [ns, mentionMenu.query, mentionMenu.range, insertMention]);
 
@@ -1302,7 +1493,9 @@ export const UnifiedTreeView = forwardRef(({
     let frameId = null as any;
 
     const syncLineNumbers = () => {
-      const wrappers = editor.querySelectorAll('.tv-block-wrapper');
+      const wrappers = Array.from(editor.querySelectorAll('.tv-block-wrapper')).filter(
+        (w) => w.closest('.tv-editor-root') === editor
+      ) as any;
       let currentLineNumber = 1; 
       const updates = [];
 
@@ -1310,27 +1503,15 @@ export const UnifiedTreeView = forwardRef(({
         const wrapper = wrappers[i];
         const gutter = wrapper.querySelector('.block-gutter');
 
-        // if (wrapper.hasAttribute('data-is-ai-chat') || wrapper.hasAttribute('data-is-spinner')) {
-        //   if (gutter) updates.push({ gutter, html: '', display: 'none' });
-        //   continue;
-        // }
-        // if (wrapper.style.display === 'none' || wrapper.hasAttribute('data-hidden')) {
-        //   if (gutter) updates.push({ gutter, html: '', display: 'none' });
-        //   continue; 
-        // }
-        // const lineCount = parseInt(wrapper.getAttribute('data-line-count') || '1', 10);
-        // let actualLines = 1;
-				if (wrapper.hasAttribute('data-is-ai-chat') || wrapper.hasAttribute('data-is-spinner')) {
+        if (wrapper.hasAttribute('data-is-ai-chat') || wrapper.hasAttribute('data-is-spinner')) {
           if (gutter) updates.push({ gutter, html: '', display: 'none' });
           continue;
         }
 
-        // Вытаскиваем lineCount ВЫШЕ проверки на скрытость блока
         const lineCount = parseInt(wrapper.getAttribute('data-line-count') || '1', 10);
 
         if (wrapper.style.display === 'none' || wrapper.hasAttribute('data-hidden')) {
           if (gutter) updates.push({ gutter, html: '', display: 'none' });
-          // ИСПРАВЛЕНИЕ: Плюсуем строки скрытого блока к глобальному счетчику!
           currentLineNumber += lineCount;
           continue; 
         }
@@ -1338,7 +1519,6 @@ export const UnifiedTreeView = forwardRef(({
         let actualLines = 1;
 
         if (gutter) {
-          // Ищем контейнер с текстом: либо режим редактора (Card), либо базовый блок
           let container = wrapper.querySelector('[role="textbox"]'); 
           if (container) {
             const parent = container.parentElement;
@@ -1353,124 +1533,206 @@ export const UnifiedTreeView = forwardRef(({
           let isEditing = false;
           
           if (container) {
-            // Определяем, редактирует ли пользователь блок прямо сейчас
-            isEditing = container.getAttribute('role') === 'textbox' || container.getAttribute('contenteditable') === 'true';
+            isEditing = container.getAttribute('role') === 'textbox' || (container as HTMLElement).isContentEditable;
             
             const wrapperRect = wrapper.getBoundingClientRect();
-            const offsets = [];
+            const offsets = [] as number[];
+            
+            let isNewLine = true;
+            let pendingEmptyLine = true; // Хранит статус "ожидается ли новая пустая строка в конце"
 
-            // Рекурсивно собираем координаты ВСЕХ видимых строк
-            const walk = (node) => {
-              // НОВОЕ: Обрабатываем чистый текст.
-              // getClientRects() разобьет текст на прямоугольники для КАЖДОЙ физической строки (word-wrap или \n)
+            // Жестко привязываемся к узлам текста и <br>
+            const walk = (node: any) => {
               if (node.nodeType === Node.TEXT_NODE) {
-                try {
-                  const range = document.createRange();
-                  range.selectNode(node);
-                  const rects = range.getClientRects();
-                  for (let i = 0; i < rects.length; i++) {
-                    const rect = rects[i];
-                    // Если высота больше 0, значит это реальная отрисованная строка текста
-                    if (rect.height > 0) {
-                      const t = rect.top - wrapperRect.top;
-                      // Защита от дублей: добавляем, только если отступ больше предыдущего на 8px
-                      if (t >= -10 && (offsets.length === 0 || t > offsets[offsets.length - 1] + 8)) {
-                        offsets.push(t);
-                      }
+                const text = node.textContent || '';
+                if (text.length > 0) {
+                  for (let idx = 0; idx < text.length; idx++) {
+                    if (isNewLine) {
+                      try {
+                        const range = document.createRange();
+                        range.setStart(node, idx);
+                        range.setEnd(node, Math.min(idx + 1, text.length));
+                        let rects = range.getClientRects();
+                        if (rects.length === 0) {
+                          range.selectNodeContents(node);
+                          rects = range.getClientRects();
+                        }
+                        if (rects.length > 0) {
+                          const t = rects[0].top - wrapperRect.top;
+                          // Защита от дублей, разница должна быть более 8 пикселей
+                          if (offsets.length === 0 || t > offsets[offsets.length - 1] + 8) {
+                            offsets.push(t);
+                          }
+                        }
+                      } catch(e) {}
+                      isNewLine = false;
+                      pendingEmptyLine = false; // Текст завершил пустую строку
                     }
-                  }
-                } catch(e) {}
-              } 
-              // Обрабатываем HTML-элементы
-              else if (node.nodeType === Node.ELEMENT_NODE) {
-                const cl = node.classList;
-                if (cl && (cl.contains('resizer-handle') || cl.contains('cropper-overlay') || cl.contains('ctrl-buttons-overlay') || cl.contains('block-gutter'))) return;
-                const tag = node.tagName;
-                // Для <br> берем и верхнюю, и нижнюю координату (покрывает пустые строки)
-                if (tag === 'BR') {
-                  const range = document.createRange();
-                  range.selectNode(node);
-                  const rect = range.getBoundingClientRect();
-                  if (rect.height > 0 || rect.bottom > 0) {
-                    const t = rect.top - wrapperRect.top;
-                    const b = rect.bottom - wrapperRect.top;
-                    if (t >= -10 && (offsets.length === 0 || t > offsets[offsets.length - 1] + 8)) offsets.push(t);
-                    if (b >= -10 && (offsets.length === 0 || b > offsets[offsets.length - 1] + 8)) offsets.push(b);
-                  }
-                } 
-                // Для всех блочных элементов
-                else if (tag === 'DIV' || tag === 'P' || tag === 'LI' || tag === 'H1' || tag === 'H2' || tag === 'H3' || tag === 'H4' || tag === 'H5' || tag === 'H6') {
-                  const rect = node.getBoundingClientRect();
-                  if (rect.height > 0) {
-                    const t = rect.top - wrapperRect.top;
-                    if (t >= -10 && (offsets.length === 0 || t > offsets[offsets.length - 1] + 8)) {
-                      offsets.push(t);
+                    if (text[idx] === '\n') {
+                      isNewLine = true;
+                      pendingEmptyLine = true; // За \n должна следовать новая пустая строка
                     }
                   }
                 }
-                for (let child of node.childNodes) {
-                  walk(child);
+              } else if (node.nodeType === Node.ELEMENT_NODE) {
+                const tag = node.tagName;
+                const cl = node.classList;
+                
+                if (cl && (cl.contains('resizer-handle') || cl.contains('cropper-overlay') || cl.contains('ctrl-buttons-overlay') || cl.contains('block-gutter'))) return;
+                
+                const isInlineWidget = cl && (cl.contains('inlineCell') || cl.contains('inlineQuiz') || tag === 'IMG');
+                
+                if (tag === 'BR') {
+                  if (isNewLine) {
+                    try {
+                      const range = document.createRange();
+                      range.selectNode(node);
+                      const rects = range.getClientRects();
+                      if (rects.length > 0) {
+                        const t = rects[0].top - wrapperRect.top;
+                        if (offsets.length === 0 || t > offsets[offsets.length - 1] + 8) {
+                          offsets.push(t);
+                        }
+                      }
+                    } catch(e) {}
+                  }
+                  isNewLine = true;
+                  pendingEmptyLine = true; // Тег <br> инициирует новую логическую строку
+                } else if (isInlineWidget) {
+                  if (isNewLine) {
+                    try {
+                      const rect = node.getBoundingClientRect();
+                      const t = rect.top - wrapperRect.top;
+                      if (offsets.length === 0 || t > offsets[offsets.length - 1] + 8) {
+                        offsets.push(t);
+                      }
+                    } catch(e) {}
+                    isNewLine = false;
+                    pendingEmptyLine = false; // Виджет - это контент, строка не пустая
+                  }
+                } else {
+                  const isBlock = /^(DIV|P|LI|H[1-6])$/.test(tag);
+                  if (isBlock) isNewLine = true;
+                  
+                  for (let child of node.childNodes) {
+                    walk(child);
+                  }
+                  
+                  if (isBlock) isNewLine = true;
                 }
               }
             };
-            
-            // walk(container);
-            // if (offsets.length === 0) offsets.push(4); 
-            // actualLines = offsets.length;
-						walk(container);
+
+            walk(container);
+
+            // Если блок завершился на \n или <br> (через Shift+Enter), создаем координаты для пустой строки курсора
+            if (pendingEmptyLine) {
+                try {
+                    const range = document.createRange();
+                    range.selectNodeContents(container);
+                    range.collapse(false);
+                    const rects = range.getClientRects();
+                    if (rects.length > 0) {
+                        const t = rects[0].top - wrapperRect.top;
+                        if (offsets.length === 0 || t > offsets[offsets.length - 1] + 8) {
+                            offsets.push(t);
+                        }
+                    } else {
+                        if (offsets.length > 0) {
+                            // Фолбэк для старых браузеров (примерно высота одной строки)
+                            offsets.push(offsets[offsets.length - 1] + 20);
+                        }
+                    }
+                } catch(e) {}
+            }
 
             if (offsets.length === 0) offsets.push(4); 
-
-            // ИСПРАВЛЕНИЕ: Ловим новую пустую строку (Shift+Enter), на которой стоит каретка, 
-            // так как конечный trailing <br> в браузерах часто имеет нулевую высоту и сливается с предыдущей строкой
+            
+            let cursorLineIndex = -1;
+            
             if (isEditing) {
               try {
                 const sel = window.getSelection();
                 if (sel && sel.rangeCount > 0) {
                   const range = sel.getRangeAt(0);
-                  if (container.contains(range.commonAncestorContainer)) {
-                    let cursorTop = null;
-                    const cursorRects = range.getClientRects();
+                  if (container.contains(range.commonAncestorContainer) || container === range.commonAncestorContainer) {
+                    let cursorTop = null as any;
+                    const cursorRect = range.getBoundingClientRect();
                     
-                    if (cursorRects.length > 0) {
-                      cursorTop = cursorRects[0].top - wrapperRect.top;
+                    if (cursorRect.top > 0 || cursorRect.bottom > 0) {
+                        cursorTop = cursorRect.top - wrapperRect.top;
                     } else {
-                       const cursorRect = range.getBoundingClientRect();
-                       if (cursorRect.top || cursorRect.bottom) {
-                          cursorTop = cursorRect.top - wrapperRect.top;
-                       }
+                        const cursorRects = range.getClientRects();
+                        if (cursorRects.length > 0 && (cursorRects[0].top > 0 || cursorRects[0].bottom > 0)) {
+                            cursorTop = cursorRects[0].top - wrapperRect.top;
+                        } else {
+                            const sc = range.startContainer;
+                            const so = range.startOffset;
+                            let targetNode = null;
+
+                            if (sc.nodeType === Node.ELEMENT_NODE) {
+                                targetNode = sc.childNodes[so] || sc.childNodes[so - 1];
+                            } else if (sc.nodeType === Node.TEXT_NODE) {
+                                targetNode = sc;
+                            }
+
+                            if (targetNode) {
+                                const r2 = document.createRange();
+                                try {
+                                    if (targetNode.nodeType === Node.ELEMENT_NODE && ['BR', 'IMG', 'INPUT'].includes((targetNode as Element).tagName)) {
+                                        r2.selectNode(targetNode);
+                                    } else {
+                                        r2.selectNodeContents(targetNode);
+                                    }
+                                    const cr = r2.getBoundingClientRect();
+                                    if (cr.top > 0 || cr.bottom > 0) {
+                                        cursorTop = cr.top - wrapperRect.top;
+                                    }
+                                } catch (e) {
+                                    if (targetNode.nodeType === Node.ELEMENT_NODE) {
+                                        try {
+                                            const cr2 = (targetNode as Element).getBoundingClientRect();
+                                            if (cr2.top > 0 || cr2.bottom > 0) {
+                                                cursorTop = cr2.top - wrapperRect.top;
+                                            }
+                                        } catch (e2) {}
+                                    }
+                                }
+                            }
+                        }
                     }
                     
-                    // Если каретка физически находится ниже (на новой строке), чем последняя учтённая строка
                     if (cursorTop !== null) {
-                      if (cursorTop > (offsets.length > 0 ? offsets[offsets.length - 1] + 8 : -10)) {
-                        offsets.push(cursorTop);
-                      }
+                        let activeIdx = 0;
+                        // Находим, к какой ЛОГИЧЕСКОЙ строке относится курсор
+                        for (let k = 0; k < offsets.length; k++) {
+                            if (cursorTop >= offsets[k] - 10) {
+                                activeIdx = k;
+                            }
+                        }
+                        cursorLineIndex = activeIdx;
                     }
                   }
                 }
-              } catch (e) {
-                // Игнорируем ошибки при запросе selection
-              }
+              } catch (e) {}
             }
 
-            actualLines = offsets.length;
+            actualLines = offsets.length; // Финальное количество жестких логических строк
             
-            // Генерируем цифры для каждой физической строки с отступом сверху (top)
             for (let j = 0; j < offsets.length; j++) {
-              html += `<div style="position: absolute; top: ${offsets[j]}px; right: 0; line-height: 1.6;">${currentLineNumber + j}</div>`;
+              const isCursorLine = j === cursorLineIndex;
+              const colorStyle = isCursorLine ? `color: var(--chakra-colors-blue-400); font-weight: 500;` : '';
+              html += `<div style="position: absolute; top: ${offsets[j]}px; right: 0; line-height: 1.6; ${colorStyle}">${currentLineNumber + j}</div>`;
             }
           }
           updates.push({ gutter, html, display: 'block' });
           
-          // Если редактируем — используем реальные DOM строки. Иначе — React стейт.
           currentLineNumber += isEditing ? actualLines : lineCount;
         } else {
           currentLineNumber += lineCount;
         }
       }
 
-      // ФАЗА ЗАПИСИ (применяем пачкой за 1 кадр, чтобы не было лагов)
       for (let i = 0; i < updates.length; i++) {
         const { gutter, html, display } = updates[i];
         if (gutter.style.display !== display) gutter.style.display = display;
@@ -1480,21 +1742,26 @@ export const UnifiedTreeView = forwardRef(({
 
     syncLineNumbers();
 
-    const observer = new MutationObserver(() => {
+    const queueSync = () => {
       if (frameId) cancelAnimationFrame(frameId);
       frameId = requestAnimationFrame(syncLineNumbers);
-    });
+    };
+
+    const observer = new MutationObserver(queueSync);
 
     observer.observe(editor, {
       childList: true,
       subtree: true,
       attributes: true,
-      characterData: true, // ВАЖНО: Следим за вводом символов, чтобы ловить word-wrap в реальном времени!
+      characterData: true, 
       attributeFilter: ['style', 'data-hidden', 'data-line-count'] 
     });
+    
+    document.addEventListener('selectionchange', queueSync);
 
     return () => {
       observer.disconnect();
+      document.removeEventListener('selectionchange', queueSync);
       if (frameId) cancelAnimationFrame(frameId);
     };
   }, [fontSize]);
@@ -1573,6 +1840,14 @@ export const UnifiedTreeView = forwardRef(({
 					items={mentionMenuItems}
 					onClose={() => setMentionMenu(prev => ({ ...prev, isOpen: false }))}
 				/>
+				
+				<ContextMenu 
+					isOpen={quizMenu.isOpen}
+					x={quizMenu.x}
+					y={quizMenu.y}
+					items={quizMenuItems}
+					onClose={() => setQuizMenu(prev => ({ ...prev, isOpen: false }))}
+				/>
 
 				<div
 					ref={editorRef}
@@ -1585,6 +1860,17 @@ export const UnifiedTreeView = forwardRef(({
 					suppressContentEditableWarning={true}
 					css={mainTree ? editorCSS : [editorCSS, nestedTreeOverflowFixCSS]}
 					onMouseDown={() => {setAiHighlightRects([])}}
+					onPointerDown={(e) => {
+						const target = e.target as HTMLElement;
+						if (target.closest('.quiz-type-toggle')) {
+							e.preventDefault();
+							e.stopPropagation();
+							const rect = target.getBoundingClientRect();
+							const quizSpan = target.closest('.inlineQuiz') as HTMLElement;
+							setQuizMenu({ isOpen: true, x: rect.left, y: rect.bottom, node: quizSpan });
+							return;
+						}
+					}}
 					onKeyDown={(e) => {
 						e.stopPropagation();
 						if (e.ctrlKey && e.key === 'Enter') {
@@ -1635,11 +1921,21 @@ export const UnifiedTreeView = forwardRef(({
 						e.stopPropagation();
 						handleInput(e);
 					}}
+					onPointerDown={(e) => {
+							const target = e.target as HTMLElement;
+							if (target.closest('.quiz-type-toggle')) {
+									e.preventDefault();
+									e.stopPropagation(); // Не даем событию уйти в document и моментально закрыть меню
+									const rect = target.getBoundingClientRect();
+									const quizSpan = target.closest('.inlineQuiz') as HTMLElement;
+									setQuizMenu({ isOpen: true, x: rect.left, y: rect.bottom, node: quizSpan });
+									return;
+							}
+					}}
 					onClick={(e) => {
 						const target = e.target as HTMLElement;
 						// Игнорируем клики по стрелочкам сворачивания, чтобы не конфликтовать с ними
 						if (target.closest('.tv-group-toggle')) return;
-						
 						if (e.altKey) {
 							const wrapper = target.closest('.tv-block-wrapper');
 							if (wrapper) {
@@ -1647,23 +1943,22 @@ export const UnifiedTreeView = forwardRef(({
 								if (id) {
 									e.preventDefault();
 									e.stopPropagation();
-									
 									const current = minigraphIdsRef.current;
 									if (current.includes(id)) {
-										minigraphIdsRef.current = current.filter(x => x !== id); // Убираем повторным кликом
+										minigraphIdsRef.current = current.filter(x => x !== id);
 									} else {
 										minigraphIdsRef.current = [...current, id];
 									}
-									minigraphListenersRef.current.forEach(cb => cb()); // Оповещаем подписчиков
+									minigraphListenersRef.current.forEach(cb => cb());
 								}
 							}
 						}
 					}}
 					onDragOver={handleDragOver}
 					onDrop={(e) => {
-											e.stopPropagation();
-											handleDrop(e);
-									}}
+						e.stopPropagation();
+						handleDrop(e);
+					}}
 					onDragLeave={handleDragLeave}
 					onBlur={(e) => { 
 						if (!editorRef.current?.contains(e.relatedTarget as Node)) {
