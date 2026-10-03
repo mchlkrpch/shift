@@ -85,16 +85,35 @@ gap: 3px;
 }
 
 .tv-block-wrapper {
-    display: block;
-    position: relative;
-    width: 100%;
+	display: block;
+	position: relative;
+	width: 100%;
+}
+
+.block-gutter {
+  position: absolute;
+  left: -40px;
+  top: 0;          /* Изменили с 4px на 0 */
+  bottom: 0;       /* Растянули на весь блок */
+  width: 30px;
+  text-align: right;
+  font-size: 11px;
+  color: color-mix(in srgb, var(--chakra-colors-gray-500) 60%, transparent);
+  user-select: none;
+  pointer-events: none;
+  font-family: 'Roboto Mono', monospace;
+  transition: color 0.1s ease;
+}
+
+.tv-block-wrapper[data-focused="true"] > .block-gutter {
+  color: var(--chakra-colors-blue-400);
 }
 
 .tv-group {
-    padding: 2px 0px;
-    font-weight: 500;
-    width: fit-content;
-    max-width: 100%;
+	padding: 2px 0px;
+	font-weight: 500;
+	width: fit-content;
+	max-width: 100%;
 }
 
 .tv-group-toggle {
@@ -252,6 +271,11 @@ const TvBlock = React.memo(({
 	const [model, setModel] = useState(REMOTE_GPT_MODEL);
 	const [useContext, setUseContext] = useState(false);
 
+	const lineCount = useMemo(() => {
+    if (!block.text) return 1;
+    return block.text.split('\n').length;
+  }, [block.text]);
+
 	const handleMenuEnter = () => {
     if (closeMenuTimeoutRef.current) clearTimeout(closeMenuTimeoutRef.current);
     setIsMenuOpen(true);
@@ -307,6 +331,7 @@ const TvBlock = React.memo(({
       data-parent-id={block.parentId || ""}
       data-raw-text={block.text}
       data-hidden={isHidden ? "true" : undefined}
+			data-line-count={lineCount}
       data-rendered={block.isRendered ? "true" : undefined}
       data-is-last-in-group={isLastInGroup ? "true" : undefined}
       data-role={block.role} 
@@ -318,6 +343,8 @@ const TvBlock = React.memo(({
 				borderRadius: '8px',
 			}}
     >
+			<div className="block-gutter" contentEditable={false} />
+
       <div
         className="ctrl-buttons-overlay"
         contentEditable={false}
@@ -488,6 +515,7 @@ const TvBlock = React.memo(({
           style={{
             paddingLeft: `${depthPadding + 6}px`,
             backgroundColor: blockBg,
+						border: !block.isGroup? '1px solid color-mix(in srgb, var(--chakra-colors-bg-inverted) 6.5%, var(--chakra-colors-bg))': '',
             margin: blockMargin,
           }}
           contentEditable={!readOnly}
@@ -1268,6 +1296,210 @@ export const UnifiedTreeView = forwardRef(({
 	}, [initialBlocks, initialContent, blocks]);
 
 	useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+
+    let frameId = null as any;
+
+    const syncLineNumbers = () => {
+      const wrappers = editor.querySelectorAll('.tv-block-wrapper');
+      let currentLineNumber = 1; 
+      const updates = [];
+
+      for (let i = 0; i < wrappers.length; i++) {
+        const wrapper = wrappers[i];
+        const gutter = wrapper.querySelector('.block-gutter');
+
+        // if (wrapper.hasAttribute('data-is-ai-chat') || wrapper.hasAttribute('data-is-spinner')) {
+        //   if (gutter) updates.push({ gutter, html: '', display: 'none' });
+        //   continue;
+        // }
+        // if (wrapper.style.display === 'none' || wrapper.hasAttribute('data-hidden')) {
+        //   if (gutter) updates.push({ gutter, html: '', display: 'none' });
+        //   continue; 
+        // }
+        // const lineCount = parseInt(wrapper.getAttribute('data-line-count') || '1', 10);
+        // let actualLines = 1;
+				if (wrapper.hasAttribute('data-is-ai-chat') || wrapper.hasAttribute('data-is-spinner')) {
+          if (gutter) updates.push({ gutter, html: '', display: 'none' });
+          continue;
+        }
+
+        // Вытаскиваем lineCount ВЫШЕ проверки на скрытость блока
+        const lineCount = parseInt(wrapper.getAttribute('data-line-count') || '1', 10);
+
+        if (wrapper.style.display === 'none' || wrapper.hasAttribute('data-hidden')) {
+          if (gutter) updates.push({ gutter, html: '', display: 'none' });
+          // ИСПРАВЛЕНИЕ: Плюсуем строки скрытого блока к глобальному счетчику!
+          currentLineNumber += lineCount;
+          continue; 
+        }
+
+        let actualLines = 1;
+
+        if (gutter) {
+          // Ищем контейнер с текстом: либо режим редактора (Card), либо базовый блок
+          let container = wrapper.querySelector('[role="textbox"]'); 
+          if (container) {
+            const parent = container.parentElement;
+            if (parent && parent.style.display === 'none') container = null;
+          }
+          if (!container) {
+            container = wrapper.querySelector('.tv-block:not(.tv-group-badge)'); 
+            if (!container) container = wrapper.querySelector('.tv-group');
+          }
+
+          let html = '';
+          let isEditing = false;
+          
+          if (container) {
+            // Определяем, редактирует ли пользователь блок прямо сейчас
+            isEditing = container.getAttribute('role') === 'textbox' || container.getAttribute('contenteditable') === 'true';
+            
+            const wrapperRect = wrapper.getBoundingClientRect();
+            const offsets = [];
+
+            // Рекурсивно собираем координаты ВСЕХ видимых строк
+            const walk = (node) => {
+              // НОВОЕ: Обрабатываем чистый текст.
+              // getClientRects() разобьет текст на прямоугольники для КАЖДОЙ физической строки (word-wrap или \n)
+              if (node.nodeType === Node.TEXT_NODE) {
+                try {
+                  const range = document.createRange();
+                  range.selectNode(node);
+                  const rects = range.getClientRects();
+                  for (let i = 0; i < rects.length; i++) {
+                    const rect = rects[i];
+                    // Если высота больше 0, значит это реальная отрисованная строка текста
+                    if (rect.height > 0) {
+                      const t = rect.top - wrapperRect.top;
+                      // Защита от дублей: добавляем, только если отступ больше предыдущего на 8px
+                      if (t >= -10 && (offsets.length === 0 || t > offsets[offsets.length - 1] + 8)) {
+                        offsets.push(t);
+                      }
+                    }
+                  }
+                } catch(e) {}
+              } 
+              // Обрабатываем HTML-элементы
+              else if (node.nodeType === Node.ELEMENT_NODE) {
+                const cl = node.classList;
+                if (cl && (cl.contains('resizer-handle') || cl.contains('cropper-overlay') || cl.contains('ctrl-buttons-overlay') || cl.contains('block-gutter'))) return;
+                const tag = node.tagName;
+                // Для <br> берем и верхнюю, и нижнюю координату (покрывает пустые строки)
+                if (tag === 'BR') {
+                  const range = document.createRange();
+                  range.selectNode(node);
+                  const rect = range.getBoundingClientRect();
+                  if (rect.height > 0 || rect.bottom > 0) {
+                    const t = rect.top - wrapperRect.top;
+                    const b = rect.bottom - wrapperRect.top;
+                    if (t >= -10 && (offsets.length === 0 || t > offsets[offsets.length - 1] + 8)) offsets.push(t);
+                    if (b >= -10 && (offsets.length === 0 || b > offsets[offsets.length - 1] + 8)) offsets.push(b);
+                  }
+                } 
+                // Для всех блочных элементов
+                else if (tag === 'DIV' || tag === 'P' || tag === 'LI' || tag === 'H1' || tag === 'H2' || tag === 'H3' || tag === 'H4' || tag === 'H5' || tag === 'H6') {
+                  const rect = node.getBoundingClientRect();
+                  if (rect.height > 0) {
+                    const t = rect.top - wrapperRect.top;
+                    if (t >= -10 && (offsets.length === 0 || t > offsets[offsets.length - 1] + 8)) {
+                      offsets.push(t);
+                    }
+                  }
+                }
+                for (let child of node.childNodes) {
+                  walk(child);
+                }
+              }
+            };
+            
+            // walk(container);
+            // if (offsets.length === 0) offsets.push(4); 
+            // actualLines = offsets.length;
+						walk(container);
+
+            if (offsets.length === 0) offsets.push(4); 
+
+            // ИСПРАВЛЕНИЕ: Ловим новую пустую строку (Shift+Enter), на которой стоит каретка, 
+            // так как конечный trailing <br> в браузерах часто имеет нулевую высоту и сливается с предыдущей строкой
+            if (isEditing) {
+              try {
+                const sel = window.getSelection();
+                if (sel && sel.rangeCount > 0) {
+                  const range = sel.getRangeAt(0);
+                  if (container.contains(range.commonAncestorContainer)) {
+                    let cursorTop = null;
+                    const cursorRects = range.getClientRects();
+                    
+                    if (cursorRects.length > 0) {
+                      cursorTop = cursorRects[0].top - wrapperRect.top;
+                    } else {
+                       const cursorRect = range.getBoundingClientRect();
+                       if (cursorRect.top || cursorRect.bottom) {
+                          cursorTop = cursorRect.top - wrapperRect.top;
+                       }
+                    }
+                    
+                    // Если каретка физически находится ниже (на новой строке), чем последняя учтённая строка
+                    if (cursorTop !== null) {
+                      if (cursorTop > (offsets.length > 0 ? offsets[offsets.length - 1] + 8 : -10)) {
+                        offsets.push(cursorTop);
+                      }
+                    }
+                  }
+                }
+              } catch (e) {
+                // Игнорируем ошибки при запросе selection
+              }
+            }
+
+            actualLines = offsets.length;
+            
+            // Генерируем цифры для каждой физической строки с отступом сверху (top)
+            for (let j = 0; j < offsets.length; j++) {
+              html += `<div style="position: absolute; top: ${offsets[j]}px; right: 0; line-height: 1.6;">${currentLineNumber + j}</div>`;
+            }
+          }
+          updates.push({ gutter, html, display: 'block' });
+          
+          // Если редактируем — используем реальные DOM строки. Иначе — React стейт.
+          currentLineNumber += isEditing ? actualLines : lineCount;
+        } else {
+          currentLineNumber += lineCount;
+        }
+      }
+
+      // ФАЗА ЗАПИСИ (применяем пачкой за 1 кадр, чтобы не было лагов)
+      for (let i = 0; i < updates.length; i++) {
+        const { gutter, html, display } = updates[i];
+        if (gutter.style.display !== display) gutter.style.display = display;
+        if (html !== undefined && gutter.innerHTML !== html) gutter.innerHTML = html;
+      }
+    };
+
+    syncLineNumbers();
+
+    const observer = new MutationObserver(() => {
+      if (frameId) cancelAnimationFrame(frameId);
+      frameId = requestAnimationFrame(syncLineNumbers);
+    });
+
+    observer.observe(editor, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      characterData: true, // ВАЖНО: Следим за вводом символов, чтобы ловить word-wrap в реальном времени!
+      attributeFilter: ['style', 'data-hidden', 'data-line-count'] 
+    });
+
+    return () => {
+      observer.disconnect();
+      if (frameId) cancelAnimationFrame(frameId);
+    };
+  }, [fontSize]);
+
+	useEffect(() => {
 		const handleSelectionChange = () => {
 			if (!editorRef.current) return;
 			const sel = window.getSelection();
@@ -1346,7 +1578,8 @@ export const UnifiedTreeView = forwardRef(({
 					ref={editorRef}
 					className="tv-editor-root"
 					style={{
-						padding: mainTree? '50px 30px':'0px',
+						// padding: mainTree? '50px 30px':'0px',
+						padding: mainTree ? '50px 30px 50px 50px' : '0px 0px 0px 45px', 
 					}}
 					contentEditable={true}
 					suppressContentEditableWarning={true}
