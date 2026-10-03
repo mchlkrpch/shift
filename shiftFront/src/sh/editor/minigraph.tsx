@@ -1,6 +1,6 @@
 /** @jsxImportSource @emotion/react */
 import { css } from "@emotion/react";
-import { forwardRef, memo, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { useGraphCtx } from "../../App";
 import { calcG } from "../card/utility";
 import { Box, HStack, IconButton, Spacer } from "@chakra-ui/react";
@@ -9,8 +9,9 @@ import Sigma from "sigma";
 import { MdClose, MdDelete } from "react-icons/md";
 import { SIDE_SPLIT_SYM } from "../card/utility";
 import { drawRoundRect, rgba2hex } from "./utility";
-import { buildDependencyGraph, getCardState } from "./feed/feedUtils";
+import { buildDependencyGraph, getCardState, getInstantMasteryHistory, MAX_LEVEL } from "./feed/feedUtils";
 import { createPortal } from "react-dom";
+import { ContextMenu } from "./contextMenu";
 
 
 const minigraphCSS = css`
@@ -608,7 +609,13 @@ export const Minigraph = memo(({
 	editorRef,
 }: any) => {
 	const rendererRef = useRef<any>(null);
-	const { blocks, repeats, ns } = useGraphCtx() as any;
+	// const { blocks, repeats, ns } = useGraphCtx() as any;
+	const { blocks, repeats, ns, setRepeats } = useGraphCtx() as any; 
+
+
+	const [contextMenu, setContextMenu] = useState<{
+		isOpen: boolean, x: number, y: number, targetIds: string[]
+	}>({ isOpen: false, x: 0, y: 0, targetIds: [] });
 
 	const { activeNs, groupColorByLabel } = useMemo(() => {
 		const dict: Record<string, any> = {};
@@ -857,6 +864,75 @@ height: ${rect.h}px;
 
 	const title = ids.length === 1 ? ids[0] : `${ids.length} elements`;
 
+	const handleNodeRightClick = useCallback((e: any, nodeId: string) => {
+		// e может прийти как MouseEvent от Sigma
+		const mouseEvent = e.original || e;
+		
+		// Определяем таргеты. Если кликнули по уже выделенному узлу, применяем ко всем выделенным
+		let targetNodes = [nodeId];
+		if (selectedNodeIds.has(nodeId)) {
+			targetNodes = Array.from(selectedNodeIds);
+		}
+
+		// В графе узлом может быть "ID карточки" или "Имя группы". Разворачиваем группы в реальные карточки.
+		const resolvedIds = new Set<string>();
+		targetNodes.forEach(target => {
+			if (activeNs[target] && activeNs[target].type === 'card') {
+				resolvedIds.add(target);
+			} else {
+				// Это группа (или label группы) - ищем все карточки, которые лежат в этой ветке (path)
+				Object.keys(activeNs).forEach(cardId => {
+					const card = activeNs[cardId];
+					if (card.type === 'card' && card.path && card.path.includes(target)) {
+						resolvedIds.add(cardId);
+					}
+				});
+			}
+		});
+
+		setContextMenu({
+			isOpen: true,
+			x: mouseEvent.clientX,
+			y: mouseEvent.clientY,
+			targetIds: Array.from(resolvedIds)
+		});
+	}, [selectedNodeIds, activeNs]);
+
+	// --- 3. ФУНКЦИИ ИЗМЕНЕНИЯ ИСТОРИИ ---
+	const handleMenuAction = useCallback((action: 'forget' | 'repeat' | 'learned') => {
+		if (!contextMenu.targetIds.length) return;
+		
+		const now = Date.now();
+		const nextRepeats = { ...repeats };
+		
+		contextMenu.targetIds.forEach(id => {
+			const prev = nextRepeats[id] || { history: [], nOfErrors: 0 };
+			let history = [...(prev.history || [])];
+			let nOfErrors = prev.nOfErrors || 0;
+
+			if (action === 'forget') {
+				history = [];
+				nOfErrors += 1; // Увеличиваем счетчик ошибок
+			} else if (action === 'repeat') {
+				if (history.length < MAX_LEVEL) history.push(now); // Идем на следующий уровень
+			} else if (action === 'learned') {
+				history = getInstantMasteryHistory(now); // Мгновенно переводим в learned
+			}
+			
+			nextRepeats[id] = { ...prev, history, nOfErrors, path: prev.path || id };
+		});
+
+		// Обновляем глобальный стейт (feed/minigraph отреагируют автоматически)
+		setRepeats(nextRepeats);
+		setContextMenu(prev => ({ ...prev, isOpen: false }));
+	}, [contextMenu.targetIds, repeats, setRepeats]);
+	
+	const contextMenuItems = useMemo(() => [
+		{ id: 'forget', el: 'Забыть (сбросить)', onClick: () => handleMenuAction('forget') },
+		{ id: 'repeat', el: 'Повторить (+1 уровень)', onClick: () => handleMenuAction('repeat') },
+		{ id: 'learned', el: 'В выученное (Макс)', onClick: () => handleMenuAction('learned') }
+	], [handleMenuAction]);
+
 	const innerMinigraphComponent = (
 		<Box css={cssStyles}>
 			{/* Собственная строка-заголовок нужна только для плавающего (float) режима — там она же
@@ -870,6 +946,13 @@ height: ${rect.h}px;
 			)}
 
 			<Box position="relative" flex={1}>
+				<ContextMenu
+					isOpen={contextMenu.isOpen}
+					x={contextMenu.x}
+					y={contextMenu.y}
+					items={contextMenuItems}
+					onClose={() => setContextMenu(prev => ({ ...prev, isOpen: false }))}
+				/>
 				<GraphRenderer
 					ref={rendererRef}
 					reactflowNs={reactflowNs}
@@ -880,6 +963,7 @@ height: ${rect.h}px;
 					selectedIds={selectedNodeIds}
 					nodeStatuses={nodeStatusMap}
 					hiddenCategories={hiddenCategories}
+					onNodeRightClick={handleNodeRightClick} // <--- ДОБАВЛЕНО
 				/>
 
 				<HStack
