@@ -33,8 +33,11 @@ import { GraphCtx, useGraphCtx } from "../../../App";
 import { ContextMenu } from "../contextMenu";
 import { REMOTE_GPT_MODEL, sendToRemoteGPT } from "../../aichat/aichat";
 import { genId, getBlockInfoFromNode, useKeyDown } from "./unifiedHooks";
-import { convertBlocksToUnifiedFormat, createOffsetWalker, extractContent, useDragDrop, type DomBlock } from "./unifiedUtils";
+import { convertBlocksToUnifiedFormat, createOffsetWalker, useDragDrop, type DomBlock } from "./unifiedUtils";
 import { SuggestionAIChat } from "./suggestion";
+// import { getInstantMasteryHistory, MAX_LEVEL } from "./feed/feedUtils";
+import { useAppwriteCursors } from "../../../appwrite/service";
+import store from "../../../storage";
 
 export const editorCSS = css`
 position: relative;
@@ -312,7 +315,7 @@ export const CollaboratorCursors = memo(({ editorRef, cursors }: { editorRef: an
 		observer.observe(editor);
 		editor.addEventListener('scroll', updatePositions, { passive: true });
 		// Опционально: таймер для подстраховки при быстрых изменениях DOM
-		const interval = setInterval(updatePositions, 200);
+		const interval = setInterval(updatePositions, 1000);
 
 		return () => {
 			observer.disconnect();
@@ -321,13 +324,16 @@ export const CollaboratorCursors = memo(({ editorRef, cursors }: { editorRef: an
 		};
 	}, [cursors, editorRef]);
 
+	console.log("cursors:", cursors)
+
 	return (
 		<div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, pointerEvents: 'none', zIndex: 10 }}>
 			{positions.map(p => (
 				<div key={p.userId} style={{
 					position: 'absolute', top: p.top, left: p.left,
 					height: p.height, width: '2px', backgroundColor: p.color,
-					transition: 'all 0.1s linear' // Плавное движение
+                    // БЫЛО: transition: 'all 0.1s linear'
+					transition: 'all 0.3s ease-out' // <--- СТАЛО! Плавное скольжение 300мс
 				}}>
 					<div style={{
 						position: 'absolute', top: '-14px', left: 0,
@@ -357,12 +363,23 @@ const TvBlock = React.memo(({
   fontSize,
   onCtrlButtonClick,
   rootPath,
+	onCursorUpdate,
 }: any) => {
 	const [isMenuOpen, setIsMenuOpen] = useState(false);
 	const [isLoading, _setIsLoading] = useState(false);
 	const closeMenuTimeoutRef = useRef<any>(null);
 	const [model, setModel] = useState(REMOTE_GPT_MODEL);
 	const [useContext, setUseContext] = useState(false);
+
+	const handleCursorInteraction = () => {
+		// setTimeout нужен, чтобы браузер успел физически переставить каретку перед расчетом
+		setTimeout(() => {
+			const sel = window.getSelection();
+			if (sel && sel.rangeCount > 0 && onCursorUpdate) {
+				onCursorUpdate(sel.getRangeAt(0));
+			}
+		}, 0);
+	};
 
 	const lineCount = useMemo(() => {
     if (!block.text) return 1;
@@ -611,6 +628,12 @@ const TvBlock = React.memo(({
 						border: !block.isGroup? '1px solid color-mix(in srgb, var(--chakra-colors-bg-inverted) 6.5%, var(--chakra-colors-bg))': '',
             margin: blockMargin,
           }}
+					onClick={handleCursorInteraction}
+          onKeyUp={(e) => {
+              if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+                  handleCursorInteraction();
+              }
+          }}
           contentEditable={!readOnly}
           suppressContentEditableWarning={true}
           dangerouslySetInnerHTML={{ __html: formatEditText(block.text) }}
@@ -681,7 +704,7 @@ export const UnifiedTreeView = forwardRef(({
 	mainTree,
 }: any, ref) => {
   const gCtx = useGraphCtx() as any;
-  const { ns: baseNs } = gCtx || { ns: {} };
+  const { ns: baseNs, id: graphId } = gCtx || { ns: {} };
 	
   const parentCardCtx = React.useContext(CardCtx);
   const cardCtx = useMemo(() => {
@@ -694,6 +717,14 @@ export const UnifiedTreeView = forwardRef(({
   const rootPath = cardCtx.path;
 
   const editorRef = useRef<HTMLDivElement>(null);
+
+	// const user = store.
+	const ud = store.getState().userData;
+
+	// console.log('[ut]: graphId',gCtx)
+
+	const activeCursors = useAppwriteCursors(graphId, {$id: ud.$id, name: ud.username}, editorRef);
+
 	useEffect(() => {
 		const el = editorRef.current;
 		if (!el) return;
@@ -1860,17 +1891,17 @@ export const UnifiedTreeView = forwardRef(({
 					suppressContentEditableWarning={true}
 					css={mainTree ? editorCSS : [editorCSS, nestedTreeOverflowFixCSS]}
 					onMouseDown={() => {setAiHighlightRects([])}}
-					onPointerDown={(e) => {
-						const target = e.target as HTMLElement;
-						if (target.closest('.quiz-type-toggle')) {
-							e.preventDefault();
-							e.stopPropagation();
-							const rect = target.getBoundingClientRect();
-							const quizSpan = target.closest('.inlineQuiz') as HTMLElement;
-							setQuizMenu({ isOpen: true, x: rect.left, y: rect.bottom, node: quizSpan });
-							return;
-						}
-					}}
+					// onPointerDown={(e) => {
+					// 	const target = e.target as HTMLElement;
+					// 	if (target.closest('.quiz-type-toggle')) {
+					// 		e.preventDefault();
+					// 		e.stopPropagation();
+					// 		const rect = target.getBoundingClientRect();
+					// 		const quizSpan = target.closest('.inlineQuiz') as HTMLElement;
+					// 		setQuizMenu({ isOpen: true, x: rect.left, y: rect.bottom, node: quizSpan });
+					// 		return;
+					// 	}
+					// }}
 					onKeyDown={(e) => {
 						e.stopPropagation();
 						if (e.ctrlKey && e.key === 'Enter') {
@@ -1968,6 +1999,8 @@ export const UnifiedTreeView = forwardRef(({
 						}
 					}}
 				>
+					<CollaboratorCursors editorRef={editorRef} cursors={activeCursors} />
+
 					<svg width="0" height="0" style={{
 						position: 'absolute', pointerEvents: 'none',
 					}}>
@@ -2180,6 +2213,30 @@ export const UnifiedTreeView = forwardRef(({
 									fontSize={fontSize}
 									rootPath={rootPath}
 									readOnly={readOnly}
+									onCursorUpdate={(range: Range) => {
+										if (!editorRef.current) return;
+										// Получаем абсолютный offset с помощью утилиты
+										const info = getBlockInfoFromNode(range.startContainer, range.startOffset, editorRef.current);
+										console.log('info',info, info.blockElement.parentElement?.getAttribute('data-id'), block.id)
+										
+										if (info && info.blockElement.parentElement?.getAttribute('data-id') === block.id) {
+											const absOffset = info.offset;
+											console.log('here?')
+											// Вычисляем номер строки и смещение в ней
+											const textUpToCursor = block.text.substring(0, absOffset) as any;
+											console.log('textUpToCursor', textUpToCursor, absOffset)
+											const lines = textUpToCursor.split('\n');
+											const lineIndex = lines.length; // Номер строки (1-based)
+											const lineOffset = lines[lines.length - 1].length; // Смещение в текущей строке
+											
+											console.log(`🖱️ [TvBlock ${block.id}] Клик! Строка: ${lineIndex}, Смещение в строке: ${lineOffset}, Абс. смещение: ${absOffset}`);
+											
+											// Форсируем немедленную отправку в Appwrite через кастомное событие
+											document.dispatchEvent(new CustomEvent('force-appwrite-cursor', {
+												detail: { blockId: block.id, offset: absOffset }
+											}));
+										}
+									}}
 									onCtrlButtonClick={(action: string, targetBlock: DomBlock) => {
 										if (action === 'up' || action === 'down') {
 											setBlocks(prev => {

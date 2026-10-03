@@ -1088,6 +1088,7 @@ export const Card = forwardRef(({
 
 
   // Editor card's code 
+  // Editor card's code 
   const TextBox = (
     <>
       <div
@@ -1099,7 +1100,13 @@ export const Card = forwardRef(({
         onBlur={onBlurCb}
         onKeyDown={localOnKeyDown}
         onPaste={(e) => handleEditorPaste(e, saveContentOnly)}
+        // ДОБАВЛЕНО: Явный console.log при клике внутри textMode
+        onClick={(e) => {
+          console.log('???')
+          console.log("📝 [Card] Клик по текстовому блоку (isEdit mode)!");
+        }}
         onPointerDown={(e) => {
+          console.log('???')
           const target = e.target as HTMLElement;
           if (target.closest('.quiz-type-toggle')) {
               e.preventDefault();
@@ -1120,7 +1127,6 @@ export const Card = forwardRef(({
           marginTop: options.twoSides === true ? '10px' : 0,
           flex: 1,
           padding: '0px 10px',
-          // lineHeight: '1.5em',
           fontWeight: `var(--title-weight, 400)`,
           fontSize: `var(--title-fs, ${fontSize}px)`,
         }}
