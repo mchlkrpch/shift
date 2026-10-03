@@ -45,7 +45,7 @@ import { IoMdHeart, IoMdHeartEmpty } from "react-icons/io";
 import { FaRegCommentAlt } from "react-icons/fa";
 import { createPortal } from 'react-dom';
 import { FaChevronRight } from 'react-icons/fa';
-import { LuChevronLeft, LuDot, LuScan } from 'react-icons/lu';
+import { LuBookDashed, LuChevronLeft, LuDot, LuScan } from 'react-icons/lu';
 
 
 export const dropMenuCSS=css`
@@ -623,6 +623,30 @@ export const Card = forwardRef(({
     setMentionMenu(prev => ({ ...prev, isOpen: false, query: '' }));
   },[mentionMenu]);
 
+  const insertQuiz = useCallback(() => {
+    const sel = window.getSelection();
+    if (!sel || !mentionMenu.range) return;
+    sel.removeAllRanges();
+    sel.addRange(mentionMenu.range);
+    const r = mentionMenu.range;
+    r.setStart(r.startContainer, Math.max(0, r.startOffset - mentionMenu.query.length - 1));
+    r.deleteContents();
+
+    const wrapper = document.createElement('span');
+    wrapper.innerHTML = `<span class="inlineQuiz" data-type="exact" data-answer="" contenteditable="false" style="display:inline-flex; align-items:center; border:1px solid color-mix(in srgb, var(--chakra-colors-fg) 20%, transparent); border-radius:4px; padding:2px; margin: 0 4px;"><input class="quiz-answer-input" type="text" value="" style="border:none; outline:none; background:transparent; width: 60px; font-size: inherit; color: var(--chakra-colors-fg);" placeholder="Ответ..." /><span class="quiz-type-toggle" style="cursor:pointer; font-size:10px; padding:0 4px; opacity: 0.5;">▼</span></span>`;
+    const el = wrapper.firstChild as HTMLElement;
+
+    r.insertNode(el);
+    const space = document.createTextNode('\u00A0');
+    el.after(space);
+    r.setStartAfter(space);
+    r.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(r);
+    setMentionMenu(prev => ({ ...prev, isOpen: false, query: '' }));
+    setTimeout(() => el.querySelector('input')?.focus(), 50);
+  }, [mentionMenu]);
+
   // const mentionMenuItems = useMemo(() => {
   //   const q = mentionMenu.query.toLowerCase();
   //   const opts: MenuItem[] =[];
@@ -709,9 +733,19 @@ export const Card = forwardRef(({
     if (opts.length === 0) {
       opts.push({ id: 'no-results', el: <Text className='tip'>no cards match</Text>, disabled: true });
     }
+    
+    opts.unshift({
+      id: 'insert-quiz',
+      el: (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--chakra-colors-green-500)' }}>
+            <LuBookDashed /> <span>Ввод текста с проверкой</span>
+        </div>
+      ),
+      onClick: insertQuiz
+    });
 
     return opts;
-  }, [ns, mentionMenu.query, insertMention, id]); // <-- ИСПРАВЛЕНИЕ: добавили `id` в зависимости
+  }, [ns, mentionMenu.query, insertMention, id, insertQuiz]); // <-- ИСПРАВЛЕНИЕ: добавили `id` в зависимости
 
   // list[str]: of forward sides of card-group
   const fwdParts = groupTp==='multiple_bwd'? c
@@ -763,6 +797,13 @@ export const Card = forwardRef(({
       if (el.tagName === 'IMG') {
         // Гарантируем чистое сохранение картинки с ее шириной
         return `<img src="${el.getAttribute('src')}" style="${el.getAttribute('style')}" />`; 
+      }
+      
+      if (el.classList.contains('inlineQuiz')) {
+        const input = el.querySelector('input');
+        const type = el.getAttribute('data-type') || 'exact';
+        const answer = input ? input.value : el.getAttribute('data-answer');
+        return `<quiz=${type}:${answer}>`;
       }
 
       if (el.tagName === 'HR' && el.classList.contains('clipper-split')) {
@@ -957,6 +998,22 @@ export const Card = forwardRef(({
     };
   }, [isAltPressed, options?.twoSides, extractContent]);
 
+  const [quizMenu, setQuizMenu] = useState<{ isOpen: boolean, x: number, y: number, node: HTMLElement | null }>({ isOpen: false, x: 0, y: 0, node: null });
+  const quizMenuItems = [
+     { id: 'exact', el: 'Посимвольный', onClick: () => {
+         if (quizMenu.node) {
+            quizMenu.node.setAttribute('data-type', 'exact');
+            saveContentOnly();
+         }
+     }},
+     { id: 'ai', el: 'ИИ-проверка', onClick: () => {
+         if (quizMenu.node) {
+            quizMenu.node.setAttribute('data-type', 'ai');
+            saveContentOnly();
+         }
+     }}
+  ];
+
 
   const OptionSwitcher:any=(<>
     {(groupTp!=="multiple_fwd")&&(
@@ -1044,6 +1101,14 @@ export const Card = forwardRef(({
         onPaste={(e) => handleEditorPaste(e, saveContentOnly)}
         onPointerDown={(e) => {
           const target = e.target as HTMLElement;
+          if (target.closest('.quiz-type-toggle')) {
+              e.preventDefault();
+              e.stopPropagation(); // Не даем событию уйти в document
+              const rect = target.getBoundingClientRect();
+              const quizSpan = target.closest('.inlineQuiz') as HTMLElement;
+              setQuizMenu({ isOpen: true, x: rect.left, y: rect.bottom, node: quizSpan });
+              return;
+          }
           if (target.tagName === 'IMG') {
             setActiveImg(target as HTMLImageElement);
           } else {
@@ -1111,7 +1176,13 @@ export const Card = forwardRef(({
         items={mentionMenuItems}
         onClose={() => setMentionMenu(prev => ({ ...prev, isOpen: false }))}
       />
-      {/* Editable div + Card previewr */}
+      <ContextMenu 
+        isOpen={quizMenu.isOpen}
+        x={quizMenu.x}
+        y={quizMenu.y}
+        items={quizMenuItems}
+        onClose={() => setQuizMenu(prev => ({ ...prev, isOpen: false }))}
+      />
       {isEdit?(TextBox):(
         // ИЗМЕНЕНИЕ 1: Меняем HStack на Box с flexDirection="column"
         <Box 
@@ -1195,17 +1266,27 @@ export const Card = forwardRef(({
           : `<div class="sh_string">${t}</div>`;
       }).join('')}`;
       const html = mergedTxt
-        .split(/(<id=[^>]*>)/)
-        .map((n:any)=>(
-          (n.slice(0,3)==='<id')
-            ? renderToString(
+        .split(/(<id=[^>]*>|<quiz=[^:]+:[^>]*>)/)
+        .map((n:any)=>{
+          if (n.startsWith('<id=')) {
+            return renderToString(
               <GraphCtx.Provider value={gCtx}>
               <CardCtx.Provider value={cardCtx}>
               <Cell id={n.slice(4,n.length-1)}/>
               </CardCtx.Provider>
-              </GraphCtx.Provider>)
-            : n
-        ))
+              </GraphCtx.Provider>
+            );
+          }
+          if (n.startsWith('<quiz=')) {
+            const match = n.match(/<quiz=([^:]+):([^>]*)>/);
+            if (match) {
+                const type = match[1];
+                const answer = match[2];
+                return `<span class="inlineQuiz" data-type="${type}" data-answer="${answer}" contenteditable="false" style="display:inline-flex; align-items:center; border:1px solid color-mix(in srgb, var(--chakra-colors-fg) 20%, transparent); border-radius:4px; padding:2px; margin: 0 4px;"><input class="quiz-answer-input" type="text" value="${answer}" style="border:none; outline:none; background:transparent; width: 60px; font-size: inherit; color: var(--chakra-colors-fg);" placeholder="Ответ..." /><span class="quiz-type-toggle" style="cursor:pointer; font-size:10px; padding:0 4px; opacity: 0.5;">▼</span></span>`;
+            }
+          }
+          return n;
+        })
         .join('');
       setTimeout(() => {
         if (inputRef.current) {

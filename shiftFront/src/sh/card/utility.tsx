@@ -602,6 +602,59 @@ const headingStyles: React.CSSProperties = {
   fontWeight: 600,
 };
 
+export const useAICheck = () => {
+    // хук для ии проверки, я его потом допишу
+    const checkAnswer = async (userAnswer: string, correctAnswer: string) => {
+        return userAnswer.trim().toLowerCase() === correctAnswer.trim().toLowerCase();
+    };
+    return { checkAnswer };
+};
+
+export const QuizNode = ({ type, answer }: { type: string, answer: string }) => {
+    const [val, setVal] = useState('');
+    const [status, setStatus] = useState<'idle'|'correct'|'wrong'>('idle');
+    const { checkAnswer } = useAICheck();
+
+    const handleCheck = async () => {
+        if (type === 'ai') {
+            const isCorrect = await checkAnswer(val, answer);
+            setStatus(isCorrect ? 'correct' : 'wrong');
+        } else {
+            setStatus(val.trim() === answer.trim() ? 'correct' : 'wrong');
+        }
+    };
+
+    return (
+        <span style={{ display: 'inline-flex', alignItems: 'center', margin: '0 4px' }}>
+            <input 
+                type="text"
+                value={val}
+                onChange={(e) => { 
+                    const newVal = e.target.value;
+                    setVal(newVal); 
+                    if (type === 'exact') {
+                        setStatus(newVal.trim() === answer.trim() ? 'correct' : 'idle');
+                    } else {
+                        setStatus('idle'); 
+                    }
+                }}
+                onKeyDown={(e) => e.key === 'Enter' && handleCheck()}
+                placeholder="..."
+                style={{
+                    border: '1px solid',
+                    borderColor: status === 'correct' ? 'var(--chakra-colors-green-500)' : (status === 'wrong' ? 'var(--chakra-colors-red-500)' : 'color-mix(in srgb, currentColor 20%, transparent)'),
+                    background: status === 'correct' ? 'color-mix(in srgb, var(--chakra-colors-green-500) 10%, transparent)' : (status === 'wrong' ? 'color-mix(in srgb, var(--chakra-colors-red-500) 10%, transparent)' : 'transparent'),
+                    borderRadius: '4px',
+                    padding: '2px 6px',
+                    outline: 'none',
+                    width: Math.max(60, val.length * 8 + 20) + 'px',
+                    color: 'inherit'
+                }}
+            />
+        </span>
+    );
+};
+
 
 export const shComponents: Components = {
   h1: ({ node, ...props }:any) => <h1 style={{ ...headingStyles, fontSize: '2em', borderBottom: '1px solid #ddd' }} {...props} />,
@@ -639,11 +692,13 @@ export const shComponents: Components = {
   li: ({ node, ...props }) => <li style={{ marginBottom: '0em' }} {...props} />,
   img: InteractiveImage,
   
+  quiz: (props: any) => <QuizNode type={props.type} answer={props.answer} />,
   code: CodeBlock,
 };
 
 const LINK_REGEX_EXPR: RegExp = /<id=([^>]+?)>/g;
 const MATH_REGEX_EXPR: RegExp = /\$([\s\S]+?)\$/g;
+const QUIZ_REGEX_EXPR: RegExp = /<quiz=([^:]+):([^>]*)>/g;
 
 const splitPattern = (
   s: string,
@@ -706,19 +761,37 @@ export const shRemark: Plugin<[], Root> = () => {
         if (n.type === 'inlineMath' || n.type === 'html') {
           return [n];
         }
-        return splitPattern(
-          n.value,
-          LINK_REGEX_EXPR,
-          (ans: any, s: string, pI: number, sI: number) => {
-            ans.push({ type: 'text', value: s.slice(pI, sI) });
-          },
-          (ans: any, data: string) => {
-            ans.push({
-              type: 'html',
-              value: `<cell id="${data}" value="${data}"></cell>`,
-            });
-          },
+        
+        const nodesAfterQuiz = splitPattern(
+            n.value,
+            QUIZ_REGEX_EXPR,
+            (ans: any, s: string, pI: number, sI: number) => {
+                ans.push({ type: 'text', value: s.slice(pI, sI) });
+            },
+            (ans: any, data: any) => {
+                ans.push({
+                    type: 'html',
+                    value: `<quiz type="${data[0]}" answer="${data[1]}"></quiz>`,
+                });
+            }
         );
+
+        return nodesAfterQuiz.flatMap((nn: any) => {
+          if (nn.type !== 'text') return [nn];
+          return splitPattern(
+            nn.value,
+            LINK_REGEX_EXPR,
+            (ans: any, s: string, pI: number, sI: number) => {
+              ans.push({ type: 'text', value: s.slice(pI, sI) });
+            },
+            (ans: any, data: string) => {
+              ans.push({
+                type: 'html',
+                value: `<cell id="${data}" value="${data}"></cell>`,
+              });
+            },
+          );
+        });
       });
 
       p.children.splice(index, 1, ...finalNodes);
