@@ -35,6 +35,7 @@ margin: 0;
 width: 100%;
 min-height: 0;
 flex-direction: column;
+background-color: color-mix(in srgb, var(--chakra-colors-bg-inverted) 2%, var(--chakra-colors-bg));
 
 .thinButton {
   height: 20px;
